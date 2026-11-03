@@ -32,6 +32,22 @@ import { computeUMAP } from '../src/algorithms/umap';
 import { computeKMeans } from '../src/algorithms/kmeans';
 import { computeDBSCAN } from '../src/algorithms/dbscan';
 import { computeSilhouetteScore, computeARI } from '../src/algorithms/metrics';
+import { sendSuccess, sendError } from './response';
+import {
+  AppError,
+  BadRequestError,
+  NotFoundError,
+  UnauthorizedError,
+  ForbiddenError,
+} from './errors';
+import {
+  authenticate,
+  requireAuth,
+  requireRole,
+  AuthenticatedRequest,
+  DEMO_USERS,
+  UserRole,
+} from './auth';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -43,12 +59,15 @@ app.use(compression({
 }));
 app.use(cors({
   origin: '*',
-  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
-// 2. Structured Request Timing & Logging Middleware
+// 2. Structured Request Timing & Authentication Context
+app.use(authenticate);
+
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -61,10 +80,6 @@ app.use((req, res, next) => {
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -105,126 +120,175 @@ function isJsonValue(value: unknown): value is JsonValue {
   return isRecord(value) && Object.values(value).every(isJsonValue);
 }
 
-// 3. Health check & DB status
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    database: isMongoConnected ? 'MongoDB Atlas (Cloud)' : 'In-Memory (Ready for MongoDB)',
-    timestamp: new Date().toISOString(),
+// -------------------------------------------------------------
+// AUTHENTICATION & ROLE-BASED ACCESS CONTROL (RBAC) ROUTES
+// -------------------------------------------------------------
+
+// Đăng nhập giả lập hoặc chuyển đổi vai trò (admin, researcher, viewer)
+app.post('/api/auth/login', (req, res, next) => {
+  try {
+    const { role = 'admin' } = req.body as { role?: UserRole };
+    const token = `${role}_token`;
+    const user = DEMO_USERS[token];
+
+    if (!user) {
+      throw new BadRequestError(`Vai trò "${role}" không tồn tại. Chọn 'admin', 'researcher' hoặc 'viewer'.`);
+    }
+
+    sendSuccess(res, {
+      token,
+      user,
+      message: `Đăng nhập thành công với vai trò ${user.name} (${user.role}).`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Lấy thông tin phiên đăng nhập hiện tại
+app.get('/api/auth/me', (req: AuthenticatedRequest, res) => {
+  sendSuccess(res, {
+    authenticated: Boolean(req.user),
+    user: req.user || null,
   });
 });
 
-// 4. Detailed Enterprise System Health & RAM Monitoring
-app.get('/api/system-health', async (req, res) => {
+// -------------------------------------------------------------
+// CORE BUSINESS & SCIENTIFIC DATA ENDPOINTS
+// -------------------------------------------------------------
+
+// 3. Health check & DB status
+app.get('/api/health', (_req, res) => {
+  sendSuccess(res, {
+    status: 'ok',
+    database: isMongoConnected ? 'MongoDB Atlas (Cloud)' : 'In-Memory (Ready for MongoDB)',
+  });
+});
+
+// 4. Enterprise System Health & RAM Monitoring
+app.get('/api/system-health', async (_req, res, next) => {
   try {
     const health = await getSystemHealth();
-    res.json(health);
-  } catch (err: unknown) {
-    res.status(500).json({ error: errorMessage(err) });
+    sendSuccess(res, health);
+  } catch (err) {
+    next(err);
   }
 });
 
 // 5. Force test connection to MongoDB
-app.post('/api/test-db', async (req, res) => {
+app.post('/api/test-db', async (_req, res, next) => {
   try {
     const result = await testDbConnection();
-    res.json(result);
-  } catch (err: unknown) {
-    res.status(500).json({ connected: false, message: errorMessage(err) });
+    sendSuccess(res, result);
+  } catch (err) {
+    next(err);
   }
 });
 
-// 6. Clear Compute Cache Endpoint
-app.delete('/api/cache', async (req, res) => {
+// 6. Clear Compute Cache (Yêu cầu quyền Admin)
+app.delete('/api/cache', requireRole(['admin']), async (_req, res, next) => {
   try {
     const cleared = await clearComputeCache();
-    res.json({ success: true, message: `Đã xóa ${cleared} bản ghi cache thành công!`, clearedCount: cleared });
-  } catch (err: unknown) {
-    res.status(500).json({ error: errorMessage(err) });
+    sendSuccess(res, {
+      message: `Đã xóa ${cleared} bản ghi cache thành công!`,
+      clearedCount: cleared,
+    });
+  } catch (err) {
+    next(err);
   }
 });
 
 // 7. Get list of datasets
-app.get('/api/datasets', async (req, res) => {
+app.get('/api/datasets', async (_req, res, next) => {
   try {
     const list = await getAllDatasets();
-    res.json(list);
-  } catch (err: unknown) {
-    res.status(500).json({ error: errorMessage(err) });
+    sendSuccess(res, list);
+  } catch (err) {
+    next(err);
   }
 });
 
 // 8. Get single dataset detail
-app.get('/api/datasets/:id', async (req, res) => {
+app.get('/api/datasets/:id', async (req, res, next) => {
   try {
-    const data = await getDatasetById(req.params.id);
-    if (!data) return res.status(404).json({ error: 'Không tìm thấy dataset' });
-    res.json(data);
-  } catch (err: unknown) {
-    res.status(500).json({ error: errorMessage(err) });
-  }
-});
-
-// 9. Upload and parse new dataset to MongoDB
-app.post('/api/datasets/upload', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Vui lòng đính kèm file CSV!' });
+    const id = String(req.params.id);
+    const data = await getDatasetById(id);
+    if (!data) {
+      throw new NotFoundError(`Bộ dữ liệu [${id}]`);
     }
-
-    const csvString = req.file.buffer.toString('utf-8');
-    const parsed = parseCSVString(csvString, req.file.originalname);
-    const newDataset: DatasetDocument = {
-      id: `dataset_${Date.now()}`,
-      name: req.file.originalname.replace(/\.csv$/i, ''),
-      filename: req.file.originalname,
-      totalRows: parsed.totalRows,
-      features: parsed.featureColumns,
-      labelColumn: parsed.labelColumn,
-      idColumn: parsed.idColumn,
-      rawRows: parsed.rawRows,
-      createdAt: new Date().toISOString(),
-    };
-
-    await saveDataset(newDataset);
-    res.json(newDataset);
-  } catch (err: unknown) {
-    res.status(400).json({ error: errorMessage(err) });
+    sendSuccess(res, data);
+  } catch (err) {
+    next(err);
   }
 });
 
-// 10. Update dataset name / metadata
-app.patch('/api/datasets/:id', async (req, res) => {
+// 9. Upload and parse new dataset to MongoDB (Yêu cầu quyền Admin hoặc Researcher)
+app.post(
+  '/api/datasets/upload',
+  requireRole(['admin', 'researcher']),
+  upload.single('file'),
+  async (req, res, next) => {
+    try {
+      if (!req.file) {
+        throw new BadRequestError('Vui lòng đính kèm file CSV!');
+      }
+
+      const csvString = req.file.buffer.toString('utf-8');
+      const parsed = parseCSVString(csvString, req.file.originalname);
+      const newDataset: DatasetDocument = {
+        id: `dataset_${Date.now()}`,
+        name: req.file.originalname.replace(/\.csv$/i, ''),
+        filename: req.file.originalname,
+        totalRows: parsed.totalRows,
+        features: parsed.featureColumns,
+        labelColumn: parsed.labelColumn,
+        idColumn: parsed.idColumn,
+        rawRows: parsed.rawRows,
+        createdAt: new Date().toISOString(),
+      };
+
+      await saveDataset(newDataset);
+      sendSuccess(res, newDataset, 201);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// 10. Update dataset name / metadata (Yêu cầu quyền Admin hoặc Researcher)
+app.patch('/api/datasets/:id', requireRole(['admin', 'researcher']), async (req, res, next) => {
   try {
-    const { name } = req.body;
+    const id = String(req.params.id);
+    const { name } = req.body as { name?: string };
     if (typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ error: 'Tên bộ dữ liệu không hợp lệ.' });
+      throw new BadRequestError('Tên bộ dữ liệu không hợp lệ.');
     }
-    const updated = await updateDataset(req.params.id, { name: name.trim() });
+    const updated = await updateDataset(id, { name: name.trim() });
     if (!updated) {
-      return res.status(404).json({ error: 'Không tìm thấy bộ dữ liệu để cập nhật.' });
+      throw new NotFoundError(`Bộ dữ liệu [${id}]`);
     }
-    res.json(updated);
-  } catch (err: unknown) {
-    res.status(500).json({ error: errorMessage(err) });
+    sendSuccess(res, updated);
+  } catch (err) {
+    next(err);
   }
 });
 
-// 11. Delete dataset
-app.delete('/api/datasets/:id', async (req, res) => {
+// 11. Delete dataset (Yêu cầu quyền Admin)
+app.delete('/api/datasets/:id', requireRole(['admin']), async (req, res, next) => {
   try {
-    const success = await deleteDataset(req.params.id);
+    const id = String(req.params.id);
+    const success = await deleteDataset(id);
     if (!success) {
-      return res.status(404).json({ error: 'Không tìm thấy bộ dữ liệu để xóa.' });
+      throw new NotFoundError(`Bộ dữ liệu [${id}]`);
     }
-    res.json({ success: true, message: 'Đã xóa bộ dữ liệu thành công.' });
-  } catch (err: unknown) {
-    res.status(500).json({ error: errorMessage(err) });
+    sendSuccess(res, { message: 'Đã xóa bộ dữ liệu thành công.' });
+  } catch (err) {
+    next(err);
   }
 });
 
-// 12. High-Performance Compute API with SHA-256 Multi-Tier Caching (LRU + MongoDB)
-app.post('/api/compute', async (req, res) => {
+// 12. High-Performance Compute API with SHA-256 Multi-Tier Caching
+app.post('/api/compute', async (req, res, next) => {
   try {
     const body: unknown = req.body;
     if (!isRecord(body)
@@ -232,14 +296,14 @@ app.post('/api/compute', async (req, res) => {
       || !Array.isArray(body.groundTruth)
       || !isReductionConfig(body.reductionConfig)
       || !isClusteringConfig(body.clusteringConfig)) {
-      return res.status(400).json({ error: 'Tham số tính toán không hợp lệ.' });
+      throw new BadRequestError('Tham số tính toán ma trận hoặc cấu hình không hợp lệ.');
     }
     const { matrix, groundTruth, reductionConfig, clusteringConfig } = body;
     if (!groundTruth.every((value) => value === null
       || typeof value === 'string'
       || typeof value === 'number'
       || typeof value === 'boolean')) {
-      return res.status(400).json({ error: 'Nhãn dữ liệu không hợp lệ.' });
+      throw new BadRequestError('Nhãn dữ liệu ground-truth không hợp lệ.');
     }
 
     // Generate Deterministic Cache Key (Fingerprint of Data & Parameters)
@@ -262,7 +326,7 @@ app.post('/api/compute', async (req, res) => {
     if (cachedResult) {
       res.setHeader('X-Cache', 'HIT');
       res.setHeader('X-Cache-Key', cacheKey);
-      return res.json({
+      return sendSuccess(res, {
         ...cachedResult,
         fromCache: true,
         computeTimeMs: 0,
@@ -341,32 +405,32 @@ app.post('/api/compute', async (req, res) => {
       noiseCount,
     };
 
-    // Asynchronously write to Cache (Non-blocking response)
+    // Asynchronously write to Cache
     saveComputeCache(cacheKey, resultPayload).catch(console.error);
 
     res.setHeader('X-Cache', 'MISS');
     res.setHeader('X-Cache-Key', cacheKey);
-    res.json({
+    sendSuccess(res, {
       ...resultPayload,
       fromCache: false,
       computeTimeMs,
     });
-  } catch (error: unknown) {
-    res.status(500).json({ error: errorMessage(error) });
+  } catch (error) {
+    next(error);
   }
 });
 
-// 11. Experiments History in MongoDB
-app.get('/api/experiments', async (req, res) => {
+// 13. Experiments History in MongoDB
+app.get('/api/experiments', async (_req, res, next) => {
   try {
     const list = await getAllExperiments();
-    res.json(list);
-  } catch (err: unknown) {
-    res.status(500).json({ error: errorMessage(err) });
+    sendSuccess(res, list);
+  } catch (err) {
+    next(err);
   }
 });
 
-app.post('/api/experiments', async (req, res) => {
+app.post('/api/experiments', async (req, res, next) => {
   try {
     const body: unknown = req.body;
     if (!isRecord(body)
@@ -378,7 +442,7 @@ app.post('/api/experiments', async (req, res) => {
       || !(typeof body.silhouetteScore === 'number' || body.silhouetteScore === null)
       || !(typeof body.ari === 'number' || body.ari === null)
       || (body.params !== undefined && !isJsonValue(body.params))) {
-      return res.status(400).json({ error: 'Thông tin thí nghiệm không hợp lệ.' });
+      throw new BadRequestError('Thông tin lưu thí nghiệm không hợp lệ.');
     }
 
     const id = await saveExperiment({
@@ -392,29 +456,35 @@ app.post('/api/experiments', async (req, res) => {
       params: isRecord(body.params) && isJsonValue(body.params) ? body.params : {},
     });
 
-    res.json({ success: true, id });
-  } catch (err: unknown) {
-    res.status(500).json({ error: errorMessage(err) });
+    sendSuccess(res, { id, message: 'Đã lưu thí nghiệm thành công.' }, 201);
+  } catch (err) {
+    next(err);
   }
 });
 
-// 12. Global Error Handling Middleware
-app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+// -------------------------------------------------------------
+// CENTRALIZED ERROR HANDLING MIDDLEWARE
+// -------------------------------------------------------------
+app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (res.headersSent) return next(err);
-  console.error('💥 [Server Error]:', err);
-  const message = errorMessage(err);
-  res.status(500).json({
-    success: false,
-    error: message || 'Internal Server Error',
-    timestamp: new Date().toISOString(),
-  });
+
+  // Bắt lỗi Custom AppError (400, 401, 403, 404, ...)
+  if (err instanceof AppError) {
+    return sendError(res, err.statusCode, err.code, err.message, err.details);
+  }
+
+  // Bắt lỗi không xác định (Unhandled 500)
+  console.error('💥 [Server Internal Error]:', err);
+  const message = err instanceof Error ? err.message : String(err);
+  sendError(res, 500, 'INTERNAL_SERVER_ERROR', message || 'Lỗi xử lý nội bộ máy chủ.');
 });
 
-// 13. Initialize Database & Graceful Start
+// 14. Initialize Database & Graceful Start
 initDatabase()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`🚀 [Fullstack Backend] Running on http://localhost:${PORT}`);
+      console.log(`🛡️  [Security RBAC] Authentication & Role Guard (HTTP 401/403) Active`);
       console.log(`⚡ [Performance Middleware] Gzip Compression Enabled`);
       console.log(`🧠 [Compute Caching] Multi-tier SHA-256 LRU + MongoDB Cache Active`);
     });

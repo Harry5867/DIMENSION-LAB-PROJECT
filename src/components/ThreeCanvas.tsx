@@ -15,7 +15,10 @@ import {
   Palette,
   ChevronRight,
   ChevronLeft,
+  ChevronUp,
+  ChevronDown,
   Sliders,
+  Flame,
 } from 'lucide-react';
 
 interface ThreeCanvasProps {
@@ -39,6 +42,9 @@ interface ThreeCanvasProps {
   onToggleBiplot?: () => void;
   theme?: 'dark' | 'light';
   onToggleTheme?: () => void;
+  showOutliersSpotlight?: boolean;
+  onToggleOutliersSpotlight?: () => void;
+  isComputing?: boolean;
 }
 
 // Categorical palette for cluster coloring (independent from UI theme)
@@ -74,6 +80,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   biplotTopK = 6,
   biplotScale = 30,
   onToggleBiplot,
+  showOutliersSpotlight,
+  onToggleOutliersSpotlight,
+  isComputing = false,
 }) => {
   const canvasMountRef = useRef<HTMLDivElement>(null);
   const [hoveredPoint, setHoveredPoint] = useState<DataPoint | null>(null);
@@ -85,6 +94,36 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const [biplotVisible, setBiplotVisible] = useState(showBiplot);
   const [isLegendExpanded, setIsLegendExpanded] = useState(true);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [internalSpotlight, setInternalSpotlight] = useState(true);
+  const isSpotlightActive = showOutliersSpotlight !== undefined ? showOutliersSpotlight : internalSpotlight;
+  const isSpotlightActiveRef = useRef(isSpotlightActive);
+  isSpotlightActiveRef.current = isSpotlightActive;
+
+  const pointScaleRef = useRef(pointScale);
+  pointScaleRef.current = pointScale;
+
+  const selectedPointRef = useRef(selectedPoint);
+  selectedPointRef.current = selectedPoint;
+
+  const handleToggleSpotlight = () => {
+    if (onToggleOutliersSpotlight) onToggleOutliersSpotlight();
+    else setInternalSpotlight((prev) => !prev);
+  };
+
+  // Track positions of points currently on screen
+  const currentPositionsRef = useRef<{ x: number; y: number; z: number }[]>([]);
+
+  // Morph animation state
+  interface MorphAnim {
+    active: boolean;
+    startTime: number;
+    duration: number;
+    fromCoords: { x: number; y: number; z: number }[];
+    toCoords: { x: number; y: number; z: number }[];
+    outlierIndices: number[];
+  }
+  const morphAnimRef = useRef<MorphAnim | null>(null);
+
 
   // Dynamic ground-truth classification labels extracted from dataPoints
   const uniqueLabels = useMemo(() => {
@@ -113,6 +152,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     }
   }, [showBiplot]);
 
+  // Refs for callbacks to prevent destroying Three.js scene on prop changes
+  const onSelectPointRef = useRef(onSelectPoint);
+  onSelectPointRef.current = onSelectPoint;
+  const onCameraChangeRef = useRef(onCameraChange);
+  onCameraChangeRef.current = onCameraChange;
+  const [sceneReady, setSceneReady] = useState(false);
+
   // Persistent Three.js references
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -121,6 +167,23 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const instancedMeshRef = useRef<THREE.InstancedMesh | null>(null);
   const centroidGroupRef = useRef<THREE.Group | null>(null);
   const biplotGroupRef = useRef<THREE.Group | null>(null);
+  const axesGroupRef = useRef<THREE.Group | null>(null);
+  const outlierGroupRef = useRef<THREE.Group | null>(null);
+  const isComputingRef = useRef(isComputing);
+  isComputingRef.current = isComputing;
+  const scanGroupRef = useRef<THREE.Group | null>(null);
+
+  interface ScanSequence {
+    active: boolean;
+    startTime: number;
+    duration: number;
+    startAngle: number;
+    radius: number;
+    initialY: number;
+  }
+  const scanSequenceRef = useRef<ScanSequence | null>(null);
+
+  const showAxes = true;
 
   // Normalized points to fit cleanly in [-36, 36] coordinate box
   const normalizedPoints = useMemo(() => {
@@ -131,18 +194,21 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     let minZ = Infinity, maxZ = -Infinity;
 
     for (const p of dataPoints) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-      if (p.z < minZ) minZ = p.z;
-      if (p.z > maxZ) maxZ = p.z;
+      const px = Number.isFinite(p.x) ? p.x : 0;
+      const py = Number.isFinite(p.y) ? p.y : 0;
+      const pz = Number.isFinite(p.z) ? p.z : 0;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+      if (pz < minZ) minZ = pz;
+      if (pz > maxZ) maxZ = pz;
     }
 
     const rangeX = maxX - minX || 1;
     const rangeY = maxY - minY || 1;
     const rangeZ = maxZ - minZ || 1;
-    const maxRange = Math.max(rangeX, rangeY, rangeZ);
+    const maxRange = Math.max(rangeX, rangeY, rangeZ) || 1;
 
     const midX = (minX + maxX) / 2;
     const midY = (minY + maxY) / 2;
@@ -150,18 +216,25 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     const scale = 72 / maxRange;
 
-    return dataPoints.map((p) => ({
-      ...p,
-      x: (p.x - midX) * scale,
-      y: (p.y - midY) * scale,
-      z: (p.z - midZ) * scale,
-    }));
+    return dataPoints.map((p) => {
+      const px = Number.isFinite(p.x) ? p.x : 0;
+      const py = Number.isFinite(p.y) ? p.y : 0;
+      const pz = Number.isFinite(p.z) ? p.z : 0;
+      return {
+        ...p,
+        x: (px - midX) * scale,
+        y: (py - midY) * scale,
+        z: (pz - midZ) * scale,
+      };
+    });
   }, [dataPoints]);
 
   const pointsRef = useRef(dataPoints);
   pointsRef.current = dataPoints;
+  const normalizedPointsRef = useRef(normalizedPoints);
+  normalizedPointsRef.current = normalizedPoints;
 
-  // 1. INITIALIZE THREE.JS SCENE
+  // 1. INITIALIZE THREE.JS SCENE (Mount Once)
   useEffect(() => {
     const container = canvasMountRef.current;
     if (!container) return;
@@ -183,6 +256,66 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const biplotGroup = new THREE.Group();
     scene.add(biplotGroup);
     biplotGroupRef.current = biplotGroup;
+
+    // 3D Grid / Laser Scanning Plane for AI Computation Simulation
+    const scanGroup = new THREE.Group();
+    scanGroup.visible = false;
+
+    // A. Horizontal Wireframe Grid Plane (74x74 matching bounding box)
+    const gridGeo = new THREE.PlaneGeometry(74, 74, 14, 14);
+    const gridMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const gridMesh = new THREE.Mesh(gridGeo, gridMat);
+    gridMesh.rotation.x = Math.PI / 2;
+    scanGroup.add(gridMesh);
+
+    // B. Semi-transparent Glowing Laser Energy Sheet
+    const sheetGeo = new THREE.PlaneGeometry(74, 74);
+    const sheetMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.08,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const sheetMesh = new THREE.Mesh(sheetGeo, sheetMat);
+    sheetMesh.rotation.x = Math.PI / 2;
+    scanGroup.add(sheetMesh);
+
+    // C. Bright Glowing Cyan Leading Edge Border
+    const edgeGeo = new THREE.EdgesGeometry(new THREE.PlaneGeometry(74, 74));
+    const edgeMat = new THREE.LineBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.95,
+      linewidth: 2,
+    });
+    const edgeLine = new THREE.LineSegments(edgeGeo, edgeMat);
+    edgeLine.rotation.x = Math.PI / 2;
+    scanGroup.add(edgeLine);
+
+    // D. Bright Center Scanning Beam Line
+    const beamGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-37, 0, 0),
+      new THREE.Vector3(37, 0, 0),
+    ]);
+    const beamMat = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const beamLine = new THREE.Line(beamGeo, beamMat);
+    scanGroup.add(beamLine);
+
+    scene.add(scanGroup);
+    scanGroupRef.current = scanGroup;
+
 
     // Camera
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
@@ -227,11 +360,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     };
     controlsRef.current = controls;
 
-    if (onCameraChange) {
-      controls.addEventListener('change', () => {
-        onCameraChange(camera.position, controls.target);
-      });
-    }
+    controls.addEventListener('change', () => {
+      onCameraChangeRef.current?.(camera.position, controls.target);
+    });
 
     controls.addEventListener('start', () => {
       renderer.domElement.style.cursor = 'grabbing';
@@ -267,6 +398,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     });
     scene.add(new THREE.Mesh(boxGeo, boxMat));
 
+    // 3D Coordinate Axes Group
+    const axesGroup = new THREE.Group();
+    scene.add(axesGroup);
+    axesGroupRef.current = axesGroup;
+
+    const outlierGroup = new THREE.Group();
+    scene.add(outlierGroup);
+    outlierGroupRef.current = outlierGroup;
+
     // Pointer Events for Raycasting (Hover / Select point)
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -295,7 +435,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
           const idx = intersects[0].instanceId;
           const pt = pointsRef.current[idx];
-          if (pt) onSelectPoint(pt);
+          if (pt) onSelectPointRef.current?.(pt);
         }
       }
     };
@@ -321,10 +461,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       }
     };
 
+    const handlePointerLeave = () => {
+      setHoveredPoint(null);
+      setTooltipPos(null);
+    };
+
     const dom = renderer.domElement;
     dom.addEventListener('pointerdown', handlePointerDown);
     dom.addEventListener('pointerup', handlePointerUp);
     dom.addEventListener('pointermove', handlePointerMove);
+    dom.addEventListener('pointerleave', handlePointerLeave);
 
     // Keyboard Navigation
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -344,9 +490,123 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const animate = () => {
       animId = requestAnimationFrame(animate);
       controls.update();
+      // Bulletproof morphing particle transition animation
+      if (morphAnimRef.current?.active && instancedMeshRef.current) {
+        const { startTime, duration, fromCoords, toCoords } = morphAnimRef.current;
+        const elapsed = performance.now() - startTime;
+        const t = Math.min(1, elapsed / duration);
+        const ease = 1 - Math.pow(1 - t, 3); // Cubic ease out
+
+        const mesh = instancedMeshRef.current;
+        const dummy = new THREE.Object3D();
+        const curScale = pointScaleRef.current;
+        const selPt = selectedPointRef.current;
+
+        for (let i = 0; i < toCoords.length; i++) {
+          const from = fromCoords[i] || toCoords[i];
+          const to = toCoords[i];
+          const curX = from.x + (to.x - from.x) * ease;
+          const curY = from.y + (to.y - from.y) * ease;
+          const curZ = from.z + (to.z - from.z) * ease;
+
+          const isSelected = selPt && selPt.id === normalizedPointsRef.current[i]?.id;
+          const r = (isSelected ? 1.9 : 1.0) * curScale;
+
+          dummy.position.set(curX, curY, curZ);
+          dummy.scale.set(r, r, r);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(i, dummy.matrix);
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+
+        // Also morph the radar rings together with their outlier points!
+        if (outlierGroupRef.current && outlierGroupRef.current.children.length === morphAnimRef.current.outlierIndices.length) {
+          morphAnimRef.current.outlierIndices.forEach((ptIdx, ringIdx) => {
+            const ring = outlierGroupRef.current?.children[ringIdx];
+            if (ring) {
+              const from = fromCoords[ptIdx] || toCoords[ptIdx];
+              const to = toCoords[ptIdx];
+              ring.position.set(
+                from.x + (to.x - from.x) * ease,
+                from.y + (to.y - from.y) * ease,
+                from.z + (to.z - from.z) * ease
+              );
+            }
+          });
+        }
+
+        if (t >= 1) {
+          morphAnimRef.current.active = false;
+        }
+      }
+
+      // Pulsing radar animation for outlier beacons (only active when spotlight is ON)
+      if (outlierGroupRef.current) {
+        const active = isSpotlightActiveRef.current;
+        outlierGroupRef.current.visible = active;
+        if (active && outlierGroupRef.current.children.length > 0) {
+          const time = performance.now() * 0.005;
+          const scale = 1.0 + Math.sin(time) * 0.32;
+          const opacity = 0.6 + Math.cos(time) * 0.35;
+          for (const child of outlierGroupRef.current.children) {
+            if (child instanceof THREE.Mesh) {
+              child.scale.set(scale, scale, scale);
+              child.quaternion.copy(camera.quaternion);
+              if (child.material && 'opacity' in child.material) {
+                child.material.opacity = opacity;
+              }
+            }
+          }
+        }
+      }
+
+
+      // 360° Cinematic Orbit + Coordinated Laser Sweep during Computation
+      if (scanSequenceRef.current?.active && cameraRef.current && controlsRef.current) {
+        const { startTime, duration, startAngle, radius, initialY } = scanSequenceRef.current;
+        const elapsed = performance.now() - startTime;
+        const t = Math.min(1, elapsed / duration);
+        // Smooth sine ease in-out for natural camera movement
+        const ease = 0.5 - 0.5 * Math.cos(t * Math.PI);
+
+        // 1. Orbit camera 360 degrees around the center target
+        const target = controlsRef.current.target;
+        const currentAngle = startAngle + ease * Math.PI * 2;
+        camera.position.x = target.x + radius * Math.cos(currentAngle);
+        camera.position.z = target.z + radius * Math.sin(currentAngle);
+        camera.position.y = initialY;
+        camera.lookAt(target);
+        controls.update();
+
+        // 2. Coordinated Laser Grid Sweep from bottom (-36) to top (+36)
+        if (scanGroupRef.current) {
+          scanGroupRef.current.visible = true;
+          // Smooth sine sweep: starts at -36, sweeps to +36, then back down
+          const scanY = -36 + (Math.sin(t * Math.PI * 2 - Math.PI / 2) * 0.5 + 0.5) * 72;
+          scanGroupRef.current.position.y = Math.max(-36, Math.min(36, scanY));
+
+          // Energy pulse
+          const pulse = 0.7 + Math.sin(t * Math.PI * 8) * 0.3;
+          scanGroupRef.current.traverse((child) => {
+            if (child instanceof THREE.Mesh && child.material && 'opacity' in child.material) {
+              child.material.opacity = child.material.wireframe ? 0.35 * pulse : 0.1 * pulse;
+            }
+          });
+        }
+
+        if (t >= 1) {
+          scanSequenceRef.current.active = false;
+          if (scanGroupRef.current) scanGroupRef.current.visible = false;
+        }
+      } else if (scanGroupRef.current && !isComputingRef.current) {
+        scanGroupRef.current.visible = false;
+      }
+
       renderer.render(scene, camera);
     };
     animate();
+    setSceneReady(true);
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -362,18 +622,32 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     resizeObserver.observe(container);
 
     return () => {
+      setSceneReady(false);
       resizeObserver.disconnect();
       window.removeEventListener('keydown', handleKeyDown);
       dom.removeEventListener('pointerdown', handlePointerDown);
       dom.removeEventListener('pointerup', handlePointerUp);
       dom.removeEventListener('pointermove', handlePointerMove);
+      dom.removeEventListener('pointerleave', handlePointerLeave);
       cancelAnimationFrame(animId);
+      if (axesGroupRef.current) {
+        scene.remove(axesGroupRef.current);
+        axesGroupRef.current = null;
+      }
+      if (outlierGroupRef.current) {
+        scene.remove(outlierGroupRef.current);
+        outlierGroupRef.current = null;
+      }
+      if (scanGroupRef.current) {
+        scene.remove(scanGroupRef.current);
+        scanGroupRef.current = null;
+      }
       if (container.contains(dom)) {
         container.removeChild(dom);
       }
       renderer.dispose();
     };
-  }, [onSelectPoint, onCameraChange]);
+  }, []);
 
   // Dual Viewport Sync
   useEffect(() => {
@@ -383,6 +657,31 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       controlsRef.current.update();
     }
   }, [syncCameraPos, syncTargetPos]);
+
+
+  // Trigger 360° Camera Orbit & Laser Scan Sequence when isComputing is activated
+  useEffect(() => {
+    if (isComputing && cameraRef.current && controlsRef.current) {
+      const cam = cameraRef.current;
+      const target = controlsRef.current.target;
+      const dx = cam.position.x - target.x;
+      const dz = cam.position.z - target.z;
+      const radius = Math.hypot(dx, dz) || 100;
+      const startAngle = Math.atan2(dz, dx);
+
+      scanSequenceRef.current = {
+        active: true,
+        startTime: performance.now(),
+        duration: 2200, // 2.2s smooth cinematic scan
+        startAngle,
+        radius,
+        initialY: cam.position.y,
+      };
+    } else {
+      if (scanSequenceRef.current) scanSequenceRef.current.active = false;
+      if (scanGroupRef.current) scanGroupRef.current.visible = false;
+    }
+  }, [isComputing]);
 
   // Auto-rotate toggle
   useEffect(() => {
@@ -394,13 +693,25 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   // 2. UPDATE INSTANCED MESH DATA POINTS & CENTROIDS
   useEffect(() => {
     const scene = sceneRef.current;
-    if (!scene) return;
+    if (!scene || !sceneReady) return;
 
     if (instancedMeshRef.current) {
       scene.remove(instancedMeshRef.current);
       instancedMeshRef.current.geometry.dispose();
       (instancedMeshRef.current.material as THREE.Material).dispose();
       instancedMeshRef.current = null;
+    }
+
+    if (outlierGroupRef.current) {
+      while (outlierGroupRef.current.children.length > 0) {
+        const obj = outlierGroupRef.current.children[0];
+        outlierGroupRef.current.remove(obj);
+        if (obj instanceof THREE.Mesh && obj.geometry) {
+          obj.geometry.dispose();
+          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+          else obj.material.dispose();
+        }
+      }
     }
 
     if (centroidGroupRef.current) {
@@ -412,6 +723,27 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     const count = normalizedPoints.length;
     if (count === 0) return;
+
+    const toCoords = normalizedPoints.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    const fromCoords = currentPositionsRef.current;
+    const outlierIndices: number[] = [];
+
+    // Trigger smooth particle morphing transition if previous coordinates exist
+    const shouldMorph = fromCoords.length === count && fromCoords.length > 0;
+    if (shouldMorph) {
+      morphAnimRef.current = {
+        active: true,
+        startTime: performance.now(),
+        duration: 1100,
+        fromCoords: [...fromCoords],
+        toCoords: [...toCoords],
+        outlierIndices,
+      };
+    } else {
+      morphAnimRef.current = null;
+    }
+    // Update current positions tracker
+    currentPositionsRef.current = toCoords;
 
     const sphereGeo = new THREE.SphereGeometry(1, 16, 16);
     const sphereMat = new THREE.MeshStandardMaterial({
@@ -440,13 +772,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       const isSelected = selectedPoint && selectedPoint.id === pt.id;
       const r = (isSelected ? 1.9 : 1.0) * pointScale;
 
-      dummy.position.set(pt.x, pt.y, pt.z);
+      const startPos = shouldMorph ? fromCoords[i] : toCoords[i];
+      dummy.position.set(startPos.x, startPos.y, startPos.z);
       dummy.scale.set(r, r, r);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
 
       if (isSelected) {
         color.set('#FFFFFF');
+      } else if (isSpotlightActive && (pt.isOutlier || pt.cluster === -1)) {
+        color.set('#F43F5E'); // Outlier spotlight warning red (sáng rực rỡ như lúc đầu)
       } else if (colorMode === 'ground-truth' && pt.label !== undefined && pt.label !== null) {
         const hex = labelColorMap[String(pt.label)] || '#929EAF';
         color.set(hex);
@@ -466,6 +801,22 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       }
 
       mesh.setColorAt(i, color);
+
+      // Glowing radar ring beacon for Outlier / Noise points
+      if (pt.isOutlier || pt.cluster === -1) {
+        outlierIndices.push(i);
+        const ringGeo = new THREE.RingGeometry(1.6 * pointScale, 2.5 * pointScale, 24);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xf43f5e,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+        });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.position.set(startPos.x, startPos.y, startPos.z);
+        outlierGroupRef.current?.add(ringMesh);
+      }
     }
 
     mesh.instanceMatrix.needsUpdate = true;
@@ -473,6 +824,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     scene.add(mesh);
     instancedMeshRef.current = mesh;
+
 
     // Centroids visualization
     if (centroidsVisible && colorMode === 'cluster') {
@@ -508,11 +860,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         centroidGroupRef.current?.add(coreMesh);
       });
     }
-  }, [normalizedPoints, colorMode, selectedFeature, selectedPoint, pointScale, centroidsVisible, dataPoints, labelColorMap]);
+  }, [sceneReady, normalizedPoints, colorMode, selectedFeature, selectedPoint, pointScale, centroidsVisible, dataPoints, labelColorMap, isSpotlightActive]);
 
   // 3. RENDER PCA FEATURE LOADINGS (BIPLOT)
   useEffect(() => {
-    if (!biplotGroupRef.current) return;
+    if (!biplotGroupRef.current || !sceneReady) return;
 
     while (biplotGroupRef.current.children.length > 0) {
       const obj = biplotGroupRef.current.children[0];
@@ -552,7 +904,90 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       sprite.position.copy(dir).multiplyScalar(biplotScale + 4);
       biplotGroupRef.current?.add(sprite);
     });
-  }, [biplotVisible, reductionMethod, pcaComponents, featureNames, biplotTopK, biplotScale]);
+  }, [sceneReady, biplotVisible, reductionMethod, pcaComponents, featureNames, biplotTopK, biplotScale]);
+
+  // 4. RENDER 3D XYZ COORDINATE AXES (Positioned cleanly at box floor corner [-36, -36, -36])
+  useEffect(() => {
+    if (!axesGroupRef.current || !sceneReady) return;
+
+    while (axesGroupRef.current.children.length > 0) {
+      const obj = axesGroupRef.current.children[0];
+      axesGroupRef.current.remove(obj);
+      if (obj instanceof THREE.Mesh && obj.geometry) {
+        obj.geometry.dispose();
+      }
+    }
+
+    if (!showAxes) return;
+
+    // Corner origin at bottom-back-left of bounding box
+    const origin = new THREE.Vector3(-36, -36, -36);
+    const axisLength = 72;
+
+    let labelX = 'Trục X';
+    let labelY = 'Trục Y';
+    let labelZ = 'Trục Z';
+
+    if (reductionMethod === 'PCA') {
+      labelX = 'PC1 (X)';
+      labelY = 'PC2 (Y)';
+      labelZ = 'PC3 (Z)';
+    } else if (axisFeatures && axisFeatures.length >= 3) {
+      labelX = 'X: ' + axisFeatures[0];
+      labelY = 'Y: ' + axisFeatures[1];
+      labelZ = 'Z: ' + axisFeatures[2];
+    } else if (reductionMethod === 't-SNE' || reductionMethod === 'UMAP') {
+      labelX = reductionMethod + ' 1';
+      labelY = reductionMethod + ' 2';
+      labelZ = reductionMethod + ' 3';
+    }
+
+    const createAxis = (dir: THREE.Vector3, color: number, label: string) => {
+      const arrow = new THREE.ArrowHelper(dir, origin, axisLength, color, 5, 2.2);
+      axesGroupRef.current?.add(arrow);
+
+      const hexColor = '#' + color.toString(16).padStart(6, '0');
+      const sprite = createTextLabelSprite(label, hexColor);
+      const tipPos = origin.clone().add(dir.clone().multiplyScalar(axisLength + 6));
+      sprite.position.copy(tipPos);
+      axesGroupRef.current?.add(sprite);
+    };
+
+    // X: Đỏ #EF4444 chạy dọc mép đáy sàn
+    createAxis(new THREE.Vector3(1, 0, 0), 0xef4444, labelX);
+    // Y: Xanh lá #10B981 dựng đứng dọc cột góc
+    createAxis(new THREE.Vector3(0, 1, 0), 0x10b981, labelY);
+    // Z: Xanh lam #3B82F6 chạy dọc mép sàn trước
+    createAxis(new THREE.Vector3(0, 0, 1), 0x3b82f6, labelZ);
+  }, [sceneReady, showAxes, reductionMethod, axisFeatures]);
+
+
+
+
+  // 5. SMOOTH CAMERA FLY-TO FOCUS ON SELECTED POINT
+  useEffect(() => {
+    if (!selectedPoint || !controlsRef.current || !cameraRef.current) return;
+    const pt = normalizedPoints.find((p) => p.id === selectedPoint.id);
+    if (!pt) return;
+
+    const targetPos = new THREE.Vector3(pt.x, pt.y, pt.z);
+    let frame = 0;
+    const totalFrames = 25;
+    const startTarget = controlsRef.current.target.clone();
+
+    const flyTo = () => {
+      frame++;
+      const progress = Math.min(1, frame / totalFrames);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      controlsRef.current?.target.lerpVectors(startTarget, targetPos, ease);
+      controlsRef.current?.update();
+
+      if (frame < totalFrames) {
+        requestAnimationFrame(flyTo);
+      }
+    };
+    flyTo();
+  }, [selectedPoint, normalizedPoints]);
 
   const handleResetCamera = () => {
     if (controlsRef.current && cameraRef.current) {
@@ -685,6 +1120,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               )}
             </div>
             <div className="space-y-0.5 text-[11px] text-[#929EAF]">
+              
+              {(hoveredPoint.cluster === -1 || hoveredPoint.isOutlier) && (
+                <div className="pt-0.5">
+                  <span className="px-1.5 py-0.5 rounded bg-[#2d1b1f] border border-[#7f1d1d] text-[10px] text-[#f87171] font-semibold">
+                    ⚠ Điểm ngoại lai / Nhiễu
+                  </span>
+                </div>
+              )}
               <div>
                 Cụm:{' '}
                 <strong className="text-[#E6EAF0]">
@@ -704,167 +1147,163 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         )}
       </div>
 
-      {/* 2. DOCKED 3D CONTROLS TOOLBAR (On the right, compact and collapsible) */}
-      <div
-        className={`shrink-0 h-full border-l border-[#303A49] bg-[#151B23] flex flex-col items-center py-2.5 z-20 transition-all ${
-          isToolbarCollapsed ? 'w-9' : 'w-14'
-        }`}
-      >
-        {/* Collapse / Expand Toggle */}
-        <button
-          type="button"
-          onClick={() => setIsToolbarCollapsed(!isToolbarCollapsed)}
-          title={isToolbarCollapsed ? 'Mở rộng thanh công cụ 3D' : 'Thu gọn thanh công cụ 3D'}
-          className="p-1.5 rounded hover:bg-[#202936] text-[#929EAF] hover:text-[#E6EAF0] mb-2 transition-colors"
-        >
-          {isToolbarCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-        </button>
+      {/* 2. DYNAMIC FLOATING 3D CONTROLS TOOLBAR (Slide up/down, compact & modern) */}
+        <div className="absolute right-3 top-3 z-30 flex flex-col items-end">
+          {/* Slide Handle / Toggle Pill */}
+          <button
+            type="button"
+            onClick={() => setIsToolbarCollapsed(!isToolbarCollapsed)}
+            title={isToolbarCollapsed ? 'Trượt xuống để mở công cụ 3D' : 'Trượt lên để thu gọn công cụ 3D'}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded border shadow-lg backdrop-blur-md text-[11px] font-medium transition-all ${
+              isToolbarCollapsed
+                ? 'bg-[#151B23]/95 hover:bg-[#202936] border-[#303A49] hover:border-[#8B9CFB]/60 text-[#E6EAF0]'
+                : 'bg-[#202936] border-[#303A49] text-[#929EAF] hover:text-[#E6EAF0]'
+            }`}
+          >
+            <Sliders size={12} className={isToolbarCollapsed ? 'text-[#8B9CFB]' : 'text-[#929EAF]'} />
+            <span className="text-[10px]">Công cụ</span>
+            {isToolbarCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+          </button>
 
-        {!isToolbarCollapsed ? (
-          <div className="flex flex-col items-center gap-1.5 w-full px-1.5">
-            {/* Reset Camera / Fit View */}
-            <button
-              type="button"
-              onClick={handleResetCamera}
-              title="Đặt lại góc nhìn mặc định (Fit View / phím R)"
-              className="w-full flex flex-col items-center justify-center gap-1 py-1.5 rounded bg-[#202936] hover:bg-[#2a3647] border border-[#303A49] text-[9px] text-[#E6EAF0] transition-colors"
-            >
-              <RotateCcw size={13} className="text-[#8B9CFB]" />
-              <span>Reset</span>
-            </button>
-
-            {/* Auto-rotate 360 */}
-            <button
-              type="button"
-              onClick={() => setIsAutoRotating(!isAutoRotating)}
-              title={isAutoRotating ? 'Dừng tự động xoay' : 'Bật tự động xoay 360°'}
-              className={`w-full flex flex-col items-center justify-center gap-1 py-1.5 rounded border text-[9px] transition-colors ${
-                isAutoRotating
-                  ? 'bg-[#202936] border-[#8B9CFB] text-[#8B9CFB]'
-                  : 'bg-[#202936] hover:bg-[#2a3647] border-[#303A49] text-[#929EAF] hover:text-[#E6EAF0]'
-              }`}
-            >
-              {isAutoRotating ? <Pause size={13} /> : <Play size={13} />}
-              <span>{isAutoRotating ? 'Dừng' : 'Tự xoay'}</span>
-            </button>
-
-            {/* Zoom In & Out */}
-            <div className="flex items-center gap-1 w-full">
+          {/* Sliding Panel */}
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              isToolbarCollapsed
+                ? 'max-h-0 opacity-0 pointer-events-none mt-0'
+                : 'max-h-[580px] opacity-100 mt-1.5'
+            }`}
+          >
+            <div className="w-14 rounded-lg border border-[#303A49] bg-[#151B23]/95 backdrop-blur-md shadow-2xl p-1.5 flex flex-col items-center gap-1.5 text-xs">
+              {/* Reset Camera / Fit View */}
               <button
                 type="button"
-                onClick={() => handleZoom('in')}
-                title="Phóng to (+)"
-                className="flex-1 flex items-center justify-center py-1.5 rounded bg-[#202936] hover:bg-[#2a3647] border border-[#303A49] text-[#E6EAF0] transition-colors"
+                onClick={handleResetCamera}
+                title="Đặt lại góc nhìn mặc định (phím R)"
+                className="w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded bg-[#202936] hover:bg-[#283547] border border-[#303A49] text-[9px] text-[#E6EAF0] transition-colors"
               >
-                <ZoomIn size={12} />
+                <RotateCcw size={12} className="text-[#8B9CFB]" />
+                <span>Reset</span>
               </button>
+
+              {/* Auto-rotate 360 */}
               <button
                 type="button"
-                onClick={() => handleZoom('out')}
-                title="Thu nhỏ (-)"
-                className="flex-1 flex items-center justify-center py-1.5 rounded bg-[#202936] hover:bg-[#2a3647] border border-[#303A49] text-[#E6EAF0] transition-colors"
-              >
-                <ZoomOut size={12} />
-              </button>
-            </div>
-
-            <div className="w-full h-px bg-[#303A49] my-1" />
-
-            {/* Centroids Toggle */}
-            <button
-              type="button"
-              onClick={() => setCentroidsVisible(!centroidsVisible)}
-              title={centroidsVisible ? 'Ẩn tâm cụm' : 'Hiện tâm cụm'}
-              className={`w-full flex flex-col items-center justify-center gap-1 py-1.5 rounded border text-[9px] transition-colors ${
-                centroidsVisible
-                  ? 'bg-[#202936] border-[#fbbf24] text-[#fbbf24]'
-                  : 'bg-[#202936] hover:bg-[#2a3647] border-[#303A49] text-[#929EAF]'
-              }`}
-            >
-              <Layers size={13} />
-              <span>Tâm cụm</span>
-            </button>
-
-            {/* Biplot toggle (PCA only) */}
-            {reductionMethod === 'PCA' && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (onToggleBiplot) onToggleBiplot();
-                  else setBiplotVisible(!biplotVisible);
-                }}
-                title={biplotVisible ? 'Ẩn véc-tơ PCA Biplot' : 'Hiện véc-tơ PCA Biplot'}
-                className={`w-full flex flex-col items-center justify-center gap-1 py-1.5 rounded border text-[9px] transition-colors ${
-                  biplotVisible
+                onClick={() => setIsAutoRotating(!isAutoRotating)}
+                title={isAutoRotating ? 'Dừng tự xoay' : 'Bật tự xoay 360°'}
+                className={`w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded border text-[9px] transition-colors ${
+                  isAutoRotating
                     ? 'bg-[#202936] border-[#8B9CFB] text-[#8B9CFB]'
-                    : 'bg-[#202936] hover:bg-[#2a3647] border-[#303A49] text-[#929EAF]'
+                    : 'bg-[#202936] hover:bg-[#283547] border-[#303A49] text-[#929EAF] hover:text-[#E6EAF0]'
                 }`}
               >
-                <Compass size={13} />
-                <span>Biplot</span>
+                {isAutoRotating ? <Pause size={12} /> : <Play size={12} />}
+                <span>{isAutoRotating ? 'Dừng' : 'Tự xoay'}</span>
               </button>
-            )}
 
-            {/* Point Scale Control */}
-            <div className="w-full flex flex-col items-center gap-1 py-1.5 px-1 rounded bg-[#202936] border border-[#303A49] text-[9px]">
-              <span className="text-[#929EAF] font-medium">Cỡ điểm</span>
-              <input
-                type="range"
-                min="0.6"
-                max="3.0"
-                step="0.2"
-                value={pointScale}
-                onChange={(e) => setPointScale(parseFloat(e.target.value))}
-                className="w-10 h-1 cursor-pointer accent-[#8B9CFB]"
-                title={`Kích thước: ${pointScale.toFixed(1)}x`}
-              />
-              <span className="font-mono text-[#8B9CFB]">{pointScale.toFixed(1)}x</span>
+              {/* Zoom In & Out */}
+              <div className="flex items-center gap-1 w-full">
+                <button
+                  type="button"
+                  onClick={() => handleZoom('in')}
+                  title="Phóng to (+)"
+                  className="flex-1 flex items-center justify-center py-1 rounded bg-[#202936] hover:bg-[#283547] border border-[#303A49] text-[#E6EAF0] transition-colors"
+                >
+                  <ZoomIn size={11} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleZoom('out')}
+                  title="Thu nhỏ (-)"
+                  className="flex-1 flex items-center justify-center py-1 rounded bg-[#202936] hover:bg-[#283547] border border-[#303A49] text-[#E6EAF0] transition-colors"
+                >
+                  <ZoomOut size={11} />
+                </button>
+              </div>
+
+              <div className="w-full h-px bg-[#303A49] my-0.5" />
+
+              {/* Outlier Spotlight Toggle Button (DUY NHẤT 1 NÚT) */}
+              <button
+                type="button"
+                onClick={handleToggleSpotlight}
+                title={isSpotlightActive ? 'Tắt chế độ soi sáng Outlier' : 'Bật chế độ soi sáng Outlier'}
+                className={`w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded border text-[9px] font-medium transition-all ${
+                  isSpotlightActive
+                    ? 'bg-[#2d1b1f] border-[#f43f5e] text-[#f87171] shadow-sm'
+                    : 'bg-[#202936] hover:bg-[#283547] border-[#303A49] text-[#929EAF] hover:text-[#E6EAF0]'
+                }`}
+              >
+                <Flame size={12} className={isSpotlightActive ? 'animate-pulse text-[#f43f5e]' : ''} />
+                <span>{isSpotlightActive ? 'Tắt soi' : 'Soi Outlier'}</span>
+              </button>
+
+              {/* Centroids Toggle */}
+              <button
+                type="button"
+                onClick={() => setCentroidsVisible(!centroidsVisible)}
+                title={centroidsVisible ? 'Ẩn tâm cụm' : 'Hiện tâm cụm'}
+                className={`w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded border text-[9px] transition-colors ${
+                  centroidsVisible
+                    ? 'bg-[#202936] border-[#fbbf24] text-[#fbbf24]'
+                    : 'bg-[#202936] hover:bg-[#283547] border-[#303A49] text-[#929EAF]'
+                }`}
+              >
+                <Layers size={12} />
+                <span>Tâm cụm</span>
+              </button>
+
+              {/* Biplot toggle (PCA only) */}
+              {reductionMethod === 'PCA' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onToggleBiplot) onToggleBiplot();
+                    else setBiplotVisible(!biplotVisible);
+                  }}
+                  title={biplotVisible ? 'Ẩn véc-tơ PCA Biplot' : 'Hiện véc-tơ PCA Biplot'}
+                  className={`w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded border text-[9px] transition-colors ${
+                    biplotVisible
+                      ? 'bg-[#202936] border-[#8B9CFB] text-[#8B9CFB]'
+                      : 'bg-[#202936] hover:bg-[#283547] border-[#303A49] text-[#929EAF]'
+                  }`}
+                >
+                  <Compass size={12} />
+                  <span>Biplot</span>
+                </button>
+              )}
+
+              {/* Point Scale Control */}
+              <div className="w-full flex flex-col items-center gap-0.5 py-1 px-1 rounded bg-[#202936] border border-[#303A49] text-[9px]">
+                <span className="text-[#929EAF] text-[8px] uppercase">Cỡ điểm</span>
+                <input
+                  type="range"
+                  min="0.6"
+                  max="3.0"
+                  step="0.2"
+                  value={pointScale}
+                  onChange={(e) => setPointScale(parseFloat(e.target.value))}
+                  className="w-10 h-1 cursor-pointer accent-[#8B9CFB]"
+                  title={`Kích thước: ${pointScale.toFixed(1)}x`}
+                />
+                <span className="font-mono text-[#8B9CFB] text-[8px]">{pointScale.toFixed(1)}x</span>
+              </div>
+
+              <div className="w-full h-px bg-[#303A49] my-0.5" />
+
+              {/* Snapshot */}
+              <button
+                type="button"
+                onClick={handleTakeSnapshot}
+                title="Chụp ảnh 3D phân giải cao (PNG)"
+                className="w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded bg-[#162a23] hover:bg-[#1f3b31] border border-[#065f46] text-[9px] text-[#34d399] transition-colors"
+              >
+                <Camera size={12} />
+                <span>Chụp</span>
+              </button>
             </div>
-
-            <div className="w-full h-px bg-[#303A49] my-1" />
-
-            {/* Snapshot */}
-            <button
-              type="button"
-              onClick={handleTakeSnapshot}
-              title="Chụp ảnh 3D phân giải cao (PNG)"
-              className="w-full flex flex-col items-center justify-center gap-1 py-1.5 rounded bg-[#162a23] hover:bg-[#1f3b31] border border-[#065f46] text-[9px] text-[#34d399] transition-colors"
-            >
-              <Camera size={13} />
-              <span>Chụp</span>
-            </button>
           </div>
-        ) : (
-          /* Minimized Strip Icons */
-          <div className="flex flex-col items-center gap-2">
-            <button
-              type="button"
-              onClick={handleResetCamera}
-              title="Đặt lại góc nhìn"
-              className="p-1 rounded text-[#929EAF] hover:text-[#8B9CFB]"
-            >
-              <RotateCcw size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsAutoRotating(!isAutoRotating)}
-              title="Tự động xoay"
-              className={`p-1 rounded ${isAutoRotating ? 'text-[#8B9CFB]' : 'text-[#929EAF]'}`}
-            >
-              {isAutoRotating ? <Pause size={14} /> : <Play size={14} />}
-            </button>
-            <button
-              type="button"
-              onClick={handleTakeSnapshot}
-              title="Chụp ảnh 3D"
-              className="p-1 rounded text-[#34d399]"
-            >
-              <Camera size={14} />
-            </button>
-          </div>
-        )}
+        </div>
       </div>
-    </div>
   );
 };
 

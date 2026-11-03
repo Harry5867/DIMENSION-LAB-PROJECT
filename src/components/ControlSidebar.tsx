@@ -802,7 +802,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                   onActiveTabChange('clustering');
                   onApplyClustering();
                 }}
-                disabled={!hasResults || isComputing}
+                disabled={!canRun}
                 className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-[#202936] hover:bg-[#283547] border border-[#303A49] text-[#E6EAF0] font-semibold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span>Áp dụng phân cụm</span>

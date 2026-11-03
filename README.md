@@ -1,8 +1,8 @@
 # 🧬 3D Interactive High-Dimensional Data Explorer
 ### Hệ Thống Thám Hiểm & Trực Quan Hóa Dữ Liệu Đa Chiều Không Gian 3D Thời Gian Thực
 
-[![React](https://img.shields.io/badge/React-18.3-blue.svg)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue.svg)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19.0-blue.svg)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue.svg)](https://www.typescriptlang.org/)
 [![Three.js](https://img.shields.io/badge/Three.js-0.169-black.svg)](https://threejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-purple.svg)](https://vitejs.dev/)
 [![Express](https://img.shields.io/badge/Express-4.21-green.svg)](https://expressjs.com/)

@@ -87,6 +87,7 @@ export interface DataPoint {
   z: number;
   // Assigned cluster (-1 for noise in DBSCAN)
   cluster: number;
+  isOutlier?: boolean;
 }
 
 export interface ParsedDataset {
@@ -128,5 +129,6 @@ export interface EvaluationMetrics {
   totalVarianceExplained?: number;
   clusterCounts: Record<number, number>;
   noiseCount?: number;
+  outlierCount?: number;
   executionTimeMs?: number | null;
 }
