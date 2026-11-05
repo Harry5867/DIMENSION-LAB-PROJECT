@@ -1,0 +1,18 @@
+{
+  "year": 2020,
+  "width": 720,
+  "height": 360,
+  "stepDegrees": 0.5,
+  "west": -180,
+  "north": 90,
+  "unit": "people/km²",
+  "source": "WorldPop / CIESIN",
+  "sourceUrl": "https://doi.org/10.5258/SOTON/WP00674",
+  "license": "https://creativecommons.org/licenses/by/4.0/",
+  "valid": 61345,
+  "zeros": 10342,
+  "missing": 197855,
+  "encoding": "Float32 little-endian, row-major north to south; NaN means NoData; pixel-center samples",
+  "sampling": "Nearest-neighbor samples every 0.5° from the 30 arc-second WorldPop density raster, requested for 2020-01-01 UTC. Not area averages.",
+  "inputSha256": "3bffbda2e14891de8b29ca56fe17e5c5d24f8be0d2f094b470f30d85cb839d40"
+}

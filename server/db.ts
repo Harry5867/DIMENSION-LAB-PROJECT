@@ -453,15 +453,15 @@ export async function testDbConnection(): Promise<{ connected: boolean; message:
   if (isMongoConnected && db) {
     return {
       connected: true,
-      message: 'MongoDB Atlas Cloud đang hoạt động hoàn hảo!',
+      message: 'MongoDB Atlas is connected.',
     };
   }
   await tryConnectMongo(false);
   return {
     connected: isMongoConnected,
     message: isMongoConnected
-      ? 'Kết nối lại MongoDB Atlas thành công!'
-      : 'Chưa thể kết nối tới MongoDB Atlas (kiểm tra Network Access 0.0.0.0/0 trên Atlas). Hệ thống tự hành In-Memory an toàn.',
+      ? 'Reconnected to MongoDB Atlas.'
+      : 'MongoDB Atlas is unavailable. Using in-memory storage.',
   };
 }
 
@@ -557,7 +557,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   }
 
   return {
-    uptime: `${Math.floor(uptimeSeconds / 60)} phút ${uptimeSeconds % 60} giây`,
+    uptime: `${Math.floor(uptimeSeconds / 60)} min ${uptimeSeconds % 60} sec`,
     memory: {
       rssMb: (memUsage.rss / 1024 / 1024).toFixed(1) + ' MB',
       heapUsedMb: (memUsage.heapUsed / 1024 / 1024).toFixed(1) + ' MB',

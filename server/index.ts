@@ -132,13 +132,13 @@ app.post('/api/auth/login', (req, res, next) => {
     const user = DEMO_USERS[token];
 
     if (!user) {
-      throw new BadRequestError(`Vai trò "${role}" không tồn tại. Chọn 'admin', 'researcher' hoặc 'viewer'.`);
+      throw new BadRequestError(`Unknown role "${role}". Choose 'admin', 'researcher', or 'viewer'.`);
     }
 
     sendSuccess(res, {
       token,
       user,
-      message: `Đăng nhập thành công với vai trò ${user.name} (${user.role}).`,
+      message: `Signed in as ${user.name} (${user.role}).`,
     });
   } catch (err) {
     next(err);
@@ -190,7 +190,7 @@ app.delete('/api/cache', requireRole(['admin']), async (_req, res, next) => {
   try {
     const cleared = await clearComputeCache();
     sendSuccess(res, {
-      message: `Đã xóa ${cleared} bản ghi cache thành công!`,
+      message: `Cleared ${cleared} cache entries.`,
       clearedCount: cleared,
     });
   } catch (err) {
@@ -214,7 +214,7 @@ app.get('/api/datasets/:id', async (req, res, next) => {
     const id = String(req.params.id);
     const data = await getDatasetById(id);
     if (!data) {
-      throw new NotFoundError(`Bộ dữ liệu [${id}]`);
+      throw new NotFoundError(`Dataset [${id}]`);
     }
     sendSuccess(res, data);
   } catch (err) {
@@ -230,7 +230,7 @@ app.post(
   async (req, res, next) => {
     try {
       if (!req.file) {
-        throw new BadRequestError('Vui lòng đính kèm file CSV!');
+        throw new BadRequestError('Attach a CSV file.');
       }
 
       const csvString = req.file.buffer.toString('utf-8');
@@ -261,11 +261,11 @@ app.patch('/api/datasets/:id', requireRole(['admin', 'researcher']), async (req,
     const id = String(req.params.id);
     const { name } = req.body as { name?: string };
     if (typeof name !== 'string' || !name.trim()) {
-      throw new BadRequestError('Tên bộ dữ liệu không hợp lệ.');
+      throw new BadRequestError('Invalid dataset name.');
     }
     const updated = await updateDataset(id, { name: name.trim() });
     if (!updated) {
-      throw new NotFoundError(`Bộ dữ liệu [${id}]`);
+      throw new NotFoundError(`Dataset [${id}]`);
     }
     sendSuccess(res, updated);
   } catch (err) {
@@ -279,9 +279,9 @@ app.delete('/api/datasets/:id', requireRole(['admin']), async (req, res, next) =
     const id = String(req.params.id);
     const success = await deleteDataset(id);
     if (!success) {
-      throw new NotFoundError(`Bộ dữ liệu [${id}]`);
+      throw new NotFoundError(`Dataset [${id}]`);
     }
-    sendSuccess(res, { message: 'Đã xóa bộ dữ liệu thành công.' });
+    sendSuccess(res, { message: 'Dataset deleted.' });
   } catch (err) {
     next(err);
   }
@@ -296,14 +296,14 @@ app.post('/api/compute', async (req, res, next) => {
       || !Array.isArray(body.groundTruth)
       || !isReductionConfig(body.reductionConfig)
       || !isClusteringConfig(body.clusteringConfig)) {
-      throw new BadRequestError('Tham số tính toán ma trận hoặc cấu hình không hợp lệ.');
+      throw new BadRequestError('Invalid feature matrix or analysis settings.');
     }
     const { matrix, groundTruth, reductionConfig, clusteringConfig } = body;
     if (!groundTruth.every((value) => value === null
       || typeof value === 'string'
       || typeof value === 'number'
       || typeof value === 'boolean')) {
-      throw new BadRequestError('Nhãn dữ liệu ground-truth không hợp lệ.');
+      throw new BadRequestError('Invalid ground-truth labels.');
     }
 
     // Generate Deterministic Cache Key (Fingerprint of Data & Parameters)
@@ -311,10 +311,9 @@ app.post('/api/compute', async (req, res, next) => {
       .createHash('sha256')
       .update(
         JSON.stringify({
-          rows: matrix.length,
-          cols: matrix[0]?.length || 0,
-          head: matrix[0]?.slice(0, 6),
-          mid: matrix[Math.floor(matrix.length / 2)]?.slice(0, 6),
+          version: 2,
+          matrix,
+          groundTruth,
           reduction: reductionConfig,
           clustering: clusteringConfig,
         })
@@ -442,7 +441,7 @@ app.post('/api/experiments', async (req, res, next) => {
       || !(typeof body.silhouetteScore === 'number' || body.silhouetteScore === null)
       || !(typeof body.ari === 'number' || body.ari === null)
       || (body.params !== undefined && !isJsonValue(body.params))) {
-      throw new BadRequestError('Thông tin lưu thí nghiệm không hợp lệ.');
+      throw new BadRequestError('Invalid experiment data.');
     }
 
     const id = await saveExperiment({
@@ -456,7 +455,7 @@ app.post('/api/experiments', async (req, res, next) => {
       params: isRecord(body.params) && isJsonValue(body.params) ? body.params : {},
     });
 
-    sendSuccess(res, { id, message: 'Đã lưu thí nghiệm thành công.' }, 201);
+    sendSuccess(res, { id, message: 'Experiment saved.' }, 201);
   } catch (err) {
     next(err);
   }
@@ -476,7 +475,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, next: expre
   // Bắt lỗi không xác định (Unhandled 500)
   console.error('💥 [Server Internal Error]:', err);
   const message = err instanceof Error ? err.message : String(err);
-  sendError(res, 500, 'INTERNAL_SERVER_ERROR', message || 'Lỗi xử lý nội bộ máy chủ.');
+  sendError(res, 500, 'INTERNAL_SERVER_ERROR', message || 'Internal server error.');
 });
 
 // 14. Initialize Database & Graceful Start

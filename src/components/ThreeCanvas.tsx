@@ -1,27 +1,19 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DataPoint, ColorMode } from '../types';
 import { getErrorMessage } from '../utils/typeGuards';
-import {
-  RotateCcw,
-  Play,
-  Pause,
-  ZoomIn,
-  ZoomOut,
-  Camera,
-  Layers,
-  Compass,
-  Palette,
-  ChevronRight,
-  ChevronLeft,
-  ChevronUp,
-  ChevronDown,
-  Sliders,
-  Flame,
-} from 'lucide-react';
+import { RotateCcw, Orbit, MousePointer2, Minus, Plus, Sliders, Palette, Maximize, Minimize, Focus } from 'lucide-react';
+import { createPlotGrid } from './plotGrid';
+
+type GridMode = 'ground' | 'zero' | 'off';
 
 interface ThreeCanvasProps {
+  active?: boolean;
+  viewKey?: string;
+  snapshotRef?: React.RefObject<(() => void) | null>;
+  hasClustering?: boolean;
   dataPoints: DataPoint[];
   colorMode: ColorMode;
   selectedFeature?: string;
@@ -32,6 +24,7 @@ interface ThreeCanvasProps {
   syncCameraPos?: THREE.Vector3 | null;
   syncTargetPos?: THREE.Vector3 | null;
   titleBadge?: string;
+  showProjectionBadge?: boolean;
   axisFeatures?: string[];
   showCentroids?: boolean;
   pcaComponents?: number[][];
@@ -45,6 +38,10 @@ interface ThreeCanvasProps {
   showOutliersSpotlight?: boolean;
   onToggleOutliersSpotlight?: () => void;
   isComputing?: boolean;
+  isFullscreen?: boolean;
+  toolbarHost?: HTMLDivElement | null;
+  toolbarLabel?: string;
+  onToggleFullscreen?: () => void;
 }
 
 // Categorical palette for cluster coloring (independent from UI theme)
@@ -62,7 +59,11 @@ const CLUSTER_COLORS = [
 ];
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
+  active = true,
   dataPoints = [],
+  viewKey = 'all',
+  snapshotRef,
+  hasClustering = true,
   colorMode,
   selectedFeature,
   onSelectPoint,
@@ -72,8 +73,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   syncCameraPos,
   syncTargetPos,
   titleBadge,
+  showProjectionBadge = true,
   axisFeatures,
-  showCentroids = true,
+  showCentroids = false,
   pcaComponents,
   featureNames,
   showBiplot = false,
@@ -83,16 +85,25 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   showOutliersSpotlight,
   onToggleOutliersSpotlight,
   isComputing = false,
+  isFullscreen = false,
+  toolbarHost,
+  toolbarLabel = '3D view controls',
+  onToggleFullscreen,
+  theme = 'light',
 }) => {
   const canvasMountRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const [hoveredPoint, setHoveredPoint] = useState<DataPoint | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [isAutoRotating, setIsAutoRotating] = useState(false);
-  const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
-  const [pointScale, setPointScale] = useState(1.3);
+  const [viewMode, setViewMode] = useState<'rotate' | 'select'>('rotate');
+  const [gridMode, setGridMode] = useState<GridMode>('ground');
+  const gridNoteId = useId();
+  const viewMenuName = useId();
+  const [pointScale, setPointScale] = useState(0.7);
   const [centroidsVisible, setCentroidsVisible] = useState(showCentroids);
   const [biplotVisible, setBiplotVisible] = useState(showBiplot);
-  const [isLegendExpanded, setIsLegendExpanded] = useState(true);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [internalSpotlight, setInternalSpotlight] = useState(true);
   const isSpotlightActive = showOutliersSpotlight !== undefined ? showOutliersSpotlight : internalSpotlight;
@@ -137,7 +148,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   }, [dataPoints]);
 
   const labelColorMap = useMemo(() => {
-    const map: Record<string, string> = {};
+    const map: Record<string, string> = Object.create(null);
     uniqueLabels.forEach((label, idx) => {
       if (label === 'M' || label === '1') map[label] = '#E15759';
       else if (label === 'B' || label === '0') map[label] = '#59A14F';
@@ -145,6 +156,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     });
     return map;
   }, [uniqueLabels]);
+
+  const legendGroups = useMemo(() => {
+    const counts = new Map<number | string, number>();
+    for (const point of dataPoints) {
+      const group = colorMode === 'cluster' ? point.cluster : String(point.label ?? '').trim();
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort(([a], [b]) => typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b)));
+  }, [dataPoints, colorMode]);
 
   useEffect(() => {
     if (showBiplot !== undefined) {
@@ -168,6 +188,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const centroidGroupRef = useRef<THREE.Group | null>(null);
   const biplotGroupRef = useRef<THREE.Group | null>(null);
   const axesGroupRef = useRef<THREE.Group | null>(null);
+  const gridRef = useRef<ReturnType<typeof createPlotGrid> | null>(null);
   const outlierGroupRef = useRef<THREE.Group | null>(null);
   const isComputingRef = useRef(isComputing);
   isComputingRef.current = isComputing;
@@ -186,8 +207,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const showAxes = true;
 
   // Normalized points to fit cleanly in [-36, 36] coordinate box
-  const normalizedPoints = useMemo(() => {
-    if (dataPoints.length === 0) return [];
+  const { points: normalizedPoints, groundY, zeroY, pointsRelativeToZero } = useMemo(() => {
+    if (dataPoints.length === 0) {
+      return { points: [], groundY: -36, zeroY: 0, pointsRelativeToZero: null };
+    }
 
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
@@ -216,7 +239,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     const scale = 72 / maxRange;
 
-    return dataPoints.map((p) => {
+    const points = dataPoints.map((p) => {
       const px = Number.isFinite(p.x) ? p.x : 0;
       const py = Number.isFinite(p.y) ? p.y : 0;
       const pz = Number.isFinite(p.z) ? p.z : 0;
@@ -227,6 +250,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         z: (pz - midZ) * scale,
       };
     });
+    return {
+      points,
+      groundY: (minY - midY) * scale - 3,
+      zeroY: -midY * scale,
+      pointsRelativeToZero: minY > 0 ? 'above' : maxY < 0 ? 'below' : null,
+    };
   }, [dataPoints]);
 
   const pointsRef = useRef(dataPoints);
@@ -244,7 +273,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     // Scientific Background: #0D1117
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0D1117);
+    scene.background = new THREE.Color(getComputedStyle(container).getPropertyValue('--plot-bg').trim() || '#f7f8fa');
     sceneRef.current = scene;
 
     // Centroid Group
@@ -383,20 +412,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     fillLight.position.set(-60, -40, -60);
     scene.add(fillLight);
 
-    // Subtle Scientific Floor Grid (#303A49 and #1c2430)
-    const gridHelper = new THREE.GridHelper(80, 20, 0x303A49, 0x1a222d);
-    gridHelper.position.y = -36;
-    scene.add(gridHelper);
-
-    // Subtle Bounding Wireframe Box
-    const boxGeo = new THREE.BoxGeometry(72, 72, 72);
-    const boxMat = new THREE.MeshBasicMaterial({
-      color: 0x303A49,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.18,
-    });
-    scene.add(new THREE.Mesh(boxGeo, boxMat));
+    const grid = createPlotGrid(camera.far);
+    gridRef.current = grid;
+    scene.add(grid);
 
     // 3D Coordinate Axes Group
     const axesGroup = new THREE.Group();
@@ -474,7 +492,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     // Keyboard Navigation
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (!activeRef.current) return;
+      const modal = document.querySelector('[role="dialog"][aria-modal="true"]');
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || (modal && !modal.contains(container))
+        || (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable="true"]'))) return;
       if (e.key === 'r' || e.key === 'R') {
         handleResetCamera();
       } else if (e.key === '+' || e.key === '=') {
@@ -489,6 +510,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     let animId: number;
     const animate = () => {
       animId = requestAnimationFrame(animate);
+      if (!activeRef.current) return;
       controls.update();
       // Bulletproof morphing particle transition animation
       if (morphAnimRef.current?.active && instancedMeshRef.current) {
@@ -509,7 +531,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           const curY = from.y + (to.y - from.y) * ease;
           const curZ = from.z + (to.z - from.z) * ease;
 
-          const isSelected = selPt && selPt.id === normalizedPointsRef.current[i]?.id;
+          const isSelected = selPt && (selPt.rowIndex ?? selPt.id) === (normalizedPointsRef.current[i]?.rowIndex ?? normalizedPointsRef.current[i]?.id);
           const r = (isSelected ? 1.9 : 1.0) * curScale;
 
           dummy.position.set(curX, curY, curZ);
@@ -603,6 +625,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         scanGroupRef.current.visible = false;
       }
 
+      grid.position.x = camera.position.x;
+      grid.position.z = camera.position.z;
       renderer.render(scene, camera);
     };
     animate();
@@ -645,9 +669,28 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       if (container.contains(dom)) {
         container.removeChild(dom);
       }
+      controls.dispose();
+      gridRef.current = null;
+      grid.geometry.dispose();
+      grid.material.dispose();
       renderer.dispose();
     };
   }, []);
+
+  useEffect(() => {
+    if (sceneRef.current) sceneRef.current.background = new THREE.Color(theme === 'light' ? '#f7f8fa' : '#0d1117');
+    gridRef.current?.material.uniforms.gridColor.value.set(theme === 'light' ? '#8296ad' : '#697e99');
+  }, [theme, sceneReady]);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    const axes = axesGroupRef.current;
+    if (!grid || !axes) return;
+    const planeY = gridMode === 'zero' ? zeroY : groundY;
+    grid.visible = gridMode !== 'off';
+    grid.position.y = planeY;
+    axes.position.y = planeY;
+  }, [gridMode, groundY, zeroY, sceneReady]);
 
   // Dual Viewport Sync
   useEffect(() => {
@@ -769,7 +812,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     for (let i = 0; i < count; i++) {
       const pt = normalizedPoints[i];
-      const isSelected = selectedPoint && selectedPoint.id === pt.id;
+      const isSelected = selectedPoint && (selectedPoint.rowIndex ?? selectedPoint.id) === (pt.rowIndex ?? pt.id);
       const r = (isSelected ? 1.9 : 1.0) * pointScale;
 
       const startPos = shouldMorph ? fromCoords[i] : toCoords[i];
@@ -782,8 +825,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         color.set('#FFFFFF');
       } else if (isSpotlightActive && (pt.isOutlier || pt.cluster === -1)) {
         color.set('#F43F5E'); // Outlier spotlight warning red (sáng rực rỡ như lúc đầu)
-      } else if (colorMode === 'ground-truth' && pt.label !== undefined && pt.label !== null) {
-        const hex = labelColorMap[String(pt.label)] || '#929EAF';
+      } else if (colorMode === 'ground-truth') {
+        const hex = labelColorMap[String(pt.label ?? '').trim()] || '#929EAF';
         color.set(hex);
       } else if (colorMode === 'cluster') {
         if (pt.cluster === -1) {
@@ -827,7 +870,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
 
     // Centroids visualization
-    if (centroidsVisible && colorMode === 'cluster') {
+    if (centroidsVisible && colorMode === 'cluster' && hasClustering) {
       const clusterSums: Record<number, { x: number; y: number; z: number; count: number }> = {};
       for (const p of normalizedPoints) {
         if (p.cluster === -1) continue;
@@ -860,7 +903,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         centroidGroupRef.current?.add(coreMesh);
       });
     }
-  }, [sceneReady, normalizedPoints, colorMode, selectedFeature, selectedPoint, pointScale, centroidsVisible, dataPoints, labelColorMap, isSpotlightActive]);
+  }, [sceneReady, normalizedPoints, colorMode, selectedFeature, selectedPoint, pointScale, centroidsVisible, dataPoints, labelColorMap, isSpotlightActive, hasClustering]);
 
   // 3. RENDER PCA FEATURE LOADINGS (BIPLOT)
   useEffect(() => {
@@ -906,7 +949,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     });
   }, [sceneReady, biplotVisible, reductionMethod, pcaComponents, featureNames, biplotTopK, biplotScale]);
 
-  // 4. RENDER 3D XYZ COORDINATE AXES (Positioned cleanly at box floor corner [-36, -36, -36])
+  // 4. Render axis guides in local coordinates. The group follows the grid in Y.
   useEffect(() => {
     if (!axesGroupRef.current || !sceneReady) return;
 
@@ -920,13 +963,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     if (!showAxes) return;
 
-    // Corner origin at bottom-back-left of bounding box
-    const origin = new THREE.Vector3(-36, -36, -36);
+    const origin = new THREE.Vector3(-36, 0, -36);
     const axisLength = 72;
 
-    let labelX = 'Trục X';
-    let labelY = 'Trục Y';
-    let labelZ = 'Trục Z';
+    let labelX = 'X axis';
+    let labelY = 'Y axis';
+    let labelZ = 'Z axis';
 
     if (reductionMethod === 'PCA') {
       labelX = 'PC1 (X)';
@@ -953,21 +995,28 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       axesGroupRef.current?.add(sprite);
     };
 
-    // X: Đỏ #EF4444 chạy dọc mép đáy sàn
     createAxis(new THREE.Vector3(1, 0, 0), 0xef4444, labelX);
-    // Y: Xanh lá #10B981 dựng đứng dọc cột góc
     createAxis(new THREE.Vector3(0, 1, 0), 0x10b981, labelY);
-    // Z: Xanh lam #3B82F6 chạy dọc mép sàn trước
     createAxis(new THREE.Vector3(0, 0, 1), 0x3b82f6, labelZ);
   }, [sceneReady, showAxes, reductionMethod, axisFeatures]);
 
 
 
 
+  useEffect(() => {
+    setHoveredPoint(null); setTooltipPos(null); setIsAutoRotating(false);
+    if (cameraRef.current && controlsRef.current) {
+      controlsRef.current.maxDistance = 260;
+      cameraRef.current.position.set(65, 45, 80);
+      controlsRef.current.target.set(0, 0, 0);
+      controlsRef.current.update();
+    }
+  }, [viewKey]);
+
   // 5. SMOOTH CAMERA FLY-TO FOCUS ON SELECTED POINT
   useEffect(() => {
     if (!selectedPoint || !controlsRef.current || !cameraRef.current) return;
-    const pt = normalizedPoints.find((p) => p.id === selectedPoint.id);
+    const pt = normalizedPoints.find((p) => (p.rowIndex ?? p.id) === (selectedPoint.rowIndex ?? selectedPoint.id));
     if (!pt) return;
 
     const targetPos = new THREE.Vector3(pt.x, pt.y, pt.z);
@@ -997,30 +1046,85 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     }
   };
 
+  const handleFitToData = () => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls || normalizedPoints.length === 0) return;
+    const bounds = new THREE.Box3();
+    const point = new THREE.Vector3();
+    for (const { x, y, z } of normalizedPoints) bounds.expandByPoint(point.set(x, y, z));
+    const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+    const verticalHalfFov = THREE.MathUtils.degToRad(camera.getEffectiveFOV() / 2);
+    const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * camera.aspect);
+    const distance = (sphere.radius + pointScale * 2) / Math.sin(Math.min(verticalHalfFov, horizontalHalfFov)) * 1.1;
+    const direction = camera.position.clone().sub(controls.target).normalize();
+    controls.target.copy(sphere.center);
+    // A narrow viewport can require more distance than the default orbit limit.
+    controls.maxDistance = Math.max(260, distance);
+    camera.position.copy(sphere.center).addScaledVector(direction, Math.max(distance, controls.minDistance));
+    controls.update();
+  };
+
   const handleZoom = (inOut: 'in' | 'out') => {
     if (cameraRef.current && controlsRef.current) {
       const factor = inOut === 'in' ? 0.78 : 1.25;
-      cameraRef.current.position.multiplyScalar(factor);
+      const target = controlsRef.current.target;
+      cameraRef.current.position.sub(target).multiplyScalar(factor).add(target);
       controlsRef.current.update();
     }
   };
 
-  const handleTakeSnapshot = () => {
+  const handleTakeSnapshot = useCallback(() => {
     if (!rendererRef.current) return;
     try {
       const dataUrl = rendererRef.current.domElement.toDataURL('image/png');
       const link = document.createElement('a');
-      link.download = `3d_explorer_${reductionMethod.toLowerCase()}_${Date.now()}.png`;
+      link.download = `dimension_lab_${reductionMethod.toLowerCase()}_${Date.now()}.png`;
       link.href = dataUrl;
       link.click();
-    } catch (e: unknown) {
-      setSnapshotError(`Lỗi chụp ảnh: ${getErrorMessage(e)}`);
+    } catch (error: unknown) {
+      setSnapshotError(`Could not capture PNG: ${getErrorMessage(error)}`);
       window.setTimeout(() => setSnapshotError(null), 5000);
     }
-  };
+  }, [reductionMethod]);
+
+  useEffect(() => {
+    if (!sceneReady || !snapshotRef) return;
+    snapshotRef.current = handleTakeSnapshot;
+    return () => { snapshotRef.current = null; };
+  }, [sceneReady, snapshotRef, handleTakeSnapshot]);
+
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    controls.enableRotate = viewMode === 'rotate';
+    controls.enablePan = viewMode === 'rotate';
+  }, [sceneReady, theme, viewMode]);
+
+  const legendTitle = colorMode === 'cluster' ? 'Predicted clusters' : colorMode === 'feature' ? 'Feature scale' : 'Original labels';
+  const toolbar = (
+    <div className="view-toolbar" role="group" aria-label={toolbarLabel}>
+      <div className="view-toolbar-modes" data-mode={viewMode}>
+        <button type="button" title="Rotate view" aria-label="Rotate view" aria-pressed={viewMode === 'rotate'} onClick={() => setViewMode('rotate')}><Orbit size={17} /></button>
+        <button type="button" title="Select point" aria-label="Select point" aria-pressed={viewMode === 'select'} onClick={() => { setViewMode('select'); setIsAutoRotating(false); }}><MousePointer2 size={16} /></button>
+      </div>
+      <span aria-hidden="true" className="view-toolbar-divider" />
+      <button type="button" title="Zoom out (−)" aria-label="Zoom out" onClick={() => handleZoom('out')}><Minus size={17} /></button>
+      <button type="button" title="Zoom in (+)" aria-label="Zoom in" onClick={() => handleZoom('in')}><Plus size={17} /></button>
+      <button type="button" title="Fit to data" aria-label="Fit to data" onClick={handleFitToData}><Focus size={16} /></button>
+      <button type="button" title="Reset view (R)" aria-label="Reset view" onClick={handleResetCamera}><RotateCcw size={16} /></button>
+      {onToggleFullscreen && (
+        <button type="button" data-fullscreen-toggle
+          title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
+          aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'} onClick={onToggleFullscreen}>
+          {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="relative w-full h-full flex flex-row overflow-hidden select-none bg-[#0D1117] text-[#E6EAF0]">
+    <div className="relative w-full h-full flex flex-row overflow-hidden select-none bg-[var(--bg-main)] text-[var(--text-main)]">
       {/* 1. MAIN 3D CANVAS VIEWPORT (Takes maximal area) */}
       <div className="relative flex-1 h-full overflow-hidden">
         {/* Dedicated 3D Canvas Mount Point */}
@@ -1028,282 +1132,80 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
         {/* Error Notification */}
         {snapshotError && (
-          <div role="alert" className="absolute right-4 top-4 z-30 px-3 py-1.5 rounded bg-[#2d1b1f] border border-[#7f1d1d] text-xs text-[#f87171]">
+          <div role="alert" className="absolute right-4 top-4 z-30 px-3 py-1.5 rounded bg-[var(--danger-bg)] border border-[var(--danger-border)] text-xs text-[var(--danger-text)]">
             {snapshotError}
           </div>
         )}
 
         {/* Viewport Header Badge */}
-        <div className="absolute left-3 top-3 z-20 flex items-center gap-2 px-3 py-1.5 rounded bg-[#151B23]/90 border border-[#303A49] text-xs backdrop-blur-sm">
-          <span className="w-2 h-2 rounded-full bg-[#8B9CFB]" />
-          <span className="font-semibold text-[11px] tracking-wide text-[#E6EAF0]">
-            {titleBadge || `KHÔNG GIAN 3D (${reductionMethod})`}
-          </span>
-          <span className="text-[#303A49]">|</span>
-          <span className="font-mono text-[11px] text-[#929EAF]">
-            {dataPoints.length.toLocaleString('vi-VN')} điểm
+        {showProjectionBadge && <div className="view-projection">
+          <span aria-hidden="true">+</span>
+          <span>
+            {titleBadge || `3D PROJECTION (${reductionMethod})`}
           </span>
         </div>
 
+        }
         {/* Axis Info overlay if Raw Data */}
-        {axisFeatures && axisFeatures.length > 0 && (
-          <div className="absolute left-3 top-12 z-20 flex flex-wrap gap-1 max-w-sm">
+        {isFullscreen && axisFeatures && axisFeatures.length > 0 && (
+          <div className="view-axis-info">
             {axisFeatures.map((feat, idx) => (
-              <span key={feat} className="px-2 py-0.5 rounded bg-[#151B23]/90 border border-[#303A49] text-[10px] text-[#929EAF]">
-                Trục {idx === 0 ? 'X' : idx === 1 ? 'Y' : 'Z'}: <strong className="text-[#E6EAF0]">{feat}</strong>
+              <span key={feat} className="px-2 py-0.5 rounded bg-[var(--bg-panel)]/90 border border-[var(--border-subtle)] text-[10px] text-[var(--text-muted)]">
+                Axis {idx === 0 ? 'X' : idx === 1 ? 'Y' : 'Z'}: <strong className="text-[var(--text-main)]">{feat}</strong>
               </span>
             ))}
           </div>
         )}
 
-        {/* Floating Minimal Legend */}
-        {colorMode !== 'ground-truth' && (
-          <div className="absolute left-3 bottom-3 z-20 flex flex-col gap-1 p-2 rounded bg-[#151B23]/90 border border-[#303A49] text-[11px] backdrop-blur-sm">
-            <div
-              onClick={() => setIsLegendExpanded(!isLegendExpanded)}
-              className="flex items-center justify-between gap-3 cursor-pointer select-none text-[10px] uppercase font-semibold text-[#929EAF]"
-            >
-              <div className="flex items-center gap-1.5">
-                <Palette size={11} className="text-[#8B9CFB]" />
-                <span>{colorMode === 'cluster' ? 'Cụm thuật toán' : 'Thang đo đặc trưng'}</span>
+        <details className="view-menu view-legend" name={viewMenuName}>
+          <summary aria-label={`Color legend: ${legendTitle}`} title={legendTitle}><Palette size={16} /></summary>
+          <div className="view-menu-panel view-legend-panel">
+            <strong>{legendTitle}</strong>
+            {colorMode === 'feature' ? (
+              <div className="view-legend-items">
+                <span>{selectedFeature || 'No feature selected'}</span>
+                {selectedFeature && <div className="view-color-scale"><span>Low</span><i /><span>High</span></div>}
               </div>
-              <span className="text-[9px]">{isLegendExpanded ? '▲' : '▼'}</span>
-            </div>
-
-            {isLegendExpanded && (
-              <div className="pt-1.5 border-t border-[#303A49] flex flex-col gap-1">
-                {colorMode === 'cluster' && (
-                  <div className="flex items-center gap-2 flex-wrap max-w-xs">
-                    {CLUSTER_COLORS.slice(0, 6).map((col, idx) => (
-                      <div key={idx} className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: col }} />
-                        <span className="text-[#929EAF] font-mono text-[10px]">C{idx}</span>
-                      </div>
-                    ))}
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-[#64748B] inline-block" />
-                      <span className="text-[#929EAF] font-mono text-[10px]">Nhiễu</span>
-                    </div>
-                  </div>
-                )}
-                {colorMode === 'feature' && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[#38bdf8] font-mono text-[10px]">Thấp</span>
-                    <div className="w-24 h-1.5 rounded bg-gradient-to-r from-blue-500 via-amber-400 to-rose-500" />
-                    <span className="text-[#f87171] font-mono text-[10px]">Cao</span>
-                  </div>
-                )}
-              </div>
+            ) : (
+              <ul className="view-legend-items" aria-label="Groups in the current view">
+                {legendGroups.map(([group, count]) => {
+                  const cluster = typeof group === 'number' ? group : null;
+                  const name = cluster === null ? String(group) || 'Unlabeled' : cluster === -1 ? 'Noise' : 'Cluster ' + cluster;
+                  const swatch = cluster === null ? labelColorMap[String(group)] ?? '#929EAF' : cluster === -1 ? '#64748B' : CLUSTER_COLORS[cluster % CLUSTER_COLORS.length];
+                  return <li key={group}><i style={{ background: swatch }} /><span>{name}</span><small>{count.toLocaleString('en-US')}</small></li>;
+                })}
+              </ul>
             )}
           </div>
-        )}
+        </details>
 
-        {/* Point Hover Tooltip */}
-        {hoveredPoint && tooltipPos && (
-          <div
-            className="fixed z-50 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-3 text-xs p-2.5 rounded border border-[#303A49] bg-[#151B23] text-[#E6EAF0] shadow-xl backdrop-blur-md"
-            style={{ left: `${tooltipPos.x}px`, top: `${tooltipPos.y - 8}px` }}
-          >
-            <div className="flex items-center justify-between gap-4 border-b border-[#303A49] pb-1 mb-1.5">
-              <span className="text-[#8B9CFB] font-mono font-bold">ID: {String(hoveredPoint.id)}</span>
-              {hoveredPoint.label !== undefined && (
-                <span
-                  className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold border"
-                  style={{
-                    backgroundColor: `${labelColorMap[String(hoveredPoint.label)] || '#64748B'}20`,
-                    borderColor: `${labelColorMap[String(hoveredPoint.label)] || '#64748B'}60`,
-                    color: labelColorMap[String(hoveredPoint.label)] || '#E6EAF0',
-                  }}
-                >
-                  Nhãn: {String(hoveredPoint.label)}
-                </span>
+        {!isFullscreen && toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
+          <details className="view-menu view-options" name={viewMenuName}>
+            <summary aria-label="View options" title="View options"><Sliders size={16} /></summary>
+            <div className="view-menu-panel view-options-panel">
+              <label>Grid
+                <select value={gridMode} onChange={event => setGridMode(event.target.value as GridMode)}
+                  aria-describedby={gridMode === 'zero' ? gridNoteId : undefined}>
+                  <option value="ground">Ground grid</option>
+                  <option value="zero">XZ plane (Y = 0)</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+              {gridMode === 'zero' && (
+                <p id={gridNoteId} className="view-grid-note" role="status">
+                  {pointsRelativeToZero ? `All points are ${pointsRelativeToZero} Y = 0.` : 'The grid is at Y = 0 of the plotted data.'}
+                </p>
               )}
+              <button type="button" aria-pressed={isAutoRotating} onClick={() => { setViewMode('rotate'); setIsAutoRotating(value => !value); }}>Auto-rotate</button>
+              <button type="button" aria-pressed={isSpotlightActive} onClick={handleToggleSpotlight}>Highlight outliers</button>
+              <button type="button" aria-pressed={centroidsVisible} onClick={() => setCentroidsVisible(value => !value)}>Show centroids</button>
+              {reductionMethod === 'PCA' && <button type="button" aria-pressed={biplotVisible} onClick={() => onToggleBiplot ? onToggleBiplot() : setBiplotVisible(value => !value)}>PCA biplot</button>}
+              <label>Point size <input type="range" min="0.3" max="2.9" step="0.2" value={pointScale} onChange={event => setPointScale(Number(event.target.value))} /></label>
+              {!snapshotRef && <button type="button" onClick={handleTakeSnapshot}>Export PNG</button>}
             </div>
-            <div className="space-y-0.5 text-[11px] text-[#929EAF]">
-              
-              {(hoveredPoint.cluster === -1 || hoveredPoint.isOutlier) && (
-                <div className="pt-0.5">
-                  <span className="px-1.5 py-0.5 rounded bg-[#2d1b1f] border border-[#7f1d1d] text-[10px] text-[#f87171] font-semibold">
-                    ⚠ Điểm ngoại lai / Nhiễu
-                  </span>
-                </div>
-              )}
-              <div>
-                Cụm:{' '}
-                <strong className="text-[#E6EAF0]">
-                  {hoveredPoint.cluster === -1 ? 'Điểm nhiễu' : `Cụm ${hoveredPoint.cluster}`}
-                </strong>
-              </div>
-              <div className="font-mono text-[10px] text-[#929EAF]">
-                Tọa độ: ({hoveredPoint.x.toFixed(2)}, {hoveredPoint.y.toFixed(2)}, {hoveredPoint.z.toFixed(2)})
-              </div>
-              {selectedFeature && hoveredPoint.originalFeatures[selectedFeature] !== undefined && (
-                <div className="text-[#8B9CFB] pt-0.5 font-mono">
-                  {selectedFeature}: {hoveredPoint.originalFeatures[selectedFeature]}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+          </details>
       </div>
-
-      {/* 2. DYNAMIC FLOATING 3D CONTROLS TOOLBAR (Slide up/down, compact & modern) */}
-        <div className="absolute right-3 top-3 z-30 flex flex-col items-end">
-          {/* Slide Handle / Toggle Pill */}
-          <button
-            type="button"
-            onClick={() => setIsToolbarCollapsed(!isToolbarCollapsed)}
-            title={isToolbarCollapsed ? 'Trượt xuống để mở công cụ 3D' : 'Trượt lên để thu gọn công cụ 3D'}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded border shadow-lg backdrop-blur-md text-[11px] font-medium transition-all ${
-              isToolbarCollapsed
-                ? 'bg-[#151B23]/95 hover:bg-[#202936] border-[#303A49] hover:border-[#8B9CFB]/60 text-[#E6EAF0]'
-                : 'bg-[#202936] border-[#303A49] text-[#929EAF] hover:text-[#E6EAF0]'
-            }`}
-          >
-            <Sliders size={12} className={isToolbarCollapsed ? 'text-[#8B9CFB]' : 'text-[#929EAF]'} />
-            <span className="text-[10px]">Công cụ</span>
-            {isToolbarCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-          </button>
-
-          {/* Sliding Panel */}
-          <div
-            className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              isToolbarCollapsed
-                ? 'max-h-0 opacity-0 pointer-events-none mt-0'
-                : 'max-h-[580px] opacity-100 mt-1.5'
-            }`}
-          >
-            <div className="w-14 rounded-lg border border-[#303A49] bg-[#151B23]/95 backdrop-blur-md shadow-2xl p-1.5 flex flex-col items-center gap-1.5 text-xs">
-              {/* Reset Camera / Fit View */}
-              <button
-                type="button"
-                onClick={handleResetCamera}
-                title="Đặt lại góc nhìn mặc định (phím R)"
-                className="w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded bg-[#202936] hover:bg-[#283547] border border-[#303A49] text-[9px] text-[#E6EAF0] transition-colors"
-              >
-                <RotateCcw size={12} className="text-[#8B9CFB]" />
-                <span>Reset</span>
-              </button>
-
-              {/* Auto-rotate 360 */}
-              <button
-                type="button"
-                onClick={() => setIsAutoRotating(!isAutoRotating)}
-                title={isAutoRotating ? 'Dừng tự xoay' : 'Bật tự xoay 360°'}
-                className={`w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded border text-[9px] transition-colors ${
-                  isAutoRotating
-                    ? 'bg-[#202936] border-[#8B9CFB] text-[#8B9CFB]'
-                    : 'bg-[#202936] hover:bg-[#283547] border-[#303A49] text-[#929EAF] hover:text-[#E6EAF0]'
-                }`}
-              >
-                {isAutoRotating ? <Pause size={12} /> : <Play size={12} />}
-                <span>{isAutoRotating ? 'Dừng' : 'Tự xoay'}</span>
-              </button>
-
-              {/* Zoom In & Out */}
-              <div className="flex items-center gap-1 w-full">
-                <button
-                  type="button"
-                  onClick={() => handleZoom('in')}
-                  title="Phóng to (+)"
-                  className="flex-1 flex items-center justify-center py-1 rounded bg-[#202936] hover:bg-[#283547] border border-[#303A49] text-[#E6EAF0] transition-colors"
-                >
-                  <ZoomIn size={11} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleZoom('out')}
-                  title="Thu nhỏ (-)"
-                  className="flex-1 flex items-center justify-center py-1 rounded bg-[#202936] hover:bg-[#283547] border border-[#303A49] text-[#E6EAF0] transition-colors"
-                >
-                  <ZoomOut size={11} />
-                </button>
-              </div>
-
-              <div className="w-full h-px bg-[#303A49] my-0.5" />
-
-              {/* Outlier Spotlight Toggle Button (DUY NHẤT 1 NÚT) */}
-              <button
-                type="button"
-                onClick={handleToggleSpotlight}
-                title={isSpotlightActive ? 'Tắt chế độ soi sáng Outlier' : 'Bật chế độ soi sáng Outlier'}
-                className={`w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded border text-[9px] font-medium transition-all ${
-                  isSpotlightActive
-                    ? 'bg-[#2d1b1f] border-[#f43f5e] text-[#f87171] shadow-sm'
-                    : 'bg-[#202936] hover:bg-[#283547] border-[#303A49] text-[#929EAF] hover:text-[#E6EAF0]'
-                }`}
-              >
-                <Flame size={12} className={isSpotlightActive ? 'animate-pulse text-[#f43f5e]' : ''} />
-                <span>{isSpotlightActive ? 'Tắt soi' : 'Soi Outlier'}</span>
-              </button>
-
-              {/* Centroids Toggle */}
-              <button
-                type="button"
-                onClick={() => setCentroidsVisible(!centroidsVisible)}
-                title={centroidsVisible ? 'Ẩn tâm cụm' : 'Hiện tâm cụm'}
-                className={`w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded border text-[9px] transition-colors ${
-                  centroidsVisible
-                    ? 'bg-[#202936] border-[#fbbf24] text-[#fbbf24]'
-                    : 'bg-[#202936] hover:bg-[#283547] border-[#303A49] text-[#929EAF]'
-                }`}
-              >
-                <Layers size={12} />
-                <span>Tâm cụm</span>
-              </button>
-
-              {/* Biplot toggle (PCA only) */}
-              {reductionMethod === 'PCA' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onToggleBiplot) onToggleBiplot();
-                    else setBiplotVisible(!biplotVisible);
-                  }}
-                  title={biplotVisible ? 'Ẩn véc-tơ PCA Biplot' : 'Hiện véc-tơ PCA Biplot'}
-                  className={`w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded border text-[9px] transition-colors ${
-                    biplotVisible
-                      ? 'bg-[#202936] border-[#8B9CFB] text-[#8B9CFB]'
-                      : 'bg-[#202936] hover:bg-[#283547] border-[#303A49] text-[#929EAF]'
-                  }`}
-                >
-                  <Compass size={12} />
-                  <span>Biplot</span>
-                </button>
-              )}
-
-              {/* Point Scale Control */}
-              <div className="w-full flex flex-col items-center gap-0.5 py-1 px-1 rounded bg-[#202936] border border-[#303A49] text-[9px]">
-                <span className="text-[#929EAF] text-[8px] uppercase">Cỡ điểm</span>
-                <input
-                  type="range"
-                  min="0.6"
-                  max="3.0"
-                  step="0.2"
-                  value={pointScale}
-                  onChange={(e) => setPointScale(parseFloat(e.target.value))}
-                  className="w-10 h-1 cursor-pointer accent-[#8B9CFB]"
-                  title={`Kích thước: ${pointScale.toFixed(1)}x`}
-                />
-                <span className="font-mono text-[#8B9CFB] text-[8px]">{pointScale.toFixed(1)}x</span>
-              </div>
-
-              <div className="w-full h-px bg-[#303A49] my-0.5" />
-
-              {/* Snapshot */}
-              <button
-                type="button"
-                onClick={handleTakeSnapshot}
-                title="Chụp ảnh 3D phân giải cao (PNG)"
-                className="w-full flex flex-col items-center justify-center gap-0.5 py-1.5 rounded bg-[#162a23] hover:bg-[#1f3b31] border border-[#065f46] text-[9px] text-[#34d399] transition-colors"
-              >
-                <Camera size={12} />
-                <span>Chụp</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+    </div>
   );
 };
 
@@ -1313,7 +1215,7 @@ function createTextLabelSprite(text: string, strokeColor: string = '#8B9CFB'): T
   canvas.height = 64;
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    ctx.fillStyle = 'rgba(21, 27, 35, 0.9)';
+    ctx.fillStyle = 'rgba(250, 250, 247, 0.94)';
     ctx.roundRect(4, 4, 248, 56, 8);
     ctx.fill();
     ctx.strokeStyle = strokeColor;
@@ -1321,7 +1223,7 @@ function createTextLabelSprite(text: string, strokeColor: string = '#8B9CFB'): T
     ctx.roundRect(4, 4, 248, 56, 8);
     ctx.stroke();
 
-    ctx.fillStyle = '#E6EAF0';
+    ctx.fillStyle = '#344438';
     ctx.font = 'bold 20px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

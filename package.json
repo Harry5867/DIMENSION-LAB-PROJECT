@@ -9,7 +9,8 @@
     "dev:all": "concurrently -k -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"tsx watch server/index.ts\" \"vite\"",
     "dev:host": "concurrently -k -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"tsx server/index.ts\" \"vite --host 0.0.0.0 --port 3000\"",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --import tsx --test tests/exploration.test.ts tests/ux.test.ts tests/terrain.test.ts tests/stories.test.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

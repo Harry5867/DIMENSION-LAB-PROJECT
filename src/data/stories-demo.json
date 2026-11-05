@@ -1,0 +1,422 @@
+[
+  {
+    "id": "demo-01",
+    "title": "Healthcare within reach",
+    "category": "Healthcare",
+    "country": "Vietnam",
+    "city": "Hanoi",
+    "placeId": 1159151251,
+    "latitude": 21.0285,
+    "longitude": 105.8542,
+    "imageUrl": "stories/demo-01.svg",
+    "imageAlt": "Original healthcare illustration; not a photograph of Hanoi.",
+    "description": "An illustrative question about Hanoi: how could clinic locations, journey time, service coverage be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: clinic locations, journey time, service coverage. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-02",
+    "title": "A map of care",
+    "category": "Healthcare",
+    "country": "Kenya",
+    "city": "Nairobi",
+    "placeId": 1159151597,
+    "latitude": -1.2814,
+    "longitude": 36.8147,
+    "imageUrl": "stories/demo-02.svg",
+    "imageAlt": "Original healthcare illustration; not a photograph of Nairobi.",
+    "description": "An illustrative question about Nairobi: how could facility locations, catchment areas, accessibility be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: facility locations, catchment areas, accessibility. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-03",
+    "title": "Connecting health services",
+    "category": "Healthcare",
+    "country": "Canada",
+    "city": "Ottawa",
+    "placeId": 1159151059,
+    "latitude": 45.4186,
+    "longitude": -75.702,
+    "imageUrl": "stories/demo-03.svg",
+    "imageAlt": "Original healthcare illustration; not a photograph of Ottawa.",
+    "description": "An illustrative question about Ottawa: how could service locations, transport links, travel distance be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: service locations, transport links, travel distance. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-04",
+    "title": "Learning across a city",
+    "category": "Education",
+    "country": "France",
+    "city": "Paris",
+    "placeId": 1159151613,
+    "latitude": 48.8686,
+    "longitude": 2.3314,
+    "imageUrl": "stories/demo-04.svg",
+    "imageAlt": "Original education illustration; not a photograph of Paris.",
+    "description": "An illustrative question about Paris: how could school locations, transit access, neighborhood features be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: school locations, transit access, neighborhood features. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-05",
+    "title": "Pathways to learning",
+    "category": "Education",
+    "country": "India",
+    "city": "New Delhi",
+    "placeId": 1159151541,
+    "latitude": 28.6,
+    "longitude": 77.2,
+    "imageUrl": "stories/demo-05.svg",
+    "imageAlt": "Original education illustration; not a photograph of New Delhi.",
+    "description": "An illustrative question about New Delhi: how could campus locations, accessibility, local amenities be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: campus locations, accessibility, local amenities. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-06",
+    "title": "An atlas of learning",
+    "category": "Education",
+    "country": "Argentina",
+    "city": "Buenos Aires",
+    "placeId": 1159151559,
+    "latitude": -34.6006,
+    "longitude": -58.3995,
+    "imageUrl": "stories/demo-06.svg",
+    "imageAlt": "Original education illustration; not a photograph of Buenos Aires.",
+    "description": "An illustrative question about Buenos Aires: how could learning spaces, journeys, neighborhood context be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: learning spaces, journeys, neighborhood context. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-07",
+    "title": "The geography of exchange",
+    "category": "Finance",
+    "country": "United Kingdom",
+    "city": "London",
+    "placeId": 1159151577,
+    "latitude": 51.5019,
+    "longitude": -0.1187,
+    "imageUrl": "stories/demo-07.svg",
+    "imageAlt": "Original finance illustration; not a photograph of London.",
+    "description": "An illustrative question about London: how could financial service locations, connectivity, accessibility be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: financial service locations, connectivity, accessibility. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-08",
+    "title": "Networks of exchange",
+    "category": "Finance",
+    "country": "Singapore",
+    "city": "Singapore",
+    "placeId": 1159151627,
+    "latitude": 1.295,
+    "longitude": 103.8539,
+    "imageUrl": "stories/demo-08.svg",
+    "imageAlt": "Original finance illustration; not a photograph of Singapore.",
+    "description": "An illustrative question about Singapore: how could service locations, network links, geographic distance be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: service locations, network links, geographic distance. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-09",
+    "title": "Reading financial access",
+    "category": "Finance",
+    "country": "United States of America",
+    "city": "Washington, D.C.",
+    "placeId": 1159151573,
+    "latitude": 38.9015,
+    "longitude": -77.0114,
+    "imageUrl": "stories/demo-09.svg",
+    "imageAlt": "Original finance illustration; not a photograph of Washington, D.C..",
+    "description": "An illustrative question about Washington, D.C.: how could service coverage, location features, travel time be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: service coverage, location features, travel time. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-10",
+    "title": "A city of connections",
+    "category": "Economy",
+    "country": "Germany",
+    "city": "Berlin",
+    "placeId": 1159151529,
+    "latitude": 52.5238,
+    "longitude": 13.3996,
+    "imageUrl": "stories/demo-10.svg",
+    "imageAlt": "Original economy illustration; not a photograph of Berlin.",
+    "description": "An illustrative question about Berlin: how could workplace locations, transport links, spatial features be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: workplace locations, transport links, spatial features. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-11",
+    "title": "Patterns of daily activity",
+    "category": "Economy",
+    "country": "Mexico",
+    "city": "Mexico City",
+    "placeId": 1159151587,
+    "latitude": 19.4444,
+    "longitude": -99.1329,
+    "imageUrl": "stories/demo-11.svg",
+    "imageAlt": "Original economy illustration; not a photograph of Mexico City.",
+    "description": "An illustrative question about Mexico City: how could activity locations, mobility links, land use be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: activity locations, mobility links, land use. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-12",
+    "title": "Following urban connections",
+    "category": "Economy",
+    "country": "Indonesia",
+    "city": "Jakarta",
+    "placeId": 1159151599,
+    "latitude": -6.1725,
+    "longitude": 106.8275,
+    "imageUrl": "stories/demo-12.svg",
+    "imageAlt": "Original economy illustration; not a photograph of Jakarta.",
+    "description": "An illustrative question about Jakarta: how could workplace locations, travel patterns, accessibility be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: workplace locations, travel patterns, accessibility. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-13",
+    "title": "Spaces to move",
+    "category": "Sports",
+    "country": "Japan",
+    "city": "Tokyo",
+    "placeId": 1159151609,
+    "latitude": 35.687,
+    "longitude": 139.7495,
+    "imageUrl": "stories/demo-13.svg",
+    "imageAlt": "Original sports illustration; not a photograph of Tokyo.",
+    "description": "An illustrative question about Tokyo: how could venue locations, park access, travel distance be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: venue locations, park access, travel distance. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-14",
+    "title": "A landscape for movement",
+    "category": "Sports",
+    "country": "Australia",
+    "city": "Canberra",
+    "placeId": 1159151161,
+    "latitude": -35.283,
+    "longitude": 149.129,
+    "imageUrl": "stories/demo-14.svg",
+    "imageAlt": "Original sports illustration; not a photograph of Canberra.",
+    "description": "An illustrative question about Canberra: how could sports venues, green spaces, accessibility be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: sports venues, green spaces, accessibility. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-15",
+    "title": "The city as a playground",
+    "category": "Sports",
+    "country": "Brazil",
+    "city": "Brasília",
+    "placeId": 1159151443,
+    "latitude": -15.7814,
+    "longitude": -47.918,
+    "imageUrl": "stories/demo-15.svg",
+    "imageAlt": "Original sports illustration; not a photograph of Brasília.",
+    "description": "An illustrative question about Brasília: how could recreation locations, paths, neighborhood context be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: recreation locations, paths, neighborhood context. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-16",
+    "title": "Reading a greener landscape",
+    "category": "Environment",
+    "country": "New Zealand",
+    "city": "Wellington",
+    "placeId": 1159151699,
+    "latitude": -41.3,
+    "longitude": 174.7833,
+    "imageUrl": "stories/demo-16.svg",
+    "imageAlt": "Original environment illustration; not a photograph of Wellington.",
+    "description": "An illustrative question about Wellington: how could green-space locations, land cover, local connections be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: green-space locations, land cover, local connections. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-17",
+    "title": "Where city meets landscape",
+    "category": "Environment",
+    "country": "Egypt",
+    "city": "Cairo",
+    "placeId": 1159151603,
+    "latitude": 30.0519,
+    "longitude": 31.248,
+    "imageUrl": "stories/demo-17.svg",
+    "imageAlt": "Original environment illustration; not a photograph of Cairo.",
+    "description": "An illustrative question about Cairo: how could land cover, open spaces, geographic context be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: land cover, open spaces, geographic context. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-18",
+    "title": "A network of green spaces",
+    "category": "Environment",
+    "country": "South Africa",
+    "city": "Pretoria",
+    "placeId": 1159150661,
+    "latitude": -25.705,
+    "longitude": 28.2275,
+    "imageUrl": "stories/demo-18.svg",
+    "imageAlt": "Original environment illustration; not a photograph of Pretoria.",
+    "description": "An illustrative question about Pretoria: how could park locations, spatial connectivity, accessibility be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: park locations, spatial connectivity, accessibility. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-19",
+    "title": "Connected places",
+    "category": "Technology",
+    "country": "South Korea",
+    "city": "Seoul",
+    "placeId": 1159151523,
+    "latitude": 37.5683,
+    "longitude": 126.9978,
+    "imageUrl": "stories/demo-19.svg",
+    "imageAlt": "Original technology illustration; not a photograph of Seoul.",
+    "description": "An illustrative question about Seoul: how could network locations, connectivity, spatial distance be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: network locations, connectivity, spatial distance. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-20",
+    "title": "A city of digital connections",
+    "category": "Technology",
+    "country": "Finland",
+    "city": "Helsinki",
+    "placeId": 1159151419,
+    "latitude": 60.1775,
+    "longitude": 24.9322,
+    "imageUrl": "stories/demo-20.svg",
+    "imageAlt": "Original technology illustration; not a photograph of Helsinki.",
+    "description": "An illustrative question about Helsinki: how could service locations, network links, accessibility be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: service locations, network links, accessibility. No linked measurement dataset.",
+    "demo": true
+  },
+  {
+    "id": "demo-21",
+    "title": "The shape of a network",
+    "category": "Technology",
+    "country": "United Arab Emirates",
+    "city": "Abu Dhabi",
+    "placeId": 1159150565,
+    "latitude": 24.4667,
+    "longitude": 54.3666,
+    "imageUrl": "stories/demo-21.svg",
+    "imageAlt": "Original technology illustration; not a photograph of Abu Dhabi.",
+    "description": "An illustrative question about Abu Dhabi: how could infrastructure locations, connections, geographic features be explored together? This concept story contains no measured results.",
+    "year": 2026,
+    "source": {
+      "label": "Dimension Lab original demonstration",
+      "url": null
+    },
+    "datasetReference": "Example data fields: infrastructure locations, connections, geographic features. No linked measurement dataset.",
+    "demo": true
+  }
+]

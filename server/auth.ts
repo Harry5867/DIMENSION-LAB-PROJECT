@@ -15,19 +15,19 @@ export const DEMO_USERS: Record<string, AuthUser> = {
   admin_token: {
     id: 'user_01',
     username: 'admin',
-    name: 'Quản trị viên Hệ thống',
+    name: 'System Administrator',
     role: 'admin',
   },
   researcher_token: {
     id: 'user_02',
     username: 'researcher',
-    name: 'Chuyên viên Nghiên cứu',
+    name: 'Researcher',
     role: 'researcher',
   },
   viewer_token: {
     id: 'user_03',
     username: 'viewer',
-    name: 'Khách tham quan (Chỉ xem)',
+    name: 'Viewer',
     role: 'viewer',
   },
 };
@@ -51,7 +51,7 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
   const user = DEMO_USERS[token];
 
   if (!user) {
-    return next(new UnauthorizedError('Mã Token xác thực không hợp lệ hoặc đã hết hạn.'));
+    return next(new UnauthorizedError('Invalid or expired access token.'));
   }
 
   req.user = user;
@@ -63,7 +63,7 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
  */
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   if (!req.user) {
-    return next(new UnauthorizedError('Bạn cần đăng nhập để thực hiện hành động này.'));
+    return next(new UnauthorizedError('Sign in to do this.'));
   }
   next();
 }
@@ -75,13 +75,13 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
 export function requireRole(allowedRoles: UserRole[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return next(new UnauthorizedError('Yêu cầu đăng nhập để kiểm tra quyền truy cập.'));
+      return next(new UnauthorizedError('Sign in to verify access.'));
     }
 
     if (!allowedRoles.includes(req.user.role)) {
       return next(
         new ForbiddenError(
-          `Tài khoản (${req.user.role}) không có quyền thực hiện thao tác này (HTTP 403). Thao tác yêu cầu quyền: [${allowedRoles.join(', ')}].`
+          `The ${req.user.role} role cannot do this. Required roles: [${allowedRoles.join(', ')}].`
         )
       );
     }

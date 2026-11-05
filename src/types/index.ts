@@ -29,6 +29,7 @@ export interface DatasetSummary {
   id_column: string | null;
   created_at: string;
   is_preloaded?: boolean;
+  is_local?: boolean;
 }
 
 export interface ExperimentRecord {
@@ -78,6 +79,8 @@ export interface SystemHealth {
 }
 
 export interface DataPoint {
+  /** Stable source-row identity, independent of a user-provided (possibly duplicate) ID. */
+  rowIndex?: number;
   id: string | number | boolean;
   originalFeatures: Record<string, number>;
   label?: DataValue;

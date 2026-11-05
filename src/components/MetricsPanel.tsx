@@ -9,6 +9,12 @@ const CLUSTER_COLORS = [
 ];
 
 interface MetricsPanelProps {
+  layout?: 'docked' | 'sidebar';
+  resultsDirty?: boolean;
+  previousResult?: boolean;
+  runConfiguration?: React.ReactNode;
+  focusedCluster?: number | null;
+  onFocusCluster?: (cluster: number | null) => void;
   metrics: EvaluationMetrics;
   reductionMethod: ReductionMethod;
   clusteringMethod?: string;
@@ -29,14 +35,20 @@ interface MetricsPanelProps {
   prunedCount?: number;
   dataPoints?: DataPoint[];
   onSelectPoint?: (point: DataPoint | null) => void;
-  onDeletePoint?: (pointId: string | number | boolean) => void;
+  onDeletePoint?: (pointId: string | number | boolean, rowIndex?: number) => void;
 }
 
 export const MetricsPanel: React.FC<MetricsPanelProps> = ({
+  layout = 'docked',
+  resultsDirty = false,
+  previousResult = resultsDirty,
+  runConfiguration,
+  focusedCluster = null,
+  onFocusCluster,
   metrics,
   reductionMethod,
   clusteringMethod = 'K-Means',
-  datasetName = 'Chưa chọn',
+  datasetName = 'No dataset',
   totalRows = 0,
   hasGroundTruth,
   hasResults,
@@ -70,52 +82,77 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
   } = metrics || {};
 
   // Process status descriptor
-  const statusBadge = isComputing ? (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#202936] text-[#8B9CFB] border border-[#303A49]">
-      <span className="w-1.5 h-1.5 rounded-full bg-[#8B9CFB] animate-ping" />
-      Đang xử lý...
+  const statusBadge = previousResult ? (
+    <span className="result-stale">Previous result</span>
+  ) : isComputing ? (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[var(--bg-interactive)] text-[var(--accent-primary)] border border-[var(--border-subtle)]">
+      <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-primary)] animate-ping" />
+      Analyzing…
     </span>
   ) : hasResults ? (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#162a23] text-[#34d399] border border-[#065f46]">
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[var(--success-bg)] text-[var(--success-text)] border border-[var(--success-border)]">
       <CheckCircle2 size={12} />
-      Sẵn sàng
+      Complete
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#202936] text-[#929EAF] border border-[#303A49]">
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[var(--bg-interactive)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
       <Clock size={12} />
-      Chờ phân tích
+      Ready
     </span>
   );
 
   const displayTime = metrics.executionTimeMs ?? executionTimeMs;
 
+  if (layout === 'sidebar') {
+    const score = (value: number | null) => value !== null && Number.isFinite(value) ? value.toFixed(3) : '—';
+    const total = Object.values(clusterCounts).reduce((sum, count) => sum + count, 0) + noiseCount;
+    return (
+      <div className="insights-panel">
+        <div className="insights-heading"><span className="workspace-eyebrow">ANALYSIS METRICS</span>{statusBadge}</div>
+        <section className="insights-score"><span>Silhouette score</span><div><strong>{score(silhouetteScore)}</strong><small>{silhouetteScore === null ? 'NOT AVAILABLE' : '3D SPACE'}</small></div><div className="score-track"><span style={{ width: silhouetteScore === null || !Number.isFinite(silhouetteScore) ? '0%' : Math.max(0, Math.min(100, (silhouetteScore + 1) * 50)) + '%' }} /></div><div className="score-bounds"><span>−1.0</span><span>1.0</span></div></section>
+        <dl className="insights-facts"><div><dt>Adjusted Rand Index</dt><dd>{hasGroundTruth ? score(adjustedRandIndex) : 'No labels'}</dd></div><div><dt>Processing time</dt><dd>{displayTime == null ? '—' : (displayTime / 1000).toFixed(2) + ' s'}</dd></div><div><dt>Normalization</dt><dd>{normalization}</dd></div></dl>
+
+        {runConfiguration}
+        <section className="insights-clusters"><div className="insights-heading"><span className="workspace-eyebrow">CLUSTERS</span><span>{Object.keys(clusterCounts).length.toString().padStart(2, '0')}</span></div>{Object.entries(clusterCounts).map(([cluster, count]) => <button className="insights-cluster" key={cluster} aria-label={'Isolate cluster ' + cluster} aria-pressed={focusedCluster === Number(cluster)} onClick={() => onFocusCluster?.(Number(cluster))} disabled={isComputing || !onFocusCluster}><span className="cluster-dot" style={{ background: CLUSTER_COLORS[Number(cluster) % CLUSTER_COLORS.length] }} /><span>Cluster {cluster}</span><span>{count.toLocaleString('en-US')}</span><small>{total > 0 ? Math.round(count / total * 100) : 0}%</small></button>)}{noiseCount > 0 && <button className="insights-cluster" aria-label="Isolate noise" aria-pressed={focusedCluster === -1} onClick={() => onFocusCluster?.(-1)} disabled={isComputing || !onFocusCluster}><span className="cluster-dot" style={{ background: '#a18a7a' }} /><span>Noise</span><span>{noiseCount}</span></button>}{Object.keys(clusterCounts).length === 0 && <p className="insights-hint">Run clustering to see groups.</p>}</section>
+        <p className="insights-hint">{focusedCluster === null ? 'Select a cluster to isolate it.' : 'Metrics and CSV cover all result points.'}</p>
+        {focusedCluster !== null && <button className="focus-exit" onClick={() => onFocusCluster?.(null)}>← Show all points</button>}
+        <details className="insights-more"><summary>More insights</summary>
+        {reductionMethod === 'PCA' && explainedVariance && <section className="insights-variance"><p className="workspace-eyebrow">PCA VARIANCE</p>{explainedVariance.map((value, i) => <div key={i}><span>PC{i + 1}</span><progress max={1} value={value} aria-label={'Variance for PC' + (i + 1)} /><strong>{(value * 100).toFixed(1)}%</strong></div>)}</section>}
+        <div className="insights-management"><button onClick={onSaveExperiment} disabled={!hasResults || isSaving || isComputing || resultsDirty}><Save size={13} />{isSaving ? 'Saving…' : 'Save experiment'}</button><button onClick={onOpenHistory}><Database size={13} />History</button></div>
+        {hasResults && <div className="insights-management">{isPruned ? <button onClick={onRestorePoints} disabled={!onRestorePoints || isComputing}><RotateCcw size={13} />Restore ({prunedCount})</button> : <button onClick={onPruneOutliers} disabled={outliers.length === 0 || isComputing || !onPruneOutliers}><Filter size={13} />Filter outliers ({outliers.length})</button>}</div>}
+        {outliers.length > 0 && <details className="insights-outliers"><summary>Outliers · {outliers.length}</summary>{outliers.slice(0, 15).map((point, index) => <div key={index}><button onClick={() => onSelectPoint?.(point)} disabled={!onSelectPoint || isComputing}>ID {String(point.id)} ↗</button><button onClick={() => onDeletePoint?.(point.id, point.rowIndex)} disabled={isComputing || !onDeletePoint} aria-label={'Remove point ' + String(point.id)}><Trash2 size={12} /></button></div>)}</details>}
+        </details>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full bg-[#151B23] border-t border-[#303A49] text-[#E6EAF0] text-xs select-none">
+    <div className="w-full bg-[var(--bg-panel)] border-t border-[var(--border-subtle)] text-[var(--text-main)] text-xs select-none">
       {/* 1. DOCKED SCIENTIFIC RESULTS BAR */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 min-h-[46px]">
         {/* Left Section: Dataset context & Pipeline Status */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 pr-3 border-r border-[#303A49]">
-            <Activity size={14} className="text-[#8B9CFB]" />
-            <span className="font-semibold text-[11px] tracking-wider uppercase text-[#E6EAF0]">
-              KẾT QUẢ PHÂN TÍCH
+          <div className="flex items-center gap-2 pr-3 border-r border-[var(--border-subtle)]">
+            <Activity size={14} className="text-[var(--accent-primary)]" />
+            <span className="font-semibold text-[11px] tracking-wider uppercase text-[var(--text-main)]">
+              ANALYSIS RESULTS
             </span>
           </div>
 
-          <div className="flex items-center gap-2 text-[11px] text-[#929EAF]">
-            <span className="text-[#E6EAF0] font-medium truncate max-w-[140px]" title={datasetName}>
+          <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
+            <span className="text-[var(--text-main)] font-medium truncate max-w-[140px]" title={datasetName}>
               {datasetName}
             </span>
-            <span className="text-[#303A49]">|</span>
-            <span className="font-mono text-[#929EAF]">{totalRows.toLocaleString('vi-VN')} mẫu</span>
+            <span className="text-[var(--border-subtle)]">|</span>
+            <span className="font-mono text-[var(--text-muted)]">{totalRows.toLocaleString('en-US')} points</span>
           </div>
 
           <div className="hidden sm:flex items-center gap-1.5 text-[11px]">
-            <span className="px-1.5 py-0.5 rounded bg-[#202936] text-[#8B9CFB] font-mono border border-[#303A49]">
+            <span className="px-1.5 py-0.5 rounded bg-[var(--bg-interactive)] text-[var(--accent-primary)] font-mono border border-[var(--border-subtle)]">
               {reductionMethod}
             </span>
-            <span className="text-[#929EAF]">+</span>
-            <span className="px-1.5 py-0.5 rounded bg-[#202936] text-[#E6EAF0] font-mono border border-[#303A49]">
+            <span className="text-[var(--text-muted)]">+</span>
+            <span className="px-1.5 py-0.5 rounded bg-[var(--bg-interactive)] text-[var(--text-main)] font-mono border border-[var(--border-subtle)]">
               {clusteringMethod}
             </span>
           </div>
@@ -123,8 +160,8 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
           {statusBadge}
 
           {displayTime !== null && displayTime !== undefined && displayTime > 0 && (
-            <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-mono text-[#929EAF]">
-              <Clock size={11} className="text-[#929EAF]" />
+            <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-mono text-[var(--text-muted)]">
+              <Clock size={11} className="text-[var(--text-muted)]" />
               {displayTime} ms
             </span>
           )}
@@ -133,38 +170,38 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
         {/* Center/Right Section: Key Metrics Display */}
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* Silhouette Score Metric */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#202936] border border-[#303A49] text-[11px]">
-            <span className="text-[#929EAF]">Silhouette:</span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)] text-[11px]">
+            <span className="text-[var(--text-muted)]">Silhouette:</span>
             {silhouetteScore !== null ? (
-              <span className={`font-mono font-semibold ${silhouetteScore >= 0.5 ? 'text-[#34d399]' : silhouetteScore >= 0.25 ? 'text-[#fbbf24]' : 'text-[#f87171]'}`}>
+              <span className={`font-mono font-semibold ${silhouetteScore >= 0.5 ? 'text-[var(--success-text)]' : silhouetteScore >= 0.25 ? 'text-[#fbbf24]' : 'text-[var(--danger-text)]'}`}>
                 {silhouetteScore.toFixed(3)}
               </span>
             ) : (
-              <span className="text-[#929EAF] italic text-[10px]" title="Cần chạy phân cụm với k >= 2 để tính Silhouette">
-                Chưa phân cụm
+              <span className="text-[var(--text-muted)] italic text-[10px]" title="Silhouette requires at least two clusters">
+                Not clustered
               </span>
             )}
           </div>
 
           {/* Adjusted Rand Index Metric */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#202936] border border-[#303A49] text-[11px]">
-            <span className="text-[#929EAF]">ARI:</span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)] text-[11px]">
+            <span className="text-[var(--text-muted)]">ARI:</span>
             {adjustedRandIndex !== null ? (
-              <span className={`font-mono font-semibold ${adjustedRandIndex >= 0.6 ? 'text-[#34d399]' : adjustedRandIndex >= 0.3 ? 'text-[#38bdf8]' : 'text-[#f87171]'}`}>
+              <span className={`font-mono font-semibold ${adjustedRandIndex >= 0.6 ? 'text-[var(--success-text)]' : adjustedRandIndex >= 0.3 ? 'text-[#38bdf8]' : 'text-[var(--danger-text)]'}`}>
                 {adjustedRandIndex.toFixed(3)}
               </span>
             ) : (
-              <span className="text-[#929EAF] italic text-[10px]" title={hasGroundTruth ? 'Cần áp dụng phân cụm để so sánh nhãn' : 'Dataset không có cột nhãn tham chiếu ground-truth'}>
-                {hasGroundTruth ? 'Chưa phân cụm' : 'Không có nhãn gốc'}
+              <span className="text-[var(--text-muted)] italic text-[10px]" title={hasGroundTruth ? 'Apply clustering to compare labels' : 'This dataset has no ground-truth labels'}>
+                {hasGroundTruth ? 'Not clustered' : 'No ground-truth labels'}
               </span>
             )}
           </div>
 
           {/* PCA Total Variance Explained */}
           {reductionMethod === 'PCA' && totalVarianceExplained !== undefined && (
-            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#202936] border border-[#303A49] text-[11px]">
-              <span className="text-[#929EAF]">Phương sai 3D:</span>
-              <span className="font-mono font-semibold text-[#8B9CFB]">
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)] text-[11px]">
+              <span className="text-[var(--text-muted)]">3D variance:</span>
+              <span className="font-mono font-semibold text-[var(--accent-primary)]">
                 {(totalVarianceExplained * 100).toFixed(1)}%
               </span>
             </div>
@@ -178,38 +215,38 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                 <button
                   type="button"
                   onClick={onPruneOutliers}
-                  title="Lọc bỏ các điểm ngoại lai / điểm nhiễu khỏi không gian 3D"
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#2d1b1f] hover:bg-[#3d242a] border border-[#7f1d1d] text-[11px] font-medium text-[#f87171] transition-colors"
+                  title="Hide outliers and noise in 3D"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[var(--danger-bg)] hover:bg-[#3d242a] border border-[var(--danger-border)] text-[11px] font-medium text-[var(--danger-text)] transition-colors"
                 >
                   <Trash2 size={12} />
-                  <span>Lọc Outlier ({metrics.outlierCount || metrics.noiseCount})</span>
+                  <span>Filter outliers ({metrics.outlierCount || metrics.noiseCount})</span>
                 </button>
               ) : isPruned && onRestorePoints ? (
                 <button
                   type="button"
                   onClick={onRestorePoints}
-                  title="Khôi phục lại toàn bộ dữ liệu ban đầu"
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#162a23] hover:bg-[#1f3b31] border border-[#065f46] text-[11px] font-medium text-[#34d399] transition-colors"
+                  title="Restore all points"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[var(--success-bg)] hover:bg-[#1f3b31] border border-[var(--success-border)] text-[11px] font-medium text-[var(--success-text)] transition-colors"
                 >
                   <RotateCcw size={12} />
-                  <span>Khôi phục ({prunedCount})</span>
+                  <span>Restore ({prunedCount})</span>
                 </button>
               ) : null}
             </div>
           )}
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-1.5 pl-2 border-l border-[#303A49]">
+          <div className="flex items-center gap-1.5 pl-2 border-l border-[var(--border-subtle)]">
             {onSaveExperiment && (
               <button
                 type="button"
                 onClick={onSaveExperiment}
                 disabled={isSaving || !hasResults}
-                title={hasResults ? 'Lưu cấu hình & chỉ số vào MongoDB' : 'Cần chạy phân tích trước khi lưu'}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#202936] hover:bg-[#2a3647] border border-[#303A49] hover:border-[#8B9CFB] text-[11px] font-medium text-[#E6EAF0] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title={hasResults ? 'Save configuration and metrics' : 'Run analysis before saving'}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] hover:border-[var(--accent-primary)] text-[11px] font-medium text-[var(--text-main)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Save size={12} className="text-[#34d399]" />
-                <span>{isSaving ? 'Đang lưu...' : 'Lưu kết quả'}</span>
+                <Save size={12} className="text-[var(--success-text)]" />
+                <span>{isSaving ? 'Saving…' : 'Save experiment'}</span>
               </button>
             )}
 
@@ -217,21 +254,21 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
               <button
                 type="button"
                 onClick={onOpenHistory}
-                title="Xem các thí nghiệm đã lưu trong MongoDB"
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#202936] hover:bg-[#2a3647] border border-[#303A49] text-[11px] font-medium text-[#E6EAF0] transition-colors"
+                title="Open saved experiments"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[11px] font-medium text-[var(--text-main)] transition-colors"
               >
-                <Database size={12} className="text-[#8B9CFB]" />
-                <span className="hidden sm:inline">Lịch sử</span>
+                <Database size={12} className="text-[var(--accent-primary)]" />
+                <span className="hidden sm:inline">History</span>
               </button>
             )}
 
             <button
               type="button"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-[#202936] hover:bg-[#2a3647] border border-[#303A49] text-[11px] font-medium text-[#929EAF] hover:text-[#E6EAF0] transition-colors"
-              title={isExpanded ? 'Thu gọn bảng chi tiết' : 'Mở rộng bảng chỉ số chi tiết'}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors"
+              title={isExpanded ? 'Collapse details' : 'Expand metrics'}
             >
-              <span>{isExpanded ? 'Thu gọn' : 'Chi tiết'}</span>
+              <span>{isExpanded ? 'Collapse' : 'Details'}</span>
               {isExpanded ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
             </button>
           </div>
@@ -240,75 +277,75 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
 
       {/* 2. EXPANDED SCIENTIFIC DETAILS DRAWER */}
       {isExpanded && (
-        <div className="border-t border-[#303A49] bg-[#0D1117] p-4 animate-in fade-in duration-150">
+        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-main)] p-4 animate-in fade-in duration-150">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
             {/* Silhouette Evaluation Card */}
-            <div className="p-3 rounded border border-[#303A49] bg-[#151B23]">
-              <div className="flex items-center justify-between text-[#929EAF] text-[11px] mb-1.5">
-                <span className="font-semibold uppercase tracking-wider">Chỉ số Silhouette</span>
-                <HelpCircle size={12} className="text-[#929EAF]" />
+            <div className="p-3 rounded border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+              <div className="flex items-center justify-between text-[var(--text-muted)] text-[11px] mb-1.5">
+                <span className="font-semibold uppercase tracking-wider">Silhouette score</span>
+                <HelpCircle size={12} className="text-[var(--text-muted)]" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-xl font-mono font-bold text-[#E6EAF0]">
+                <span className="text-xl font-mono font-bold text-[var(--text-main)]">
                   {silhouetteScore !== null ? silhouetteScore.toFixed(4) : '—'}
                 </span>
-                <span className="text-[10px] text-[#929EAF]">[-1 đến +1]</span>
+                <span className="text-[10px] text-[var(--text-muted)]">[-1 to +1]</span>
               </div>
-              <p className="text-[11px] text-[#929EAF] mt-1.5 leading-relaxed">
+              <p className="text-[11px] text-[var(--text-muted)] mt-1.5 leading-relaxed">
                 {silhouetteScore !== null ? (
-                  silhouetteScore > 0.5 ? 'Độ phân tách cụm rõ nét, ranh giới rõ ràng.' :
-                  silhouetteScore > 0.25 ? 'Phân cụm chấp nhận được, có vùng chồng lấn nhẹ.' :
-                  'Cụm chồng lấn đáng kể hoặc dữ liệu không có cấu trúc cụm rõ.'
-                ) : 'Yêu cầu chạy thuật toán phân cụm (K-Means hoặc DBSCAN) với ít nhất 2 cụm để đo độ kết cụm.'}
+                  silhouetteScore > 0.5 ? 'Clusters are well separated.' :
+                  silhouetteScore > 0.25 ? 'Clusters overlap slightly.' :
+                  'Clusters overlap substantially or lack clear structure.'
+                ) : 'Run K-Means or DBSCAN with at least two clusters to calculate this score.'}
               </p>
             </div>
 
             {/* ARI Evaluation Card */}
-            <div className="p-3 rounded border border-[#303A49] bg-[#151B23]">
-              <div className="flex items-center justify-between text-[#929EAF] text-[11px] mb-1.5">
+            <div className="p-3 rounded border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+              <div className="flex items-center justify-between text-[var(--text-muted)] text-[11px] mb-1.5">
                 <span className="font-semibold uppercase tracking-wider">Adjusted Rand Index (ARI)</span>
-                <HelpCircle size={12} className="text-[#929EAF]" />
+                <HelpCircle size={12} className="text-[var(--text-muted)]" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-xl font-mono font-bold text-[#E6EAF0]">
+                <span className="text-xl font-mono font-bold text-[var(--text-main)]">
                   {adjustedRandIndex !== null ? adjustedRandIndex.toFixed(4) : '—'}
                 </span>
-                <span className="text-[10px] text-[#929EAF]">[-1 đến +1]</span>
+                <span className="text-[10px] text-[var(--text-muted)]">[-1 to +1]</span>
               </div>
-              <p className="text-[11px] text-[#929EAF] mt-1.5 leading-relaxed">
+              <p className="text-[11px] text-[var(--text-muted)] mt-1.5 leading-relaxed">
                 {hasGroundTruth && adjustedRandIndex !== null ? (
-                  adjustedRandIndex > 0.7 ? 'Khớp rất cao với nhãn chuẩn thực tế.' :
-                  adjustedRandIndex > 0.3 ? 'Tương quan vừa phải với nhãn chuẩn.' :
-                  'Phân cụm khác biệt lớn so với nhãn tham chiếu ban đầu.'
+                  adjustedRandIndex > 0.7 ? 'Strong agreement with ground-truth labels.' :
+                  adjustedRandIndex > 0.3 ? 'Moderate agreement with ground-truth labels.' :
+                  'Clusters differ substantially from ground-truth labels.'
                 ) : !hasGroundTruth ? (
-                  'Bộ dữ liệu hiện tại không có cột nhãn ground-truth để tính chỉ số ARI.'
+                  'This dataset has no ground-truth labels for calculating ARI.'
                 ) : (
-                  'Cần bấm "Áp dụng phân cụm" để tính độ tương đồng với nhãn tham chiếu.'
+                  'Apply clustering to compare clusters with ground-truth labels.'
                 )}
               </p>
             </div>
 
             {/* PCA Variance or Cluster Count breakdown */}
-            <div className="p-3 rounded border border-[#303A49] bg-[#151B23]">
-              <div className="flex items-center justify-between text-[#929EAF] text-[11px] mb-1.5">
+            <div className="p-3 rounded border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+              <div className="flex items-center justify-between text-[var(--text-muted)] text-[11px] mb-1.5">
                 <span className="font-semibold uppercase tracking-wider">
-                  {reductionMethod === 'PCA' ? 'Phương sai thành phần chính' : 'Phân bố mẫu theo cụm'}
+                  {reductionMethod === 'PCA' ? 'Principal component variance' : 'Points per cluster'}
                 </span>
-                <Layers size={12} className="text-[#929EAF]" />
+                <Layers size={12} className="text-[var(--text-muted)]" />
               </div>
 
               {reductionMethod === 'PCA' && explainedVariance ? (
                 <div>
                   <div className="flex items-center justify-between font-mono text-[11px] mb-2">
-                    <span className="text-[#929EAF]">Tổng phương sai 3D:</span>
-                    <span className="text-[#8B9CFB] font-semibold">{((totalVarianceExplained || 0) * 100).toFixed(2)}%</span>
+                    <span className="text-[var(--text-muted)]">Total 3D variance:</span>
+                    <span className="text-[var(--accent-primary)] font-semibold">{((totalVarianceExplained || 0) * 100).toFixed(2)}%</span>
                   </div>
-                  <div className="w-full h-1.5 rounded bg-[#202936] overflow-hidden flex mb-2">
-                    <div style={{ width: `${(explainedVariance[0] * 100).toFixed(1)}%` }} className="bg-[#8B9CFB] h-full" title={`PC1: ${(explainedVariance[0] * 100).toFixed(1)}%`} />
+                  <div className="w-full h-1.5 rounded bg-[var(--bg-interactive)] overflow-hidden flex mb-2">
+                    <div style={{ width: `${(explainedVariance[0] * 100).toFixed(1)}%` }} className="bg-[var(--accent-primary)] h-full" title={`PC1: ${(explainedVariance[0] * 100).toFixed(1)}%`} />
                     <div style={{ width: `${(explainedVariance[1] * 100).toFixed(1)}%` }} className="bg-[#38bdf8] h-full" title={`PC2: ${(explainedVariance[1] * 100).toFixed(1)}%`} />
-                    <div style={{ width: `${(explainedVariance[2] * 100).toFixed(1)}%` }} className="bg-[#34d399] h-full" title={`PC3: ${(explainedVariance[2] * 100).toFixed(1)}%`} />
+                    <div style={{ width: `${(explainedVariance[2] * 100).toFixed(1)}%` }} className="bg-[var(--success-text)] h-full" title={`PC3: ${(explainedVariance[2] * 100).toFixed(1)}%`} />
                   </div>
-                  <div className="flex justify-between font-mono text-[10px] text-[#929EAF]">
+                  <div className="flex justify-between font-mono text-[10px] text-[var(--text-muted)]">
                     <span>PC1: {(explainedVariance[0] * 100).toFixed(1)}%</span>
                     <span>PC2: {(explainedVariance[1] * 100).toFixed(1)}%</span>
                     <span>PC3: {(explainedVariance[2] * 100).toFixed(1)}%</span>
@@ -319,16 +356,16 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                   <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
                     {Object.keys(clusterCounts).length > 0 ? (
                       Object.entries(clusterCounts).map(([cluster, count]) => (
-                        <span key={cluster} className="px-2 py-0.5 rounded bg-[#202936] border border-[#303A49] font-mono text-[10px] text-[#E6EAF0]">
-                          Cụm {cluster}: <strong className="text-[#8B9CFB]">{count}</strong>
+                        <span key={cluster} className="px-2 py-0.5 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)] font-mono text-[10px] text-[var(--text-main)]">
+                          Cluster {cluster}: <strong className="text-[var(--accent-primary)]">{count}</strong>
                         </span>
                       ))
                     ) : (
-                      <span className="text-[#929EAF] italic text-[11px]">Chưa có thông tin phân cụm</span>
+                      <span className="text-[var(--text-muted)] italic text-[11px]">No clustering results</span>
                     )}
                     {noiseCount !== undefined && noiseCount > 0 && (
-                      <span className="px-2 py-0.5 rounded bg-[#2d1b1f] border border-[#7f1d1d] font-mono text-[10px] text-[#f87171]">
-                        Nhiễu: {noiseCount}
+                      <span className="px-2 py-0.5 rounded bg-[var(--danger-bg)] border border-[var(--danger-border)] font-mono text-[10px] text-[var(--danger-text)]">
+                        Noise: {noiseCount}
                       </span>
                     )}
                   </div>
@@ -336,51 +373,51 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
               )}
             </div>
             {/* Pipeline & Outlier Management Card */}
-            <div className="p-3 rounded border border-[#303A49] bg-[#151B23] flex flex-col justify-between">
+            <div className="p-3 rounded border border-[var(--border-subtle)] bg-[var(--bg-panel)] flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-[#929EAF] text-[11px] mb-1.5">
-                  <span className="font-semibold uppercase tracking-wider">Tiền xử lý & Outlier</span>
-                  <Filter size={12} className="text-[#8B9CFB]" />
+                <div className="flex items-center justify-between text-[var(--text-muted)] text-[11px] mb-1.5">
+                  <span className="font-semibold uppercase tracking-wider">Preprocessing and outliers</span>
+                  <Filter size={12} className="text-[var(--accent-primary)]" />
                 </div>
                 <div className="space-y-1.5 font-mono text-[11px]">
                   <div className="flex justify-between">
-                    <span className="text-[#929EAF]">Chuẩn hóa:</span>
-                    <span className="text-[#8B9CFB] uppercase">{normalization}</span>
+                    <span className="text-[var(--text-muted)]">Normalization:</span>
+                    <span className="text-[var(--accent-primary)] uppercase">{normalization}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#929EAF]">Không gian 3D:</span>
+                    <span className="text-[var(--text-muted)]">3D space:</span>
                     <span className="text-[#38bdf8]">{reductionMethod} (XYZ)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#929EAF]">Điểm ngoại lai:</span>
-                    <span className={(metrics.outlierCount || metrics.noiseCount) ? 'text-[#f87171] font-semibold' : 'text-[#34d399]'}>
-                      {metrics.outlierCount || metrics.noiseCount || 0} điểm
+                    <span className="text-[var(--text-muted)]">Outliers:</span>
+                    <span className={(metrics.outlierCount || metrics.noiseCount) ? 'text-[var(--danger-text)] font-semibold' : 'text-[var(--success-text)]'}>
+                      {metrics.outlierCount || metrics.noiseCount || 0} points
                     </span>
                   </div>
                 </div>
               </div>
-              <div className="mt-2.5 pt-2 border-t border-[#303A49]">
+              <div className="mt-2.5 pt-2 border-t border-[var(--border-subtle)]">
                 {!isPruned && onPruneOutliers && ((metrics.outlierCount && metrics.outlierCount > 0) || (metrics.noiseCount && metrics.noiseCount > 0)) ? (
                   <button
                     type="button"
                     onClick={onPruneOutliers}
-                    className="w-full py-1.5 rounded bg-[#2d1b1f] hover:bg-[#3d242a] border border-[#7f1d1d] text-[11px] text-[#f87171] flex items-center justify-center gap-1.5 transition-colors font-medium"
+                    className="w-full py-1.5 rounded bg-[var(--danger-bg)] hover:bg-[#3d242a] border border-[var(--danger-border)] text-[11px] text-[var(--danger-text)] flex items-center justify-center gap-1.5 transition-colors font-medium"
                   >
                     <Trash2 size={12} />
-                    <span>Lọc sạch {metrics.outlierCount || metrics.noiseCount} điểm ngoại lai</span>
+                    <span>Filter {metrics.outlierCount || metrics.noiseCount} outliers</span>
                   </button>
                 ) : isPruned && onRestorePoints ? (
                   <button
                     type="button"
                     onClick={onRestorePoints}
-                    className="w-full py-1.5 rounded bg-[#162a23] hover:bg-[#1f3b31] border border-[#065f46] text-[11px] text-[#34d399] flex items-center justify-center gap-1.5 transition-colors font-medium"
+                    className="w-full py-1.5 rounded bg-[var(--success-bg)] hover:bg-[#1f3b31] border border-[var(--success-border)] text-[11px] text-[var(--success-text)] flex items-center justify-center gap-1.5 transition-colors font-medium"
                   >
                     <RotateCcw size={12} />
-                    <span>Khôi phục dữ liệu gốc ({prunedCount})</span>
+                    <span>Restore original data ({prunedCount})</span>
                   </button>
                 ) : (
-                  <div className="text-[10px] text-[#929EAF] text-center italic py-1">
-                    Dữ liệu đã ở trạng thái sạch
+                  <div className="text-[10px] text-[var(--text-muted)] text-center italic py-1">
+                    No points to filter
                   </div>
                 )}
               </div>
@@ -389,18 +426,18 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
           </div>
 
           {/* 3. INTERACTIVE VISUAL ANALYTICS & OUTLIER EXPLORER */}
-          <div className="mt-3 pt-3 border-t border-[#303A49] grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
+          <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
             {/* Visual Analytics Chart */}
-            <div className="p-3 rounded border border-[#303A49] bg-[#151B23]">
-              <div className="flex items-center justify-between text-[#929EAF] text-[11px] mb-2 font-semibold uppercase tracking-wider">
-                <span>Trực quan hóa mô hình: Phân bố cụm & Phương sai</span>
-                <BarChart3 size={13} className="text-[#8B9CFB]" />
+            <div className="p-3 rounded border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+              <div className="flex items-center justify-between text-[var(--text-muted)] text-[11px] mb-2 font-semibold uppercase tracking-wider">
+                <span>Cluster distribution and variance</span>
+                <BarChart3 size={13} className="text-[var(--accent-primary)]" />
               </div>
 
               {Object.keys(clusterCounts).length > 0 ? (
                 <div className="space-y-2">
-                  <div className="text-[11px] text-[#929EAF]">Tỉ lệ mẫu theo từng cụm:</div>
-                  <div className="w-full h-3 rounded bg-[#202936] overflow-hidden flex">
+                  <div className="text-[11px] text-[var(--text-muted)]">Share of points per cluster:</div>
+                  <div className="w-full h-3 rounded bg-[var(--bg-interactive)] overflow-hidden flex">
                     {Object.entries(clusterCounts).map(([cl, count]) => {
                       const pct = totalRows > 0 ? (count / totalRows) * 100 : 0;
                       const col = CLUSTER_COLORS[Number(cl) % CLUSTER_COLORS.length] || '#4E79A7';
@@ -409,7 +446,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                           key={cl}
                           style={{ width: `${pct}%`, backgroundColor: col }}
                           className="h-full transition-all"
-                          title={`Cụm ${cl}: ${count} mẫu (${pct.toFixed(1)}%)`}
+                          title={`Cluster ${cl}: ${count} points (${pct.toFixed(1)}%)`}
                         />
                       );
                     })}
@@ -421,8 +458,8 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                       return (
                         <div key={cl} className="flex items-center gap-1">
                           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: col }} />
-                          <span className="text-[#E6EAF0]">C{cl}:</span>
-                          <span className="text-[#929EAF]">{count} ({pct.toFixed(1)}%)</span>
+                          <span className="text-[var(--text-main)]">C{cl}:</span>
+                          <span className="text-[var(--text-muted)]">{count} ({pct.toFixed(1)}%)</span>
                         </div>
                       );
                     })}
@@ -430,61 +467,61 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                 </div>
               ) : reductionMethod === 'PCA' && explainedVariance ? (
                 <div className="space-y-2">
-                  <div className="text-[11px] text-[#929EAF]">Biểu đồ tỉ lệ phương sai (Scree Plot):</div>
+                  <div className="text-[11px] text-[var(--text-muted)]">Explained variance (scree plot):</div>
                   <div className="grid grid-cols-3 gap-2 text-center font-mono">
-                    <div className="p-2 rounded bg-[#202936] border border-[#303A49]">
-                      <div className="text-[10px] text-[#929EAF]">PC1 (Trục X)</div>
-                      <div className="text-sm font-bold text-[#8B9CFB]">{(explainedVariance[0] * 100).toFixed(1)}%</div>
+                    <div className="p-2 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)]">
+                      <div className="text-[10px] text-[var(--text-muted)]">PC1 (X axis)</div>
+                      <div className="text-sm font-bold text-[var(--accent-primary)]">{(explainedVariance[0] * 100).toFixed(1)}%</div>
                     </div>
-                    <div className="p-2 rounded bg-[#202936] border border-[#303A49]">
-                      <div className="text-[10px] text-[#929EAF]">PC2 (Trục Y)</div>
+                    <div className="p-2 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)]">
+                      <div className="text-[10px] text-[var(--text-muted)]">PC2 (Y axis)</div>
                       <div className="text-sm font-bold text-[#38bdf8]">{(explainedVariance[1] * 100).toFixed(1)}%</div>
                     </div>
-                    <div className="p-2 rounded bg-[#202936] border border-[#303A49]">
-                      <div className="text-[10px] text-[#929EAF]">PC3 (Trục Z)</div>
-                      <div className="text-sm font-bold text-[#34d399]">{(explainedVariance[2] * 100).toFixed(1)}%</div>
+                    <div className="p-2 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)]">
+                      <div className="text-[10px] text-[var(--text-muted)]">PC3 (Z axis)</div>
+                      <div className="text-sm font-bold text-[var(--success-text)]">{(explainedVariance[2] * 100).toFixed(1)}%</div>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="text-[11px] text-[#929EAF] italic text-center py-4">
-                  Chạy phân tích để hiển thị biểu đồ phân bố mô hình.
+                <div className="text-[11px] text-[var(--text-muted)] italic text-center py-4">
+                  Run analysis to see the distribution.
                 </div>
               )}
             </div>
 
             {/* Outlier Navigator Table */}
-            <div className="p-3 rounded border border-[#303A49] bg-[#151B23]">
-              <div className="flex items-center justify-between text-[#929EAF] text-[11px] mb-2 font-semibold uppercase tracking-wider">
+            <div className="p-3 rounded border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+              <div className="flex items-center justify-between text-[var(--text-muted)] text-[11px] mb-2 font-semibold uppercase tracking-wider">
                 <div className="flex items-center gap-1.5">
-                  <Target size={13} className="text-[#f87171]" />
-                  <span>Định vị & Quản lý Outlier ({outliers.length} điểm)</span>
+                  <Target size={13} className="text-[var(--danger-text)]" />
+                  <span>Inspect outliers ({outliers.length} points)</span>
                 </div>
                 {outliers.length > 0 && onPruneOutliers && (
                   <button
                     type="button"
                     onClick={onPruneOutliers}
-                    className="text-[10px] px-2 py-0.5 rounded bg-[#2d1b1f] hover:bg-[#3d242a] border border-[#7f1d1d] text-[#f87171] font-medium"
+                    className="text-[10px] px-2 py-0.5 rounded bg-[var(--danger-bg)] hover:bg-[#3d242a] border border-[var(--danger-border)] text-[var(--danger-text)] font-medium"
                   >
-                    Xóa tất cả Outliers
+                    Remove all outliers
                   </button>
                 )}
               </div>
 
               {outliers.length === 0 ? (
-                <div className="text-[11px] text-[#34d399] py-4 text-center font-medium">
-                  ✓ Không có điểm ngoại lai nào (Dữ liệu đồng nhất & sạch)
+                <div className="text-[11px] text-[var(--success-text)] py-4 text-center font-medium">
+                  No outliers found
                 </div>
               ) : (
                 <div className="max-h-36 overflow-y-auto custom-scrollbar space-y-1">
                   {outliers.slice(0, 15).map((pt) => (
                     <div
                       key={String(pt.id)}
-                      className="flex items-center justify-between px-2 py-1 rounded bg-[#0D1117] border border-[#303A49]/60 hover:border-[#8B9CFB] text-[11px] transition-colors"
+                      className="flex items-center justify-between px-2 py-1 rounded bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 hover:border-[var(--accent-primary)] text-[11px] transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-[#f87171]">ID {String(pt.id)}</span>
-                        <span className="font-mono text-[10px] text-[#929EAF]">
+                        <span className="font-mono font-bold text-[var(--danger-text)]">ID {String(pt.id)}</span>
+                        <span className="font-mono text-[10px] text-[var(--text-muted)]">
                           ({pt.x.toFixed(1)}, {pt.y.toFixed(1)}, {pt.z.toFixed(1)})
                         </span>
                       </div>
@@ -493,8 +530,8 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                           <button
                             type="button"
                             onClick={() => onSelectPoint(pt)}
-                            className="px-1.5 py-0.5 rounded bg-[#202936] hover:bg-[#2a3647] border border-[#303A49] text-[10px] text-[#38bdf8] flex items-center gap-1"
-                            title="Di chuyển camera 3D đến xem điểm này"
+                            className="px-1.5 py-0.5 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[10px] text-[#38bdf8] flex items-center gap-1"
+                            title="Focus camera on this point"
                           >
                             <Target size={10} />
                             <span>Xem 3D</span>
@@ -503,9 +540,9 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                         {onDeletePoint && (
                           <button
                             type="button"
-                            onClick={() => onDeletePoint(pt.id)}
-                            className="p-1 rounded hover:bg-[#2d1b1f] text-[#f87171] transition-colors"
-                            title="Xóa điểm này"
+                            onClick={() => onDeletePoint(pt.id, pt.rowIndex)}
+                            className="p-1 rounded hover:bg-[var(--danger-bg)] text-[var(--danger-text)] transition-colors"
+                            title="Remove this point"
                           >
                             <Trash2 size={11} />
                           </button>
@@ -514,8 +551,8 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                     </div>
                   ))}
                   {outliers.length > 15 && (
-                    <div className="text-center text-[10px] text-[#929EAF] italic pt-1">
-                      ... và {outliers.length - 15} điểm ngoại lai khác
+                    <div className="text-center text-[10px] text-[var(--text-muted)] italic pt-1">
+                      … and {outliers.length - 15} more outliers
                     </div>
                   )}
                 </div>

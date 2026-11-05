@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../utils/useDialogFocus';
 import React, { useState, useEffect } from 'react';
 import { SystemHealth } from '../types';
 import { getErrorMessage, isRecord, isSystemHealth } from '../utils/typeGuards';
@@ -51,7 +52,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
       }
     } catch (e: unknown) {
       // Backend may be offline
-      console.warn('Không thể tải trạng thái hệ thống:', e);
+      console.warn('Could not load system status:', e);
     }
   };
 
@@ -61,6 +62,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     }
   }, [isOpen]);
 
+  const dialogRef = useDialogFocus(isOpen, onClose);
   if (!isOpen) return null;
 
   const isCloudConnected = dbStatus.toLowerCase().includes('connected') || dbStatus.toLowerCase().includes('cloud');
@@ -72,17 +74,17 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
       const res = await fetch('/api/test-db', { method: 'POST' });
       const data: unknown = await res.json();
       if (isRecord(data) && data.connected === true) {
-        setPingResult('✅ Kết nối MongoDB Atlas THÀNH CÔNG! Độ trễ phản hồi cực thấp.');
+        setPingResult('Connected to MongoDB Atlas.');
       } else {
         const message = isRecord(data) && typeof data.message === 'string'
           ? data.message
-          : 'Chưa kết nối được. Đang chạy chế độ tự hành In-Memory.';
+          : 'Database unavailable. Using in-memory storage.';
         setPingResult(`⚠️ ${message}`);
       }
       await onRefreshDb();
       await fetchHealth();
     } catch (err: unknown) {
-      setPingResult('⚠️ Lỗi kiểm tra: ' + getErrorMessage(err));
+      setPingResult('Connection check failed: ' + getErrorMessage(err));
     } finally {
       setIsPinging(false);
     }
@@ -93,59 +95,58 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     setCacheMsg(null);
     try {
       const res = await fetch('/api/cache', { method: 'DELETE' });
+      if (!res.ok) throw new Error('Could not clear cache (HTTP ' + res.status + ').');
       const data: unknown = await res.json();
       const message = isRecord(data) && typeof data.message === 'string'
         ? data.message
-        : 'Đã dọn dẹp cache tính toán!';
+        : 'Cache cleared.';
       setCacheMsg(message);
       await fetchHealth();
     } catch (err: unknown) {
-      setCacheMsg('Lỗi dọn cache: ' + getErrorMessage(err));
+      setCacheMsg('Could not clear cache: ' + getErrorMessage(err));
     } finally {
       setIsClearingCache(false);
     }
   };
 
   const copyHostCommand = () => {
-    navigator.clipboard.writeText('npm run dev:host');
-    setCopiedCmd(true);
-    setTimeout(() => setCopiedCmd(false), 2000);
+    navigator.clipboard.writeText('npm run dev:host').then(() => { setCopiedCmd(true); setTimeout(() => setCopiedCmd(false), 2000); }).catch(() => setPingResult('Could not copy. Command: npm run dev:host'));
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-3xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="SecurityModal-title" className="lab-modal-backdrop">
+      <div className="lab-modal max-w-3xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/70">
+        <header className="lab-modal-header">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
               <Shield size={24} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                Trung tâm Bảo mật & Giám sát Backend (System Health & Security)
+              <h2 id="SecurityModal-title" className="text-lg font-bold text-[var(--text-main)] flex items-center gap-2">
+                Workspace help
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Kiểm soát an toàn dữ liệu, mã hóa kết nối MongoDB Atlas và đo lường hiệu năng thời gian thực
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Shortcuts, connection status, and local sharing.
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close help" onClick={onClose}
+            className="workspace-icon"
           >
             <X size={20} />
           </button>
-        </div>
+        </header>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-6">
+        <div className="lab-modal-body space-y-6">
           {/* 1. Trạng thái kết nối Cloud Database thời gian thực */}
-          <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col gap-3">
+          <div className="p-4 rounded-xl bg-[var(--bg-main)]/70 border border-[var(--border-subtle)] flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Database size={18} className={isCloudConnected ? 'text-emerald-400' : 'text-amber-400'} />
-                <span className="text-sm font-bold text-white">Trạng thái Database Engine:</span>
+                <span className="text-sm font-bold text-[var(--text-main)]">Database status:</span>
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold flex items-center gap-1.5 ${
                     isCloudConnected
@@ -161,15 +162,15 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               <button
                 onClick={handlePingTest}
                 disabled={isPinging}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-600/30 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-[var(--text-main)] transition-all shadow-md shadow-indigo-600/30 disabled:opacity-50"
               >
                 <RefreshCw size={13} className={isPinging ? 'animate-spin' : ''} />
-                <span>{isPinging ? 'Đang kiểm tra...' : 'Kiểm tra kết nối (Ping Test)'}</span>
+                <span>{isPinging ? 'Checking…' : 'Check connection'}</span>
               </button>
             </div>
 
             {pingResult && (
-              <div className="text-xs p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-200">
+              <div className="text-xs p-2.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-subtle)] text-[var(--text-main)]">
                 {pingResult}
               </div>
             )}
@@ -177,70 +178,70 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
           {/* 2. Giám sát Hiệu năng Backend & Caching (Real-Time Metrics) */}
           {systemHealth && (
-            <div className="p-4 rounded-xl bg-slate-950/80 border border-indigo-500/30 space-y-3">
+            <div className="p-4 rounded-xl bg-[var(--bg-main)]/80 border border-indigo-500/30 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-                  <Activity size={14} /> Giám sát tài nguyên Backend (System Observability)
+                  <Activity size={14} /> Server status
                 </span>
-                <span className="text-[11px] font-mono text-slate-400">
+                <span className="text-[11px] font-mono text-[var(--text-muted)]">
                   Uptime: {systemHealth.uptime}
                 </span>
               </div>
 
               <div className="grid grid-cols-3 gap-3 text-xs">
                 {/* RAM Metric */}
-                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5 text-slate-400">
+                <div className="p-3 rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
                     <Cpu size={14} className="text-cyan-400" />
-                    <span>Bộ nhớ RAM Node.js</span>
+                    <span>Node.js memory</span>
                   </div>
                   <div className="font-mono text-cyan-300 font-bold text-sm">
-                    {systemHealth.memory?.heapUsedMb} <span className="text-[11px] font-normal text-slate-400">/ {systemHealth.memory?.heapTotalMb}</span>
+                    {systemHealth.memory?.heapUsedMb} <span className="text-[11px] font-normal text-[var(--text-muted)]">/ {systemHealth.memory?.heapTotalMb}</span>
                   </div>
-                  <span className="text-[10px] text-slate-500">RSS: {systemHealth.memory?.rssMb}</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">RSS: {systemHealth.memory?.rssMb}</span>
                 </div>
 
                 {/* Database Latency */}
-                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5 text-slate-400">
+                <div className="p-3 rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
                     <Server size={14} className="text-emerald-400" />
-                    <span>Độ trễ MongoDB</span>
+                    <span>Database latency</span>
                   </div>
                   <div className="font-mono text-emerald-400 font-bold text-sm">
                     {systemHealth.database?.latency || 'N/A'}
                   </div>
-                  <span className="text-[10px] text-slate-500">Tổng docs: {systemHealth.database?.totalDocuments || 0}</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">Documents: {systemHealth.database?.totalDocuments || 0}</span>
                 </div>
 
                 {/* Compute Cache */}
-                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5 text-slate-400">
+                <div className="p-3 rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
                     <Zap size={14} className="text-amber-400" />
-                    <span>Bộ nhớ đệm (Cache)</span>
+                    <span>Cache</span>
                   </div>
                   <div className="font-mono text-amber-300 font-bold text-sm">
-                    {systemHealth.cache?.memoryEntries || 0} bản ghi
+                    {systemHealth.cache?.memoryEntries || 0} entries
                   </div>
-                  <span className="text-[10px] text-slate-500">Tốc độ: &lt; 5ms (Hit)</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">Stored analysis results.</span>
                 </div>
               </div>
 
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-slate-400">
-                  ⚡ Gzip Compression & SHA-256 Multi-tier LRU Cache đang hoạt động tối ưu.
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  Cache and compression are enabled.
                 </span>
                 <button
                   onClick={handleClearCache}
                   disabled={isClearingCache}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-rose-300 text-[11px] border border-rose-900/40 transition-colors"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-interactive)] hover:bg-slate-700 text-rose-300 text-[11px] border border-rose-900/40 transition-colors"
                 >
                   <Trash2 size={12} />
-                  <span>{isClearingCache ? 'Đang xóa...' : 'Xóa bộ nhớ đệm Cache'}</span>
+                  <span>{isClearingCache ? 'Clearing…' : 'Clear cache'}</span>
                 </button>
               </div>
 
               {cacheMsg && (
-                <div className="text-[11px] p-2 rounded-lg bg-slate-900 border border-indigo-900 text-indigo-300">
+                <div className="text-[11px] p-2 rounded-lg bg-[var(--bg-panel)] border border-indigo-900 text-indigo-300">
                   {cacheMsg}
                 </div>
               )}
@@ -249,98 +250,95 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
           {/* 3. Bốn trụ cột bảo vệ dữ liệu */}
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-3 flex items-center gap-2">
               <Lock size={14} className="text-indigo-400" />
-              Kiến trúc bảo mật dữ liệu y tế (Cancer Data Security)
+              Data and storage
             </h3>
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60 flex flex-col gap-1.5">
+              <div className="p-3.5 rounded-xl bg-[var(--bg-interactive)]/40 border border-[var(--border-subtle)]/60 flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs">
                   <KeyRound size={15} />
-                  <span>1. Ẩn thông tin nhạy cảm (.env)</span>
+                  <span>Server credentials</span>
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Toàn bộ chuỗi kết nối và tài khoản MongoDB Atlas được lưu trong file <code className="text-indigo-300">.env</code> độc lập. Frontend và người dùng ngoài không thể thấy mật khẩu cơ sở dữ liệu.
+                <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                  Database credentials are configured in the server’s <code className="text-indigo-300">.env</code> file.
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60 flex flex-col gap-1.5">
+              <div className="p-3.5 rounded-xl bg-[var(--bg-interactive)]/40 border border-[var(--border-subtle)]/60 flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
                   <Shield size={15} />
-                  <span>2. Mã hóa đường truyền (TLS/SSL)</span>
+                  <span>Encryption in transit</span>
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Mọi luồng dữ liệu 3D và kết quả phân cụm truyền giữa Backend và MongoDB Atlas Cloud đều được mã hóa bằng giao thức TLS 1.3 / SSL chống nghe lén (Sniffing/Man-in-the-middle).
+                <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                  MongoDB Atlas connections use TLS.
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60 flex flex-col gap-1.5">
+              <div className="p-3.5 rounded-xl bg-[var(--bg-interactive)]/40 border border-[var(--border-subtle)]/60 flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-cyan-400 font-semibold text-xs">
                   <Globe2 size={15} />
-                  <span>3. Tường lửa mạng (IP Access List)</span>
+                  <span>Database access</span>
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  MongoDB Atlas áp dụng cơ chế IP Whitelisting: Chỉ những địa chỉ IP được cấp phép mới được phép gửi truy vấn dữ liệu vào Database.
+                <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                  Atlas controls which IP addresses can connect.
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60 flex flex-col gap-1.5">
+              <div className="p-3.5 rounded-xl bg-[var(--bg-interactive)]/40 border border-[var(--border-subtle)]/60 flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-amber-400 font-semibold text-xs">
                   <Server size={15} />
-                  <span>4. Cơ chế tự hành (In-Memory Fallback)</span>
+                  <span>In-memory storage</span>
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Khi mất kết nối Internet hoặc rớt mạng Atlas, hệ thống tự động chuyển sang In-Memory Store, đảm bảo không bao giờ bị gián đoạn hay crash khi đang thuyết trình.
+                <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                  When Atlas is unavailable, the server can store results in memory.
                 </p>
               </div>
             </div>
           </div>
 
+          <section className="keyboard-help"><h3>Keyboard shortcuts</h3><p><kbd>Ctrl / ⌘ + Enter</kbd> Run analysis</p><p><kbd>Escape</kbd> Close the active dialog or panel, then exit cluster focus</p><p><kbd>R</kbd> Reset camera · <kbd>+</kbd> / <kbd>−</kbd> Zoom in or out</p><p>Camera shortcuts are disabled while typing or while a dialog is open.</p></section>
           {/* 4. Hướng dẫn chia sẻ mạng nội bộ LAN */}
-          <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-950/40 to-slate-900 border border-indigo-800/50 flex flex-col gap-3">
+          <div className="p-4 rounded border border-[var(--border-subtle)] bg-[var(--bg-main)] flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Wifi size={18} className="text-cyan-400" />
-                <h3 className="text-sm font-bold text-white">Chia sẻ đồ án qua mạng Wi-Fi / LAN</h3>
+                <h3 className="text-sm font-bold text-[var(--text-main)]">Share on your local network</h3>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-900/60 text-cyan-300 border border-cyan-700/50">
-                Multi-Device Ready
-              </span>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Bạn muốn thầy cô hoặc bạn bè trong phòng lab mở điện thoại hoặc laptop xem biểu đồ 3D tương tác cùng lúc? Chỉ cần mở terminal chạy lệnh sau:
+            <p className="text-xs text-[var(--text-main)] leading-relaxed">
+              Run this command to open the explorer to devices on your local network:
             </p>
 
-            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs">
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-[var(--bg-main)] border border-[var(--border-subtle)] font-mono text-xs">
               <span className="text-emerald-400 font-bold select-all">npm run dev:host</span>
               <button
                 onClick={copyHostCommand}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] transition-colors"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-interactive)] hover:bg-slate-700 text-[var(--text-main)] text-[11px] transition-colors"
               >
                 {copiedCmd ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                <span>{copiedCmd ? 'Đang copy!' : 'Copy lệnh'}</span>
+                <span>{copiedCmd ? 'Copied' : 'Copy command'}</span>
               </button>
             </div>
 
-            <p className="text-[11px] text-slate-400">
-              💡 Sau khi chạy, Vite sẽ hiển thị địa chỉ mạng LAN (ví dụ: <code className="text-cyan-300">http://192.168.1.5:3000</code>). Mọi người cùng kết nối vào mạng Wi-Fi đó có thể truy cập ngay!
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Open the network address printed by Vite on a device connected to the same network.
             </p>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
-          <div className="text-xs text-slate-400">
-            Hệ thống tuân thủ tiêu chuẩn an toàn dữ liệu web và tối ưu backend hiệu năng cao.
+        <footer className="lab-modal-footer">
+          <div className="text-xs text-[var(--text-muted)]">
+            Status reflects the connected server.
           </div>
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md shadow-indigo-600/30 transition-all"
           >
-            Đã hiểu & Đóng
+            Close
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   );

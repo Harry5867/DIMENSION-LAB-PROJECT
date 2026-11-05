@@ -14,9 +14,9 @@ Module này chứa toàn bộ các thành phần giao diện người dùng (UI 
 | `DataInspector.tsx` | Bảng soi chi tiết dữ liệu khi click vào 1 điểm trên không gian 3D (hiển thị ID, nhãn phân lớp, giá trị của toàn bộ đặc trưng gốc). |
 | `ElbowModal.tsx` | Hộp thoại tìm số cụm $k$ tối ưu bằng phương pháp Elbow Method (vẽ biểu đồ WCSS theo $k$). |
 | `SecurityModal.tsx` | Hộp thoại thông tin bảo mật và giám sát hệ thống (RAM, CPU, Cache SHA-256, SQLite/MongoDB health). |
-| `ExperimentsModal.tsx` | Hộp thoại lưu và tải lại các phiên thí nghiệm phân tích trước đó từ CSDL. |
+| `ExperimentsPage.tsx` | Trang lịch sử thí nghiệm, xuất JSON và khôi phục cấu hình vào Explore. |
 | `RawDataModal.tsx` | Bảng hiển thị dữ liệu dạng lưới dòng/cột gốc phục vụ đối chiếu dữ liệu. |
-| `DatasetManagerModal.tsx` | Hộp thoại quản lý và tải lên file dữ liệu CSV tùy chỉnh. |
+| `DatasetsPage.tsx` | Trang quản lý dataset mẫu và CSV đã nhập. |
 | `TooltipSlider.tsx` | Thanh trượt điều chỉnh giá trị tham số có tooltip hiển thị giá trị số thực thời gian thực. |
 
 ---
@@ -43,6 +43,6 @@ import { DataPoint, ColorMode } from './types';
 
 ## 3. Quy tắc phát triển giao diện
 1. **Hiệu năng Three.js:** Chỉ mount Scene và WebGLRenderer 1 lần duy nhất trong `useEffect(..., [])`. Cập nhật điểm qua ma trận `InstancedMesh` thay vì tạo hàng ngàn `Mesh` rời rạc.
-2. **Lazy Loading:** Các modal nặng (`ElbowModal`, `SecurityModal`, `ExperimentsModal`) được tách tải động qua `React.lazy()` và `Suspense` trong `App.tsx`.
+2. **Lazy Loading:** `ElbowModal`, `SecurityModal` và `ExperimentsPage` được tải động qua `React.lazy()` và `Suspense` trong `App.tsx`.
 3. **Chống re-render:** Mọi callback truyền vào `ThreeCanvas` phải được bọc qua `useCallback` hoặc `useRef` để không kích hoạt vòng lặp re-render Three.js.
 

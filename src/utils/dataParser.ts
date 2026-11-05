@@ -9,7 +9,7 @@ import {
 
 export function parseCSVString(csvContent: string, fileName: string = 'Uploaded Dataset'): ParsedDataset {
   if (!csvContent.trim()) {
-    throw new Error('Tệp CSV đang trống.');
+    throw new Error('The CSV file is empty.');
   }
 
   const result = Papa.parse<Record<string, unknown>>(csvContent.replace(/^\uFEFF/, '').trim(), {
@@ -20,8 +20,8 @@ export function parseCSVString(csvContent: string, fileName: string = 'Uploaded 
 
   const structuralError = result.errors.find((error) => error.code !== 'TooFewFields');
   if (structuralError) {
-    const row = structuralError.row === undefined ? '' : ` ở dòng ${structuralError.row + 1}`;
-    throw new Error(`CSV không đúng định dạng${row}: ${structuralError.message}`);
+    const row = structuralError.row === undefined ? '' : ` on row ${structuralError.row + 1}`;
+    throw new Error(`Invalid CSV${row}: ${structuralError.message}`);
   }
 
   const rawRows: DatasetRow[] = result.data.map((row) =>
@@ -35,15 +35,23 @@ export function parseCSVString(csvContent: string, fileName: string = 'Uploaded 
     )
   );
   if (rawRows.length < 2) {
-    throw new Error('CSV cần có hàng tiêu đề và ít nhất 2 dòng dữ liệu.');
+    throw new Error('The CSV needs a header and at least two data rows.');
+  }
+
+  // Ignore an unnamed padding column only when it contains no data (e.g. WDBC).
+  // An unnamed column with a value must still fail header validation below.
+  for (const header of Object.keys(rawRows[0])) {
+    if (!header.trim() && rawRows.every((row) => row[header] == null || row[header] === '')) {
+      rawRows.forEach((row) => { delete row[header]; });
+    }
   }
 
   const headers = Object.keys(rawRows[0]).map(h => h.trim());
   if (headers.length < MIN_NUMERIC_FEATURES || headers.some((header) => !header)) {
-    throw new Error(`CSV cần có tên cột hợp lệ và ít nhất ${MIN_NUMERIC_FEATURES} cột dữ liệu.`);
+    throw new Error(`The CSV needs valid column names and at least ${MIN_NUMERIC_FEATURES} data columns.`);
   }
   if (new Set(headers).size !== headers.length) {
-    throw new Error('CSV có tên cột bị trùng. Hãy đổi tên các cột để mỗi cột là duy nhất.');
+    throw new Error('The CSV contains duplicate column names. Give each column a unique name.');
   }
 
   // Heuristic detection for ID, Label, and Numerical Features
@@ -119,7 +127,7 @@ export function parseCSVString(csvContent: string, fileName: string = 'Uploaded 
 
   if (featureColumns.length < MIN_NUMERIC_FEATURES) {
     throw new Error(
-      `CSV chỉ nhận diện được ${featureColumns.length} đặc trưng số hợp lệ; cần ít nhất ${MIN_NUMERIC_FEATURES} cột số để phân tích. Kiểm tra dấu phân cách, hàng tiêu đề và dữ liệu trong các cột.`
+      `Found only ${featureColumns.length} valid numeric features. At least ${MIN_NUMERIC_FEATURES} numeric columns are needed. Check the delimiter, header, and column values.`
     );
   }
 

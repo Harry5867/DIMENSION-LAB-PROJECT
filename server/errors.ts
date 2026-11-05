@@ -26,31 +26,31 @@ export class AppError extends Error {
 }
 
 export class BadRequestError extends AppError {
-  constructor(message: string = 'Dữ liệu yêu cầu không hợp lệ.', details?: unknown) {
+  constructor(message: string = 'Invalid request data.', details?: unknown) {
     super(message, 400, 'BAD_REQUEST', details);
   }
 }
 
 export class UnauthorizedError extends AppError {
-  constructor(message: string = 'Yêu cầu xác thực tài khoản để truy cập tài nguyên này.') {
+  constructor(message: string = 'Sign in to access this resource.') {
     super(message, 401, 'UNAUTHORIZED');
   }
 }
 
 export class ForbiddenError extends AppError {
-  constructor(message: string = 'Bạn không có quyền thực hiện thao tác này (403 Forbidden).') {
+  constructor(message: string = 'You do not have permission to do this.') {
     super(message, 403, 'FORBIDDEN_ACCESS');
   }
 }
 
 export class NotFoundError extends AppError {
-  constructor(resource: string = 'Tài nguyên') {
-    super(`${resource} không tồn tại trên hệ thống.`, 404, 'NOT_FOUND');
+  constructor(resource: string = 'Resource') {
+    super(`${resource} was not found.`, 404, 'NOT_FOUND');
   }
 }
 
 export class ConflictError extends AppError {
-  constructor(message: string = 'Xung đột dữ liệu trên máy chủ.') {
+  constructor(message: string = 'Server data conflict.') {
     super(message, 409, 'CONFLICT');
   }
 }

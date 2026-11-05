@@ -1,0 +1,95 @@
+
+.welcome-page { --text-main:#171717; --text-muted:#777; --bg-panel:#fff; --bg-interactive:#f4f5f1; --border-subtle:#e6e8e1; position:relative; isolation:isolate; color:var(--text-main); background:#fff; height:100dvh; display:flex; flex-direction:column; overflow:auto; overflow-x:hidden; }
+.welcome-header { position:relative; z-index:5; display:flex; align-items:center; margin:0 4%; min-height:clamp(64px, 10vh, 100px); gap:clamp(24px, 2vw, 32px); flex-shrink:0; pointer-events:none; }
+.welcome-header .workspace-brand, .welcome-header nav { pointer-events:auto; }
+.welcome-header nav { display:flex; align-items:center; }
+.welcome-header nav button { display:flex; align-items:center; gap:7px; min-height:36px; font:10px var(--font-mono); letter-spacing:.12em; color:var(--text-main); text-shadow:0 0 8px #fff, 0 0 4px #fff; white-space:nowrap; }
+.welcome-header nav button::after { display:none; }
+.welcome-header nav button:hover, .welcome-header nav button[aria-expanded=true] { text-decoration:underline; text-underline-offset:4px; }
+.welcome-header .welcome-concepts { position:absolute; left:50%; transform:translateX(-50%); gap:clamp(8px, 1vw, 16px); }
+.welcome-concepts button { justify-content:center; min-width:36px; }
+.welcome-concepts button[aria-pressed=true] { text-decoration:underline; text-underline-offset:4px; }
+.welcome-main { position:relative; display:grid; align-items:center; flex:1; min-height:460px; }
+.welcome-copy { position:relative; width:45%; margin-left:5%; z-index:2; pointer-events:none; }
+.welcome-copy button { pointer-events:auto; }
+.welcome-eyebrow { font:9px var(--font-mono); letter-spacing:.16em; color:#74796d; display:flex; align-items:center; gap:12px; }
+.welcome-eyebrow > span { height:1px; width:25px; background:#92998a; }
+.welcome-copy h1 { font-size:clamp(30px,4.7vw,98px); line-height:1.06; letter-spacing:-.06em; font-weight:400; margin:30px 0 24px; }
+.welcome-description { font-size:clamp(13px,1.1vw,19px); color:var(--text-muted); }
+.welcome-actions { display:flex; margin-top:38px; align-items:center; }
+.welcome-primary { display:flex; justify-content:space-between; align-items:center; gap:32px; min-height:50px; padding:0 22px; background:var(--explore-primary); color:#fff; border-radius:4px; font-size:12px; border:1px solid var(--explore-primary); }
+.welcome-primary:hover { filter:brightness(.93); }
+.data-globe { position:absolute; inset:0 0 0 50%; container-type:size; --globe-toolbar-left:0%; }
+.welcome-footer { position:relative; z-index:4; display:flex; align-items:center; flex-shrink:0; min-height:54px; padding:10px 5%; font:8px var(--font-mono); letter-spacing:.1em; color:#666d60; pointer-events:none; }
+.welcome-footer > span { display:flex; align-items:center; gap:14px; }.welcome-footer i { width:50px; height:1px; background:#dce0d5; }
+.welcome-concept { position:absolute; z-index:4; bottom:10%; right:7%; width:290px; padding:24px; background:#fffffff2; border:1px solid #e4e8de; box-shadow:0 12px 40px #24301a0a; }
+.welcome-concept > button { float:right; }.welcome-concept h2 { font-size:23px; font-weight:400; letter-spacing:-.04em; margin:15px 0; }.welcome-concept > p:last-child { font-size:12px; line-height:1.8; color:#6e7565; }
+.login-backdrop { position:fixed; inset:0; z-index:80; backdrop-filter:blur(7px); background:#ffffff60; display:flex; justify-content:flex-end; padding:24px; }
+.login-panel { width:460px; max-width:100%; height:100%; overflow-y:auto; padding:30px 38px; background:var(--bg-panel); border:1px solid var(--border-subtle); border-radius:6px; animation:login-enter .3s ease-out; }
+.login-panel header { display:flex; justify-content:space-between; align-items:center; font:8px var(--font-mono); letter-spacing:.12em; color:#858b7e; }
+.login-logo { margin:32px 0 10px; color:var(--explore-primary); }
+.login-panel h2 { font-size:38px; font-weight:400; letter-spacing:-.05em; margin:16px 0 12px; }
+.login-panel label { display:block; font-size:12px; color:var(--text-muted); margin-bottom:8px; }
+.login-panel input { width:100%; min-height:44px; padding:12px; border:1px solid var(--border-subtle); border-radius:4px; background:var(--bg-panel); color:var(--text-main); font-size:13px; outline-offset:2px; }
+.login-panel input:focus { border-color:var(--explore-primary); }
+.login-password-label { display:flex; align-items:baseline; justify-content:space-between; margin-top:25px; }
+.login-password { position:relative; }.login-password input { padding-right:60px; }.login-password button { position:absolute; right:12px; top:18px; font:8px var(--font-mono); color:#7d886e; }
+.login-submit { width:100%; margin-top:24px; }
+.login-demo { display:grid; gap:12px; margin-top:20px; color:var(--text-muted); font-size:12px; line-height:1.6; }
+.login-demo summary { width:fit-content; cursor:pointer; }
+.login-demo details p { margin-top:6px; }
+.login-error { color:#a84232; font-size:11px; line-height:1.6; margin-top:12px; }
+.entry-loading { height:100dvh; display:grid; place-items:center; background:#fdfdfb; color:#747e68; font-size:13px; }
+.workspace-signout { display:flex; align-items:center; gap:7px; font-size:10px; color:var(--text-muted); background:none; border:0; padding:8px; white-space:nowrap; }
+@keyframes login-enter { from { opacity:0; transform:translateX(24px); } to { opacity:1; transform:translateX(0); } }
+@media(max-width:599px) {
+ .welcome-concept { bottom:50px; right:24px; left:24px; width:auto; }
+ .welcome-footer { padding:10px 24px 18px; }.welcome-footer i { width:20px; }
+ .login-backdrop { padding:0; }.login-panel { width:100%; padding:24px; }.login-logo { margin:30px 0 24px; }.login-panel h2 { font-size:36px; }
+ .workspace-signout span { display:none; }
+}
+
+.welcome-header .workspace-brand { font-size: clamp(12px, 1vw, 17px); letter-spacing: .14em; }
+.welcome-mark { width: clamp(26px, 2.1vw, 40px); height: auto; margin-right: 6px; }
+.welcome-version { color: #797c76; font: 9px var(--font-mono); letter-spacing: 0; }
+.welcome-period { color: #929d88; }
+.welcome-primary { min-height: clamp(49px, 6.8vh, 67px); gap: clamp(20px, 3vw, 64px); padding-inline: clamp(18px, 1.5vw, 28px); }
+.welcome-copy .welcome-primary { font-size: clamp(11px, .86vw, 16px); }
+.welcome-primary svg { transition: transform .2s ease; }
+.welcome-primary:hover svg { transform: translate(3px,-3px); }
+.welcome-concept .welcome-information-action { display: inline-flex; float: none; align-items: center; gap: 10px; margin-top: 14px; font-size: 12px; }
+@media (min-width: 1000px) and (min-height: 480px) {
+  .welcome-page { --welcome-footer-height: 54px; overflow: hidden; }
+  .welcome-main { position: static; min-height: 0; }
+  .welcome-footer { height: var(--welcome-footer-height); }
+  .welcome-page .data-globe {
+    left: 43%;
+    --globe-center: .6;
+    /* The toolbar sits on the page axis, 7% of the page into the 57%-wide globe. */
+    --globe-toolbar-left: calc(7% / .57);
+  }
+  .welcome-page .globe-viewport { inset: 0; }
+  .welcome-page .globe-renderer { mask-image: linear-gradient(to right, transparent, #000 13%); }
+  .welcome-page .globe-renderer::before { box-shadow: none; }
+  .welcome-page .globe-controls { bottom: calc(clamp(64px, 10vh, 100px) / 2 - 16.5px); }
+  .welcome-page .globe-city-panel { bottom: calc(var(--welcome-footer-height) + 53px); }
+  .welcome-concept { bottom: calc(var(--welcome-footer-height) + 56px); }
+}
+@media (max-width: 899px) {
+  .welcome-header { flex-wrap:wrap; row-gap:4px; padding-block:8px; }
+  .welcome-header .welcome-concepts { position:static; flex-basis:100%; transform:none; justify-content:center; }
+}
+@media (max-width: 599px) {
+  .welcome-header { margin-inline: 20px; }
+  .welcome-header .workspace-brand { font-size: 10px; gap: 4px; }
+  .welcome-main { display: flex; flex-direction: column; align-items: stretch; flex: none; min-height: auto; }
+  .welcome-copy { width: auto; margin: 0; padding: 32px 24px 12px; }
+  .welcome-copy h1 { font-size: clamp(26px, 8.5vw, 50px); margin: 22px 0 15px; }
+  .welcome-actions { margin-top: 25px; }
+  .data-globe { position: relative; inset: auto; width: 100%; height: clamp(310px, 97vw, 450px); --globe-toolbar-left:50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-primary svg { transition: none; }
+  .login-panel { animation: none; }
+}
+

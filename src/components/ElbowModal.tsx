@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../utils/useDialogFocus';
 import React, { useMemo, useState } from 'react';
 import { X, TrendingDown, Award, CheckCircle2, Sparkles, RefreshCw } from 'lucide-react';
 import { computeKMeans } from '../algorithms/kmeans';
@@ -61,6 +62,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
     return best.k;
   }, [metricsList]);
 
+  const dialogRef = useDialogFocus(isOpen, onClose);
   if (!isOpen) return null;
 
   // Chart dimensions
@@ -88,7 +90,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
   const silPoints = metricsList.map((m, i) => `${getX(i)},${getYSil(m.silhouette)}`).join(' ');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in">
+    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="ElbowModal-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in">
       <div className={`relative w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border transition-colors ${
         isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-700/80 text-white'
       }`}>
@@ -103,8 +105,8 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
               <TrendingDown size={22} />
             </div>
             <div>
-              <h2 className={`text-lg font-bold flex items-center gap-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                Phân tích số cụm tối ưu K (Elbow Method & Silhouette)
+              <h2 id="ElbowModal-title" className={`text-lg font-bold flex items-center gap-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                Choose a cluster count
                 <span className={`px-2 py-0.5 rounded text-[11px] font-mono border ${
                   isLight ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-indigo-900/60 text-indigo-300 border-indigo-700/50'
                 }`}>
@@ -112,12 +114,12 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
                 </span>
               </h2>
               <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-                Dò tìm điểm "Khuỷu tay" (Elbow) và điểm số phân tách Silhouette cao nhất
+                Compare inertia and silhouette across values of K.
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
+            aria-label="Close cluster analysis" onClick={onClose}
             className={`p-1.5 rounded-lg transition-colors ${
               isLight ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
@@ -136,11 +138,11 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5 font-medium">
                   <span className="w-3 h-1 bg-amber-500 rounded-full inline-block" />
-                  <span className={isLight ? 'text-amber-700' : 'text-amber-300'}>Inertia / WCSS (Trục trái - Càng thấp cụm càng chặt)</span>
+                  <span className={isLight ? 'text-amber-700' : 'text-amber-300'}>Inertia / WCSS (Left axis: lower means tighter clusters)</span>
                 </div>
                 <div className="flex items-center gap-1.5 font-medium">
                   <span className="w-3 h-1 bg-emerald-500 rounded-full inline-block" />
-                  <span className={isLight ? 'text-emerald-700' : 'text-emerald-300'}>Silhouette Score (Trục phải - Càng cao càng phân tách tốt)</span>
+                  <span className={isLight ? 'text-emerald-700' : 'text-emerald-300'}>Silhouette Score (Right axis: higher means better separation)</span>
                 </div>
               </div>
             </div>
@@ -247,7 +249,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
                             fontSize="9"
                             fontWeight="bold"
                           >
-                            Tối ưu
+                            Best
                           </text>
                         </g>
                       )}
@@ -310,18 +312,18 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
           }`}>
             <Award className="text-indigo-500 shrink-0 mt-0.5" size={20} />
             <div className="text-xs leading-relaxed">
-              <span className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Khuyến nghị học thuật: </span>
+              <span className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Recommendation: </span>
               {bestKBySilhouette === 2 ? (
                 <span>
-                  Tại <strong>K = 2</strong>, chỉ số Silhouette đạt giá trị cực đại{' '}
+                  At <strong>K = 2</strong>, silhouette peaks at{' '}
                   <span className="font-mono font-bold text-emerald-500">
                     ({metricsList.find(m => m.k === 2)?.silhouette.toFixed(3)})
                   </span>{' '}
-                  và độ dốc Inertia giảm mạnh nhất (Elbow Point). Điều này cho thấy cấu trúc dữ liệu có xu hướng hình thành 2 nhóm tập trung phân tách rõ nét nhất.
+                  and inertia shows an elbow. This suggests two well-separated clusters.
                 </span>
               ) : (
                 <span>
-                  Điểm phân tách tốt nhất đạt được tại <strong>K = {bestKBySilhouette}</strong> với điểm Silhouette{' '}
+                  The best separation is at <strong>K = {bestKBySilhouette}</strong>, with a silhouette score of{' '}
                   <span className="font-mono font-bold text-emerald-500">
                     ({metricsList.find(m => m.k === bestKBySilhouette)?.silhouette.toFixed(3)})
                   </span>.
@@ -336,7 +338,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
           isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
         }`}>
           <div className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-            Số cụm đang chọn: <span className="font-bold text-indigo-600">K = {selectedK}</span>
+            Selected cluster count: <span className="font-bold text-indigo-600">K = {selectedK}</span>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -345,7 +347,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
                 isLight ? 'text-slate-600 hover:text-slate-900 bg-slate-200 hover:bg-slate-300' : 'text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700'
               }`}
             >
-              Đóng
+              Close
             </button>
             <button
               onClick={() => {
@@ -355,7 +357,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30 transition-all"
             >
               <CheckCircle2 size={14} />
-              <span>Áp dụng K = {selectedK} vào mô hình</span>
+              <span>Apply K = {selectedK}</span>
             </button>
           </div>
         </div>

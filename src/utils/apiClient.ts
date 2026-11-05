@@ -51,7 +51,7 @@ export async function apiClient<T>(
 
   if (!response.ok) {
     let errorCode = 'API_ERROR';
-    let messageText = `Yêu cầu thất bại với mã trạng thái HTTP ${response.status}`;
+    let messageText = `Request failed with HTTP status ${response.status}`;
 
     try {
       const errJson: unknown = await response.json();
@@ -72,9 +72,9 @@ export async function apiClient<T>(
     }
 
     if (response.status === 403) {
-      messageText = `[403 Bị từ chối truy cập]: ${messageText}`;
+      messageText = `[403 Access denied]: ${messageText}`;
     } else if (response.status === 401) {
-      messageText = `[401 Chưa đăng nhập]: ${messageText}`;
+      messageText = `[401 Authentication required]: ${messageText}`;
     }
 
     throw new ApiError(response.status, errorCode, messageText);
