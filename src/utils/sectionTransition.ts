@@ -3,7 +3,7 @@ import type { PortalSection, PortalRoute } from './portalNavigation';
 export interface TransitionRect { left: number; top: number; width: number; height: number }
 export interface TransitionLabel { rect: TransitionRect; size: number; lineHeight: number; spacing: number; family: string; weight: string; color: string }
 export interface SectionSource {
-  rect: TransitionRect; title: TransitionLabel; number: TransitionLabel; icon: { rect: TransitionRect; color: string };
+  rect: TransitionRect; title?: TransitionLabel; number?: TransitionLabel; numberText?: string;
   radius: number; background: string; border: string; accent: string;
 }
 export interface SectionNavigation {
@@ -27,14 +27,15 @@ export function captureSectionSource(link: HTMLAnchorElement): SectionSource {
     return { rect: rect(element), size, lineHeight: parseFloat(style.lineHeight) || size * 1.15,
       spacing: parseFloat(style.letterSpacing) || 0, family: style.fontFamily, weight: style.fontWeight, color: style.color };
   };
-  const icon = link.querySelector<SVGSVGElement>('.workspace-section-icon')!;
   const style = getComputedStyle(link);
-  const origin = rect(link.querySelector('.workspace-map-beacon')!);
+  const title = link.querySelector<HTMLElement>('[data-transition-title]');
+  const number = link.querySelector<HTMLElement>('[data-transition-number]');
+  const theme = getComputedStyle(link.closest('.portal-page') ?? link);
   return {
-    rect: origin, title: label(link.querySelector('.workspace-map-title')!),
-    number: label(link.querySelector('.workspace-map-number')!),
-    icon: { rect: rect(icon), color: getComputedStyle(icon).color },
-    radius: origin.width / 2, background: style.getPropertyValue('--map-paper').trim(),
-    border: style.getPropertyValue('--map-line').trim(), accent: style.getPropertyValue('--map-accent').trim(),
+    rect: rect(link), title: title ? label(title) : undefined,
+    number: number ? label(number) : undefined, numberText: number?.textContent ?? undefined,
+    radius: parseFloat(style.borderTopLeftRadius) || 0,
+    background: theme.getPropertyValue('--portal-paper').trim(),
+    border: theme.getPropertyValue('--portal-line').trim(), accent: theme.getPropertyValue('--portal-accent').trim(),
   };
 }

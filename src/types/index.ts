@@ -82,7 +82,7 @@ export interface DataPoint {
   /** Stable source-row identity, independent of a user-provided (possibly duplicate) ID. */
   rowIndex?: number;
   id: string | number | boolean;
-  originalFeatures: Record<string, number>;
+  originalFeatures: Record<string, number | null>;
   label?: DataValue;
   // 3D coordinates after reduction
   x: number;

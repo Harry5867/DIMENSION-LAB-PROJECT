@@ -2,7 +2,7 @@ import { MongoClient, Db, Document } from 'mongodb';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import dns from 'dns';
+import { DEMO_PASSWORD } from '../src/utils/demoSession';
 import {
   ComputeResult,
   DatasetDocument,
@@ -28,19 +28,11 @@ interface StoredExperiment extends Document {
   createdAt: string;
 }
 
-// Fix querySrv on Windows by using Google Public DNS
-try {
-  dns.setServers(['8.8.8.8', '8.8.4.4']);
-} catch (e) {
-  // Ignore if not supported in environment
-}
-
 dotenv.config();
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/cancer_explorer';
 const DB_NAME = 'cancer_explorer';
 
-let client: MongoClient | null = null;
 let db: Db | null = null;
 export let isMongoConnected = false;
 
@@ -52,55 +44,33 @@ const memoryStore = {
 };
 
 export async function initDatabase(): Promise<void> {
-  await tryConnectMongo();
-
-  // Background auto-reconnect polling every 12 seconds
-  setInterval(async () => {
-    if (!isMongoConnected) {
-      await tryConnectMongo(true);
-    }
-  }, 12000);
-}
-
-async function tryConnectMongo(isBackgroundRetry: boolean = false): Promise<void> {
+  // Public demo credentials must never grant access to persistent records.
+  if (!process.env.LAB_AUTH_PASSWORD || process.env.LAB_AUTH_PASSWORD === DEMO_PASSWORD) {
+    await seedInitialDatasetMemory();
+    return;
+  }
+  let candidate: MongoClient | undefined;
   try {
-    const maskedUri = MONGODB_URI.replace(/:([^:@]+)@/, ':****@');
-    if (!isBackgroundRetry) {
-      console.log(`🔌 [MongoDB] Đang kết nối tới: ${maskedUri}...`);
-    }
-
-    const testClient = new MongoClient(MONGODB_URI, {
+    candidate = new MongoClient(MONGODB_URI, {
       serverSelectionTimeoutMS: 4000,
       connectTimeoutMS: 4000,
     });
 
-    await testClient.connect();
-    client = testClient;
-    db = client.db(DB_NAME);
+    await candidate.connect();
+    const database = candidate.db(DB_NAME);
+    await database.collection('datasets').createIndex({ id: 1 }, { unique: true });
+    await database.collection('experiments').createIndex({ createdAt: -1 });
+    await database.collection('compute_cache').createIndex({ cacheKey: 1 }, { unique: true });
+    await database.collection('compute_cache').createIndex({ createdAt: 1 }, { expireAfterSeconds: 604800 });
+    await seedInitialDataset(database);
+    db = database;
     isMongoConnected = true;
-    console.log(`✅ [MongoDB Atlas] Kết nối THÀNH CÔNG tới Database Cloud: ${DB_NAME}!`);
-
-    // Create Indexes
-    await db.collection('datasets').createIndex({ id: 1 }, { unique: true });
-    await db.collection('experiments').createIndex({ createdAt: -1 });
-    await db.collection('compute_cache').createIndex({ cacheKey: 1 }, { unique: true });
-    await db.collection('compute_cache').createIndex({ createdAt: 1 }, { expireAfterSeconds: 604800 });
-
-    // Seed initial dataset data.csv
-    await seedInitialDataset(db);
-  } catch (error: unknown) {
-    if (!isBackgroundRetry) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`⚠️ [MongoDB] Chưa kết nối được (${message}).`);
-      console.warn(`💡 [Chế độ tự hành]: Kích hoạt In-Memory Store để hệ thống chạy 100% trơn tru.`);
-      await seedInitialDatasetMemory();
-    }
-    isMongoConnected = false;
+  } catch {
+    await candidate?.close().catch(() => {});
+    // Keep the same storage mode for the lifetime of this process.
+    console.warn('MongoDB is unavailable. Using in-memory storage until restart.');
+    await seedInitialDatasetMemory();
   }
-}
-
-export function getDb(): Db | null {
-  return db;
 }
 
 // 1. DATASET OPERATIONS
@@ -116,25 +86,9 @@ export async function getAllDatasets(): Promise<DatasetSummary[]> {
     createdAt: string;
   }> = [];
 
-  if (isMongoConnected && db) {
-    try {
-      const mongoDocs = await db.collection<StoredDataset>('datasets').find({}, { projection: { rawRows: 0 } }).toArray();
-      list = mongoDocs.map(item => ({
-        id: item.id,
-        name: item.name,
-        filename: item.filename,
-        totalRows: item.totalRows,
-        features: item.features,
-        labelColumn: item.labelColumn,
-        idColumn: item.idColumn,
-        createdAt: item.createdAt,
-      }));
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  if (list.length === 0) {
+  if (db) {
+    list = await db.collection<StoredDataset>('datasets').find({}, { projection: { rawRows: 0 } }).toArray();
+  } else {
     list = Array.from(memoryStore.datasets.values()).map(item => ({
       id: item.id,
       name: item.name,
@@ -177,27 +131,8 @@ export async function getAllDatasets(): Promise<DatasetSummary[]> {
 }
 
 export async function getDatasetById(id: string): Promise<DatasetDocument | null> {
-  if (isMongoConnected && db) {
-    try {
-      const doc = await db.collection<StoredDataset>('datasets').findOne({ id });
-      if (doc) {
-        return {
-          id: doc.id,
-          name: doc.name,
-          filename: doc.filename,
-          totalRows: doc.totalRows,
-          features: doc.features,
-          labelColumn: doc.labelColumn,
-          idColumn: doc.idColumn,
-          rawRows: doc.rawRows,
-          createdAt: doc.createdAt,
-        };
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-  return memoryStore.datasets.get(id) || null;
+  if (!db) return memoryStore.datasets.get(id) ?? null;
+  return db.collection<DatasetDocument>('datasets').findOne({ id }, { projection: { _id: 0 } });
 }
 
 export async function saveDataset(dataset: DatasetDocument): Promise<void> {
@@ -213,94 +148,49 @@ export async function saveDataset(dataset: DatasetDocument): Promise<void> {
     createdAt: dataset.createdAt || new Date().toISOString(),
   };
 
-  memoryStore.datasets.set(dataset.id, doc);
-
-  if (isMongoConnected && db) {
-    try {
-      await db.collection<StoredDataset>('datasets').replaceOne({ id: dataset.id }, doc, { upsert: true });
-    } catch (e) {
-      console.error(e);
-    }
-  }
+  if (db) await db.collection<StoredDataset>('datasets').insertOne(doc);
+  else memoryStore.datasets.set(dataset.id, doc);
 }
 
-export async function updateDataset(id: string, updates: { name?: string }): Promise<DatasetDocument | null> {
-  let doc = memoryStore.datasets.get(id);
-  if (doc) {
-    if (updates.name && updates.name.trim()) {
-      doc = { ...doc, name: updates.name.trim() };
-      memoryStore.datasets.set(id, doc);
-    }
+export async function updateDataset(id: string, name: string): Promise<DatasetDocument | null> {
+  if (db) {
+    return db.collection<DatasetDocument>('datasets').findOneAndUpdate(
+      { id }, { $set: { name } }, { returnDocument: 'after', projection: { _id: 0 } },
+    );
   }
-
-  if (isMongoConnected && db) {
-    try {
-      const updateFields: Record<string, unknown> = {};
-      if (updates.name && updates.name.trim()) {
-        updateFields.name = updates.name.trim();
-      }
-      if (Object.keys(updateFields).length > 0) {
-        await db.collection<StoredDataset>('datasets').updateOne({ id }, { $set: updateFields });
-        const updated = await db.collection<StoredDataset>('datasets').findOne({ id });
-        if (updated) {
-          doc = {
-            id: updated.id,
-            name: updated.name,
-            filename: updated.filename,
-            totalRows: updated.totalRows,
-            features: updated.features,
-            labelColumn: updated.labelColumn,
-            idColumn: updated.idColumn,
-            rawRows: updated.rawRows,
-            createdAt: updated.createdAt,
-          };
-          memoryStore.datasets.set(id, doc);
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  return doc || null;
+  const current = memoryStore.datasets.get(id);
+  if (!current) return null;
+  const updated = { ...current, name };
+  memoryStore.datasets.set(id, updated);
+  return updated;
 }
 
 export async function deleteDataset(id: string): Promise<boolean> {
-  const existedInMemory = memoryStore.datasets.delete(id);
-  let existedInMongo = false;
-  if (isMongoConnected && db) {
-    try {
-      const res = await db.collection('datasets').deleteOne({ id });
-      existedInMongo = res.deletedCount > 0;
-    } catch (e) {
-      console.error(e);
-    }
+  if (db) {
+    const result = await db.collection('datasets').deleteOne({ id });
+    return result.deletedCount > 0;
   }
-  return existedInMemory || existedInMongo;
+  return memoryStore.datasets.delete(id);
 }
 
 // 2. EXPERIMENT OPERATIONS
 export async function getAllExperiments(): Promise<ExperimentRecord[]> {
-  if (isMongoConnected && db) {
-    try {
-      const list = await db.collection<StoredExperiment>('experiments').find({}).sort({ createdAt: -1 }).limit(50).toArray();
-      return list.map(item => ({
-        id: item._id?.toString() || item.id,
-        dataset_id: item.datasetId,
-        dataset_name: item.datasetName,
-        reduction_method: item.reductionMethod,
-        clustering_method: item.clusteringMethod,
-        k: item.k,
-        silhouette_score: item.silhouetteScore,
-        ari: item.ari,
-        params: item.params,
-        created_at: item.createdAt,
-      }));
-    } catch (e) {
-      console.error(e);
-    }
+  if (db) {
+    const list = await db.collection<StoredExperiment>('experiments').find({}).sort({ createdAt: -1 }).limit(50).toArray();
+    return list.map(item => ({
+      id: item._id?.toString() || item.id,
+      dataset_id: item.datasetId,
+      dataset_name: item.datasetName,
+      reduction_method: item.reductionMethod,
+      clustering_method: item.clusteringMethod,
+      k: item.k,
+      silhouette_score: item.silhouetteScore,
+      ari: item.ari,
+      params: item.params,
+      created_at: item.createdAt,
+    }));
   }
-  return [...memoryStore.experiments].reverse();
+  return memoryStore.experiments.slice(-50).reverse();
 }
 
 export interface NewExperiment {
@@ -319,6 +209,10 @@ export async function saveExperiment(experiment: NewExperiment): Promise<string>
     ...experiment,
     createdAt: new Date().toISOString(),
   };
+  if (db) {
+    const result = await db.collection<StoredExperiment>('experiments').insertOne(doc);
+    return result.insertedId.toString();
+  }
 
   const localId = memoryStore.experiments.length + 1;
   memoryStore.experiments.push({
@@ -333,15 +227,6 @@ export async function saveExperiment(experiment: NewExperiment): Promise<string>
     params: experiment.params,
     created_at: doc.createdAt,
   });
-
-  if (isMongoConnected && db) {
-    try {
-      const res = await db.collection<StoredExperiment>('experiments').insertOne(doc);
-      return res.insertedId.toString();
-    } catch (e) {
-      console.error(e);
-    }
-  }
 
   return localId.toString();
 }
@@ -450,18 +335,20 @@ async function seedInitialDatasetMemory() {
 }
 
 export async function testDbConnection(): Promise<{ connected: boolean; message: string }> {
-  if (isMongoConnected && db) {
+  if (db) {
+    try {
+      await db.command({ ping: 1 });
+    } catch {
+      return { connected: false, message: 'MongoDB did not respond. Persistent writes may fail.' };
+    }
     return {
       connected: true,
       message: 'MongoDB Atlas is connected.',
     };
   }
-  await tryConnectMongo(false);
   return {
-    connected: isMongoConnected,
-    message: isMongoConnected
-      ? 'Reconnected to MongoDB Atlas.'
-      : 'MongoDB Atlas is unavailable. Using in-memory storage.',
+    connected: false,
+    message: 'Using in-memory storage. Restart the server to reconnect to MongoDB.',
   };
 }
 

@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createMorphPlayback, createMorphShapes, prepareMorphShapes, morphBudget, morphFrame, morphScenes, morphSettings, morphDisplayColor, type MorphMotion } from '../src/visuals/dataMorph';
+import { createMorphDirector, createMorphPlayback, createMorphShapes, prepareMorphShapes, morphBudget, morphFrame, morphScenes, morphSettings, morphDisplayColor, poseWeight, type MorphBlend, type MorphMotion } from '../src/visuals/dataMorph';
 import { morphCameraDistance } from '../src/visuals/dataMorphRuntime';
 import { Euler, PerspectiveCamera, Vector3 } from 'three';
 
-test('enlarged algorithm scenes stay inside the camera through rotation and responsive aspect changes', () => {
+test('enlarged algorithm scenes stay inside the camera at full pointer tilt and responsive aspect ratios', () => {
   const { shapes } = prepareMorphShapes(morphSettings.desktopPoints);
   const point = new Vector3(), rotation = new Euler();
+  const maxPitch = morphSettings.idlePitch + morphSettings.pointerPitch;
+  const maxYaw = morphSettings.idleYaw + morphSettings.pointerYaw;
   for (const aspect of [.65, 1.2, 2.2]) {
     const camera = new PerspectiveCamera(36, aspect, .1, 100);
     camera.position.z = morphCameraDistance(shapes, aspect); camera.updateMatrixWorld();
-    for (const x of [-.19, -.1, -.01]) for (const y of [-.285, .14, .285]) {
-      rotation.set(x, y, .035);
+    for (const x of [-.1 - maxPitch, -.1, -.1 + maxPitch]) for (const y of [-maxYaw, 0, maxYaw]) for (const z of [-.035, .035]) {
+      rotation.set(x, y, z);
       for (const shape of shapes) for (let i = 0; i < shape.positions.length; i += 3) {
         point.fromArray(shape.positions, i).applyEuler(rotation).multiplyScalar(1 + morphSettings.breathe);
         point.y += .1 + morphSettings.bob + .025; point.project(camera);
@@ -23,7 +25,7 @@ test('enlarged algorithm scenes stay inside the camera through rotation and resp
 
 test('every illustrative shape retains point identities, finite bounded positions and stable seeds', () => {
   const shapes = createMorphShapes(480);
-  assert.equal(shapes.length, 8);
+  assert.equal(shapes.length, 12);
   for (const shape of shapes) {
     assert.equal(shape.positions.length, 480 * 3);
     assert.equal(shape.colors.length, 480);
@@ -47,6 +49,26 @@ test('the morph timeline closes the final-to-first seam without a positional jum
   }
   assert.equal(morphFrame(1).blend, 0);
   assert.equal(morphFrame(Number.NaN).scene, 0);
+});
+
+test('a shortcut can interrupt another preview and return to neutral without snapping', () => {
+  const director = createMorphDirector();
+  const weights = ({ from, to, blend }: MorphBlend) => morphScenes.map((_, i) =>
+    poseWeight(from, i) * (1 - blend) + poseWeight(to, i) * blend);
+  const neutral = weights(director.advance(0));
+  director.select('kmeans', false);
+  const mid = weights(director.advance(.22));
+  assert.notDeepEqual(mid, neutral);
+  director.select('pca', false);
+  assert.deepEqual(weights(director.advance(0)), mid);
+  const pca = weights(director.advance(.5));
+  assert.equal(pca[0], 1);
+  assert.deepEqual(weights(director.advance(4)), pca);
+  director.select(undefined, false);
+  assert.deepEqual(weights(director.advance(0)), pca);
+  assert.deepEqual(weights(director.advance(.5)), neutral);
+  director.select('association', true);
+  assert.equal(weights(director.advance(0)).at(-1), 1);
 });
 
 test('small viewports and low-power devices cap both particle count and canvas resolution', () => {

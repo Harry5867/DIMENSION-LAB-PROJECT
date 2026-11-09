@@ -53,7 +53,7 @@ function MethodContent({ method, chapterId }: { method: TheoryMethod; chapterId:
       <div><section><h3><span>05</span> {tr("Reading the result")}</h3><p>{method.reading}</p></section><aside className="theory-caution"><h3>{tr("Keep in mind")}</h3><p>{method.caution}</p></aside></div>
     </div>
     <section className="theory-in-model"><div><span className="theory-section-label">{tr("CONTINUE IN THE LAB")}</span><p>{method.lab}</p></div><a className="theory-practice-link" href="#/methods">{tr("Open Model")} <ArrowUpRight size={17} aria-hidden="true" /></a></section>
-    <div className="theory-reference"><span>{tr("Explore the underlying method")}</span><a href={method.reference.href} target="_blank" rel="noreferrer">{method.reference.label} <ArrowUpRight size={14} aria-hidden="true" /></a><p>{tr("References describe the underlying algorithms. Dimension Lab uses its own TypeScript implementations and the settings described above.")}</p></div>
+    <div className="theory-reference"><span>{tr("Explore the underlying method")}</span><a href={method.reference.href} target="_blank" rel="noreferrer">{method.reference.label} <ArrowUpRight size={14} aria-hidden="true" /></a><p>{tr("References describe the underlying algorithms. This project uses its own TypeScript implementations and the settings described above.")}</p></div>
   </article>;
 }
 
@@ -71,7 +71,7 @@ export function Theory() {
   }, []);
   const chapterId = selection?.chapter.id, methodId = selection?.method.id;
   useEffect(() => {
-    document.title = `Dimension Lab — ${tr('Theory')}${selection ? ' · ' + selection.method.name : ''}`;
+    document.title = tr('Theory') + (selection ? ' · ' + selection.method.name : '');
   }, [methodId, selection?.method.name, tr]);
   useEffect(() => {
     const page = document.querySelector<HTMLElement>('.portal-page--theory');
@@ -106,7 +106,7 @@ export function Theory() {
       href={theoryHref(chapter.id)} data-chapter={chapter.id} className={'theory-book theory-book--' + chapter.id}
       aria-label={t('Open ' + chapter.title + ' chapter', 'Mở chương ' + chapter.title)}
       onClick={() => { returnScroll.current = catalog.current?.closest('.portal-page')?.scrollTop ?? 0; }}>
-      <div className="theory-book-frame"><div className="theory-book-meta"><span>{chapter.number} / DIMENSION LAB</span><span aria-hidden="true">＋</span></div><div className="theory-book-title"><h2>{chapter.coverTitle}</h2>{chapter.id === 'reduction' && <p>{tr("Dimensionality Reduction")}</p>}</div><TheoryIllustration method={coverMethods[index]} cover /><div className="theory-book-methods">{chapter.methods.map(item => item.name).join(' · ')}</div><span className="theory-book-open">{tr("Explore chapter")} <ArrowUpRight size={16} aria-hidden="true" /></span></div>
+      <div className="theory-book-frame"><div className="theory-book-meta"><span>{chapter.number}</span><span aria-hidden="true">＋</span></div><div className="theory-book-title"><h2>{chapter.coverTitle}</h2>{chapter.id === 'reduction' && <p>{tr("Dimensionality Reduction")}</p>}</div><TheoryIllustration method={coverMethods[index]} cover /><div className="theory-book-methods">{chapter.methods.map(item => item.name).join(' · ')}</div><span className="theory-book-open">{tr("Explore chapter")} <ArrowUpRight size={16} aria-hidden="true" /></span></div>
     </a></div>)}</nav>
     <p className="theory-catalog-hint"><BookOpen size={15} aria-hidden="true" /><span>{tr("Four perspectives. Select a chapter to explore its input, process and output.")}</span></p>
   </div>;

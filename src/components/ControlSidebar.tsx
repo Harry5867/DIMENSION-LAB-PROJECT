@@ -227,7 +227,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
       </div>}
 
       {/* 2. Scrollable Accordion Container */}
-      <fieldset disabled={isComputing} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 space-y-2.5">
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 space-y-2.5">
         {/* ========================================================================= */}
         {/* NHÓM 1: DATASET VÀ THÔNG TIN DỮ LIỆU                                     */}
         {/* ========================================================================= */}
@@ -286,6 +286,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                 </div>
               </div>
 
+              <fieldset disabled={isComputing} className="min-w-0 space-y-2.5">
               <div className="dataset-summary">
                 <div><strong>{totalRows.toLocaleString('en-US')}</strong><span>{tr("Data points")}</span></div>
                 <div><strong>{selectedFeatures.length.toLocaleString('en-US')}</strong><span>{tr("Features")}</span></div>
@@ -387,10 +388,12 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                 </div>
               </div>
               </details>
+              </fieldset>
             </div>
           )}
         </div>}
 
+        <fieldset disabled={isComputing} className="min-w-0 space-y-2.5">
         {/* ========================================================================= */}
         {/* NHÓM 2: TIỀN XỬ LÝ VÀ CHUẨN HÓA DỮ LIỆU                                 */}
         {/* ========================================================================= */}
@@ -843,7 +846,8 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
           )}
         </div>
         {additionalMethods}
-      </fieldset>
+        </fieldset>
+      </div>
 
       {!embedded && (
       /* Scientific Footer Status Bar */

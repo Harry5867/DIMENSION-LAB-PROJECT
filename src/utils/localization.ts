@@ -6,6 +6,7 @@ const messagePatterns: ReadonlyArray<readonly [RegExp, (...values: string[]) => 
   [/^Running (.+) in your browser…$/, method => `Đang chạy ${method} trên trình duyệt…`],
   [/^Running (.+)…$/, method => `Đang chạy ${method}…`],
   [/^Clustering with (.+)…$/, method => `Đang phân cụm bằng ${method}…`],
+  [/^(K-Means|GMM): k must be an integer from 1 to (\d+)\.$/, (method, max) => `${method}: k phải là số nguyên từ 1 đến ${max}.`],
   [/^Projection complete: (.+)\. You can now apply clustering\.$/, method => `Đã chiếu bằng ${method}. Bạn có thể áp dụng phân cụm.`],
   [/^Finished (.+)\. Select a cluster to explore\.$/, method => `Đã hoàn thành ${method}. Chọn cụm để khám phá.`],
   [/^Imported (.+) \((\d+) rows\)\.$/, (name, count) => `Đã nhập ${name} (${count} dòng).`],

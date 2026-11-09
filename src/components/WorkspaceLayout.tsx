@@ -3,7 +3,6 @@ import { useDialogFocus } from '../utils/useDialogFocus';
 import React, { useEffect, useRef, useState } from 'react';
 import { DataPoint } from '../types';
 import { ArrowDownToLine, PanelLeft, PanelRight, Play, HelpCircle, ArrowLeft } from 'lucide-react';
-import { LabMark } from './LabMark';
 import { ThemeToggle } from './ThemeToggle';
 import { modelRoutes } from '../utils/portalNavigation';
 
@@ -159,7 +158,6 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         pageRef.current?.focus();
       }}>{tr("Skip to content")}</a>
       <header className="workspace-header">
-        <a className="workspace-brand" href="#/overview" aria-label={tr("Dimension Lab workspace")}><LabMark className="brand-mark" /> DIMENSION <span className="brand-slash">/</span> LAB</a>
         <nav aria-label={tr("Main navigation")}>
           {workspacePages.map(page => <a key={page} href={'#/' + page} aria-current={props.page === page ? 'page' : undefined}>{tr(page.toUpperCase())}</a>)}
         </nav>
@@ -174,16 +172,6 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
       {compact && <div className="explore-panelbar">
         <button onClick={toggleLeft} aria-expanded={leftOpen} aria-controls="workspace-setup"><PanelLeft size={15} /> {tr("Setup")} <span aria-hidden="true">{leftOpen ? '−' : '+'}</span></button>
         <button onClick={toggleRight} aria-expanded={rightOpen} aria-controls="workspace-insights"><PanelRight size={15} /> {tr("Insights")} <span aria-hidden="true">{rightOpen ? '−' : '+'}</span></button>
-      </div>}
-      {props.isComputing && <div className="workspace-activity" role="status">
-        <progress aria-label={props.analyzingConfiguration ? tr("Analyzing") : tr("Loading data")} />
-        <span>{tr(props.activity || 'Preparing analysis…')}</span>
-        {props.analyzingConfiguration && <strong>{tr(props.analyzingConfiguration)}</strong>}
-      </div>}
-      {props.analysisError && <div className="workspace-run-error" role="alert">
-        <div><strong>{tr("Analysis could not finish")}</strong><p>{tr(props.analysisError)}</p>{props.previousResult && <small>{tr("Your previous results are still available.")}</small>}</div>
-        <button onClick={props.onRetry} disabled={!props.canRun || props.isComputing || props.isLiveAnimating}>{tr("Try again")}</button>
-        <button onClick={props.onDismissError} aria-label={tr("Dismiss analysis error")}>×</button>
       </div>}
 
       <div className={'workspace-body' + (leftOpen ? ' setup-open' : '') + (rightOpen ? ' insights-open' : '')}>
@@ -207,6 +195,15 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         <main ref={stageRef} tabIndex={0} className={'workspace-stage' + (expanded ? ' is-expanded' : '')}
           role={isFullscreen ? 'dialog' : undefined} aria-modal={isFullscreen || undefined} aria-label={tr("3D visualization")}>
           {props.visualization({ isFullscreen, onToggleFullscreen: () => { void toggleFullscreen(); }, toolbarHost })}
+          {props.analysisError && <div className="workspace-run-error" role="alert">
+            <div><strong>{tr("Analysis could not finish")}</strong><p>{tr(props.analysisError)}</p>{props.previousResult && <small>{tr("Your previous results are still available.")}</small>}</div>
+            <button onClick={props.onRetry} disabled={!props.canRun || props.isComputing || props.isLiveAnimating}>{tr("Try again")}</button>
+            <button onClick={props.onDismissError} aria-label={tr("Dismiss analysis error")}>×</button>
+          </div>}
+          {props.isComputing && <div className="workspace-activity" role="status">
+            <progress aria-label={tr(props.activity || 'Preparing analysis…')} />
+            <span>{tr(props.activity || 'Preparing analysis…')}</span>
+          </div>}
         </main>
         <aside className="workspace-insights" aria-label={tr("Exploration insights")} hidden={compact && !rightOpen}>
           <div className="workspace-panel-content" ref={insightsDialog} role={compact && rightOpen && !isFullscreen ? 'dialog' : undefined} aria-modal={compact && rightOpen && !isFullscreen ? true : undefined} aria-label={tr("Exploration insights")} tabIndex={-1}>
@@ -247,7 +244,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         <div className="workspace-view-tools" ref={setToolbarHost} />
         <div className="workspace-actions">
           <button aria-keyshortcuts="Control+Enter Meta+Enter" title={tr("Run analysis (Ctrl or Command + Enter)")} className="workspace-run" onClick={props.onRun} disabled={!props.canRun || props.isComputing || props.isLiveAnimating}>
-            <Play size={14} fill="currentColor" />{props.analyzingConfiguration ? tr("Analyzing…") : props.isComputing ? tr("Loading…") : props.resultsDirty ? tr("Rerun analysis") : tr("Run analysis")}
+            <Play size={14} fill="currentColor" />{props.activity === 'Updating view…' ? tr('Updating view…') : props.analyzingConfiguration ? tr("Analyzing…") : props.isComputing ? tr("Loading…") : props.resultsDirty ? tr("Rerun analysis") : tr("Run analysis")}
           </button>
           <button className="workspace-export" aria-haspopup="dialog" onClick={props.onExport} disabled={!props.canExport || props.isComputing || props.isLiveAnimating}>
             <ArrowDownToLine size={15} />{props.previousResult ? tr("Export previous result") : tr("Export")}

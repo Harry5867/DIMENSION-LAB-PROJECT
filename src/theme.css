@@ -15,7 +15,7 @@ html[data-theme=dark] body {
 .workspace-header-actions { display:flex; align-items:center; gap:12px; flex-shrink:0; margin-inline-start:auto; }
 .portal-page-tools { display:flex; justify-content:space-between; align-items:center; gap:16px; min-height:34px; margin-bottom:20px; }
 .portal-page-tools .portal-back { margin-bottom:0; }
-html[data-theme=dark] .portal-page {
+html[data-theme=dark] .portal-page:not(.portal-page--workspace) {
   --portal-paper:#101815; --portal-ink:#e8ede4; --portal-muted:#a8b6ac; --portal-accent:#8bc7b0; --portal-line:#3c5547;
   background:var(--portal-paper); color-scheme:dark;
   --theory-teal:#8bc7b0; --theory-sage:#c2cc97; --theory-slate:#a7b9dc; --theory-cloud:#a7c3ae; --theory-grid:#3c5547; --theory-text:#c0cec3;

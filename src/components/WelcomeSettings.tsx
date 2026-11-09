@@ -1,4 +1,5 @@
-import { Globe2, Monitor, Moon, Sun } from 'lucide-react';
+import { Globe2, Moon, Sun } from 'lucide-react';
+import { useId, useRef, useState } from 'react';
 import { useWelcomeLanguage } from './WelcomeLanguage';
 import type { WelcomeTheme } from '../utils/welcomePreferences';
 import './welcome-settings.css';
@@ -7,8 +8,11 @@ export function WelcomeSettings({ theme, onTheme }: {
   theme: WelcomeTheme; onTheme: (theme: WelcomeTheme) => void;
 }) {
   const { language, setLanguage, t } = useWelcomeLanguage();
+  const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const close = () => { setOpen(false); trigger.current?.focus(); };
   const options = [
-    { value: 'system', label: t('Use system appearance', 'Theo giao diện hệ thống'), Icon: Monitor },
     { value: 'light', label: t('Light mode', 'Giao diện sáng'), Icon: Sun },
     { value: 'dark', label: t('Dark mode', 'Giao diện tối'), Icon: Moon },
   ] as const;
@@ -17,14 +21,19 @@ export function WelcomeSettings({ theme, onTheme }: {
       {options.map(({ value, label, Icon }) => <button key={value} type="button" className="welcome-setting-control welcome-appearance-option"
         aria-label={label} title={label} aria-pressed={theme === value} onClick={() => onTheme(value)}><Icon size={17} strokeWidth={1.6} aria-hidden="true" /></button>)}
     </div>
-    <label className="welcome-language">
-      <Globe2 size={16} strokeWidth={1.6} aria-hidden="true" />
-      <span className="sr-only">{t('Language', 'Ngôn ngữ')}</span>
-      <select className="welcome-setting-control" value={language}
-        onChange={event => setLanguage(event.currentTarget.value === 'vi' ? 'vi' : 'en')}>
-        <option value="en" lang="en">English</option>
-        <option value="vi" lang="vi">Tiếng Việt</option>
-      </select>
-    </label>
+    <div className="welcome-language" onBlur={event => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }} onKeyDown={event => {
+      if (event.key === 'Escape' && open) { event.stopPropagation(); close(); }
+    }}>
+      <button ref={trigger} type="button" className="welcome-setting-control welcome-appearance-option"
+        aria-label={t('Language', 'Ngôn ngữ')} aria-expanded={open} aria-controls={menuId}
+        onClick={() => setOpen(value => !value)}><Globe2 size={17} strokeWidth={1.6} aria-hidden="true" /></button>
+      <div className="welcome-language-options" id={menuId} hidden={!open}>
+        {(['en', 'vi'] as const).map(value => <button key={value} type="button"
+          className="welcome-setting-control" lang={value} aria-pressed={language === value}
+          onClick={() => { setLanguage(value); close(); }}>{value === 'en' ? 'English' : 'Tiếng Việt'}</button>)}
+      </div>
+    </div>
   </div>;
 }

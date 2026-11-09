@@ -10,8 +10,8 @@ export const scanAxisX = .976;
 export const scanAxisZ = -Math.sqrt(1 - scanAxisX ** 2);
 export const genesisScanCoordinate = (x: number, z: number) => scanAxisX * x + scanAxisZ * z;
 
-export function shouldWaitForGenesis(returning: boolean, startedInPage: boolean) {
-  return !returning && !startedInPage;
+export function shouldPlayGenesis(returning: boolean, startedInPage: boolean, reduced: boolean) {
+  return !returning && !startedInPage && !reduced;
 }
 
 const clamp = (value: number) => Math.min(1, Math.max(0, value));

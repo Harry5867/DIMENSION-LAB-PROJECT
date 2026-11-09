@@ -17,15 +17,16 @@ import { associationExample, exampleTransactions, theoryChapters, theoryHref, th
 import { computeApriori } from '../src/algorithms/apriori';
 import { parseWelcomePreferences, resolveWelcomeTheme } from '../src/utils/welcomePreferences';
 import { readThemeMode, resolveTheme, themePreferenceKey } from '../src/utils/themePreferences';
-import { shouldWaitForGenesis, genesisDuration, genesisFrame, genesisImpact, genesisScanEnd, genesisSignalStart, genesisProjection } from '../src/visuals/welcomeGenesis';
+import { shouldPlayGenesis, genesisDuration, genesisFrame, genesisImpact, genesisScanEnd, genesisSignalStart, genesisProjection } from '../src/visuals/welcomeGenesis';
 import { createEarthRenderer } from '../src/components/globeScene';
 
-test('a fresh Welcome waits for activation while in-page returns and workspace links stay separate', () => {
+test('a fresh Welcome plays its intro automatically unless it is returning or reduced motion is enabled', () => {
   assert.ok(['', '#', '#/'].every(isWelcomeRoute));
   assert.ok(['#/overview', '#/explore', '#/theory'].every(hash => !isWelcomeRoute(hash)));
-  assert.equal(shouldWaitForGenesis(false, false), true);
-  assert.equal(shouldWaitForGenesis(true, false), false);
-  assert.equal(shouldWaitForGenesis(false, true), false);
+  assert.equal(shouldPlayGenesis(false, false, false), true);
+  assert.equal(shouldPlayGenesis(true, false, false), false);
+  assert.equal(shouldPlayGenesis(false, true, false), false);
+  assert.equal(shouldPlayGenesis(false, false, true), false);
 });
 
 test('the Canvas fallback reveals the live points in place and preserves their appearance at handoff', () => {

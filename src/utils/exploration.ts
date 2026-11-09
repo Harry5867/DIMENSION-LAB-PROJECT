@@ -5,7 +5,8 @@ import { computeTSNE } from '../algorithms/tsne';
 import { computeUMAP } from '../algorithms/umap';
 import { computeKMeans } from '../algorithms/kmeans';
 import { computeDBSCAN } from '../algorithms/dbscan';
-import { computeARI, computeSilhouetteScore, detectKMeansOutliers, detectOutliers3D } from '../algorithms/metrics';
+import { computeARI, computeSilhouetteScore, detectKMeansOutliers, detectOutliers3D, summarizeClustering } from '../algorithms/metrics';
+import { numericValue } from './analysisPresentation';
 
 export interface AnalysisSnapshot {
   datasetId: string;
@@ -75,6 +76,22 @@ export function reduceMatrix(matrix: number[][], config: ReductionConfig) {
     components: undefined, explainedVariance: undefined, totalExplainedVariance: undefined };
 }
 
+export function projectionSettingsError(config: ReductionConfig, rows: number): string | null {
+  if (config.method !== 'PCA' && rows > 1000) {
+    return `${config.method} supports up to 1,000 rows. Choose PCA for a larger dataset.`;
+  }
+  if (config.method === 't-SNE' && (!Number.isFinite(config.perplexity) || config.perplexity < 1 || config.perplexity > 50
+    || !Number.isFinite(config.learningRate) || config.learningRate <= 0 || config.learningRate > 500
+    || !Number.isInteger(config.iterations) || config.iterations < 1 || config.iterations > 500)) {
+    return 'Invalid t-SNE perplexity, learning rate, or iteration count.';
+  }
+  if (config.method === 'UMAP' && (!Number.isInteger(config.nNeighbors) || config.nNeighbors < 2 || config.nNeighbors > 50
+    || !Number.isFinite(config.minDist) || config.minDist < 0 || config.minDist > 1)) {
+    return 'Invalid UMAP neighbor count or minimum distance.';
+  }
+  return null;
+}
+
 export function makePoints(dataset: ParsedDataset, coordinates: [number, number, number][]): DataPoint[] {
   if (coordinates.length !== dataset.rawRows.length || coordinates.some(p => p.length !== 3 || p.some(v => !Number.isFinite(v)))) {
     throw new Error('The projection coordinates do not match the source data.');
@@ -83,7 +100,7 @@ export function makePoints(dataset: ParsedDataset, coordinates: [number, number,
     id: row[dataset.idColumn ?? ''] ?? index + 1,
     rowIndex: index,
     label: dataset.labelColumn ? row[dataset.labelColumn] : undefined,
-    originalFeatures: Object.fromEntries(dataset.featureColumns.map(name => [name, Number(row[name])])),
+    originalFeatures: Object.fromEntries(dataset.featureColumns.map(name => [name, numericValue(row[name])])),
     x: coordinates[index][0], y: coordinates[index][1], z: coordinates[index][2], cluster: 0,
   }));
 }
@@ -91,7 +108,7 @@ export function makePoints(dataset: ParsedDataset, coordinates: [number, number,
 /** Cluster and evaluate the same points in the same coordinate space. Never mutate source rows. */
 export function clusterPoints(points: DataPoint[], config: ClusteringConfig, hasLabels: boolean) {
   const coordinates = points.map(p => [p.x, p.y, p.z]);
-  let labels = points.map(() => 0);
+  let labels: number[] = [];
   let outliers: boolean[];
   let gmm: ReturnType<typeof computeGMM> | undefined;
   if (config.method === 'K-Means') {
@@ -105,14 +122,11 @@ export function clusterPoints(points: DataPoint[], config: ClusteringConfig, has
     labels = computeDBSCAN(coordinates, config.epsilon, config.minPts).clusters;
     outliers = labels.map(label => label === -1);
   } else outliers = detectOutliers3D(points);
-  const updated = points.map((p, i) => ({ ...p, cluster: labels[i], isOutlier: outliers[i], clusterConfidence: gmm ? Math.max(...gmm.probabilities[i]) : undefined }));
-  const counts: Record<number, number> = {};
-  if (config.method !== 'None') labels.forEach(c => { if (c >= 0) counts[c] = (counts[c] ?? 0) + 1; });
-  const finiteOrNull = (value: number | null) => value !== null && Number.isFinite(value) ? value : null;
+  const updated = points.map((p, i) => ({ ...p, cluster: labels[i] ?? 0, isOutlier: outliers[i], clusterConfidence: gmm ? Math.max(...gmm.probabilities[i]) : undefined }));
+  const groundTruth = hasLabels && labels.length > 0 ? points.map(p => p.label ?? null) : undefined;
   const metrics: EvaluationMetrics = {
-    silhouetteScore: config.method === 'None' ? null : finiteOrNull(computeSilhouetteScore(coordinates, labels)),
-    adjustedRandIndex: config.method === 'None' || !hasLabels ? null : finiteOrNull(computeARI(updated.map(p => p.label ?? null), labels)),
-    clusterCounts: counts, noiseCount: labels.filter(c => c === -1).length, outlierCount: outliers.filter(Boolean).length,
+    ...summarizeClustering(coordinates, labels, groundTruth),
+    outlierCount: outliers.filter(Boolean).length,
   };
   return { points: updated, metrics, gmm };
 }

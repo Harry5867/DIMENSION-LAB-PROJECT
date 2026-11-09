@@ -22,7 +22,7 @@ export function computeUMAP(
 
   const d = matrix[0].length;
   const k = Math.min(config.nNeighbors || 15, n - 1);
-  const minDist = config.minDist || 0.1;
+  const minDist = config.minDist ?? 0.1;
   const nEpochs = Math.min(config.nEpochs || 200, 400);
 
   // Curve fitting constants for UMAP embedding distance

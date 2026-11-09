@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { isNumberMatrix } from '../server/computeValidation';
+import { computeKMeans } from '../src/algorithms/kmeans';
+import { computeSilhouetteScore } from '../src/algorithms/metrics';
 import { clusterPoints, describeRun, evaluatePointSet, focusPoints, makePoints, pendingAnalysisChanges, reduceMatrix, reductionKey, clusteringKey } from '../src/utils/exploration';
 import { analysisReport } from '../src/utils/exportData';
 import { extractFeatureMatrix, parseCSVString } from '../src/utils/dataParser';
@@ -88,11 +91,51 @@ test('DBSCAN result, focus and edited metrics account for every point', () => {
   assert.equal(evaluatePointSet([], true, true).silhouetteScore, null);
 });
 
+test('Silhouette includes singleton clusters as zero and excludes noise', () => {
+  const expected = (9 / 10 + 8 / 9) / 3;
+  assert.equal(computeSilhouetteScore([[0], [1], [10]], [0, 0, 1]), expected);
+  assert.equal(computeSilhouetteScore([[0], [1], [10], [30]], [0, 0, 1, -1]), expected);
+  assert.equal(computeSilhouetteScore([[0], [1], [10]], [0, 1, 2]), null);
+});
+
+test('Silhouette is zero when intra- and inter-cluster distances are zero', () => {
+  assert.equal(computeSilhouetteScore([[0], [0], [0], [0]], [0, 0, 1, 1]), 0);
+});
+
+test('clustering rejects k larger than the number of points instead of reducing k', () => {
+  const points = [point(0), point(10)];
+  for (const method of ['K-Means', 'GMM'] as const) {
+    assert.throws(() => clusterPoints(points, { ...clustering, method, k: 3 }, false),
+      /k must be an integer from 1 to 2/);
+  }
+  assert.throws(() => computeKMeans([[0], [10]], 3), /k must be an integer from 1 to 2/);
+  assert.equal(computeKMeans([[0], [10]], 2).centroids.length, 2);
+});
+
 test('no-clustering mode has no fabricated cluster counts or scores', () => {
-  const result = clusterPoints([point(0), point(10)], { ...clustering, method: 'None' }, false);
+  const result = clusterPoints([point(0), point(10)], { ...clustering, method: 'None', k: 99 }, true);
+  assert.equal(result.points.length, 2);
+  assert.equal(result.metrics.noiseCount, 0);
   assert.deepEqual(result.metrics.clusterCounts, {});
   assert.equal(result.metrics.silhouetteScore, null);
   assert.equal(result.metrics.adjustedRandIndex, null);
+});
+
+test('projection imputes missing numeric cells with the column mean', () => {
+  assert.deepEqual(extractFeatureMatrix([{ x: 10 }, { x: null }, { x: 20 }], ['x'], 'none'),
+    [[10], [15], [20]]);
+  assert.deepEqual(extractFeatureMatrix([{ x: 0 }, { x: '12' }, { x: '' }, { x: '  ' }, {}], ['x'], 'none'),
+    [[0], [12], [6], [6], [6]]);
+});
+
+test('compute API matrix validation requires rows of equal nonzero width', () => {
+  assert.equal(isNumberMatrix([[1, 2, 3], [4], [5, 6, 7]]), false);
+  assert.equal(isNumberMatrix([[1], [2, 3]]), false);
+  assert.equal(isNumberMatrix([[1, 2], [3, 4]]), true);
+  assert.equal(isNumberMatrix([]), false);
+  assert.equal(isNumberMatrix([[]]), false);
+  assert.equal(isNumberMatrix([[1, 2], [3, NaN]]), false);
+  assert.equal(isNumberMatrix([[1, 2], [3, '4']]), false);
 });
 
 test('both shipped datasets pass through CSV → features → PCA → clustering with matching rows', () => {
@@ -104,6 +147,13 @@ test('both shipped datasets pass through CSV → features → PCA → clustering
     const output = reduceMatrix(matrix, reduction);
     const result = clusterPoints(makePoints(dataset, output.coordinates), clustering, true);
     assert.equal(result.points.length, rows);
+    result.points.forEach((point, index) => {
+      const source = dataset.rawRows[index];
+      assert.equal(point.rowIndex, index);
+      assert.equal(point.id, source[dataset.idColumn ?? ''] ?? index + 1);
+      assert.equal(point.label, dataset.labelColumn ? source[dataset.labelColumn] : undefined);
+      assert.deepEqual([point.x, point.y, point.z], output.coordinates[index]);
+    });
     assert.equal(Object.values(result.metrics.clusterCounts).reduce((a, b) => a + b, 0), rows);
     assert.ok(result.points.every(p => [p.x, p.y, p.z].every(Number.isFinite)));
   }

@@ -44,7 +44,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
   const fetchHealth = async () => {
     try {
-      const res = await fetch('/api/system-health');
+      const res = await fetchWithTimeout('/api/system-health');
       if (res.ok) {
         const data: unknown = await res.json();
         if (isSystemHealth(data)) setSystemHealth(data);
@@ -70,7 +70,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     setIsPinging(true);
     setPingResult(null);
     try {
-      const res = await fetch('/api/test-db', { method: 'POST' });
+      const res = await fetchWithTimeout('/api/test-db', { method: 'POST' });
       const data: unknown = await res.json();
       if (isRecord(data) && data.connected === true) {
         setPingResult('Connected to MongoDB Atlas.');
@@ -93,7 +93,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     setIsClearingCache(true);
     setCacheMsg(null);
     try {
-      const res = await fetch('/api/cache', { method: 'DELETE' });
+      const res = await fetchWithTimeout('/api/cache', { method: 'DELETE' });
       if (!res.ok) throw new Error('Could not clear cache (HTTP ' + res.status + ').');
       const data: unknown = await res.json();
       const message = isRecord(data) && typeof data.message === 'string'
@@ -342,3 +342,4 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     </div>
   );
 };
+import { fetchWithTimeout } from '../utils/network';

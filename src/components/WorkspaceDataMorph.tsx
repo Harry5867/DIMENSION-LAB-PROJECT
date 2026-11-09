@@ -19,7 +19,12 @@ export function WorkspaceDataMorph({ active }: { active: boolean }) {
     if (!element) return;
     let disposed = false, visible = false, pageActive = true;
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const sync = () => engine.current?.setMotion({ active: activeRef.current && pageActive, visible, hidden: document.hidden, reduced: preference.matches, paused: false });
+    const sync = () => {
+      engine.current?.setMotion({
+        active: activeRef.current && pageActive,
+        visible, hidden: document.hidden, reduced: preference.matches, paused: preference.matches,
+      });
+    };
     synchronize.current = sync;
     const resize = () => {
       const bounds = element.getBoundingClientRect();
@@ -27,7 +32,9 @@ export function WorkspaceDataMorph({ active }: { active: boolean }) {
     };
     const pointer = (event: PointerEvent) => {
       if (event.pointerType === 'touch' || preference.matches) return;
-      engine.current?.setPointer(event.clientX / Math.max(1, window.innerWidth) * 2 - 1, event.clientY / Math.max(1, window.innerHeight) * 2 - 1);
+      const bounds = element.getBoundingClientRect();
+      engine.current?.setPointer((event.clientX - bounds.left) / Math.max(1, bounds.width) * 2 - 1,
+        (event.clientY - bounds.top) / Math.max(1, bounds.height) * 2 - 1);
     };
     const leave = () => engine.current?.setPointer(0, 0);
     const hide = () => { pageActive = false; sync(); };
@@ -36,7 +43,7 @@ export function WorkspaceDataMorph({ active }: { active: boolean }) {
     const visibility = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? false; sync(); });
     sizes.observe(element); visibility.observe(element);
     document.addEventListener('visibilitychange', sync); preference.addEventListener('change', sync);
-    window.addEventListener('pointermove', pointer, { passive: true }); document.documentElement.addEventListener('pointerleave', leave);
+    element.addEventListener('pointermove', pointer, { passive: true }); element.addEventListener('pointerleave', leave);
     window.addEventListener('pagehide', hide); window.addEventListener('pageshow', show);
     void import('../visuals/dataMorphRuntime').then(({ createDataMorphRuntime }) => {
       if (disposed) return;
@@ -45,12 +52,13 @@ export function WorkspaceDataMorph({ active }: { active: boolean }) {
     return () => {
       disposed = true; synchronize.current = null; sizes.disconnect(); visibility.disconnect();
       document.removeEventListener('visibilitychange', sync); preference.removeEventListener('change', sync);
-      window.removeEventListener('pointermove', pointer); document.documentElement.removeEventListener('pointerleave', leave);
+      element.removeEventListener('pointermove', pointer); element.removeEventListener('pointerleave', leave);
       window.removeEventListener('pagehide', hide); window.removeEventListener('pageshow', show);
       engine.current?.destroy(); engine.current = null;
     };
   }, []);
-  return <figure className="workspace-data-morph" aria-label={tr("Illustrative data transforming between unsupervised learning algorithms")}>
+  return <figure className="workspace-data-morph"
+    aria-label={tr("Illustrative data transforming between unsupervised learning algorithms")}>
     <div className="workspace-data-morph-stage" ref={host} aria-hidden="true" />
   </figure>;
 }

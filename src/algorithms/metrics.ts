@@ -3,134 +3,100 @@
  */
 import { DataValue } from '../types';
 
-export function computeSilhouetteScore(
-  data: number[][],
-  labels: number[]
-): number | null {
-  const n = data.length;
-  if (n <= 1) return null;
+export function computeSilhouetteScore(data: number[][], labels: number[]): number | null {
+  if (data.length <= 1 || labels.length !== data.length) return null;
 
-  const d = data[0].length;
-
-  // Group indices by cluster (ignore noise -1)
-  const clusterMap = new Map<number, number[]>();
-  for (let i = 0; i < n; i++) {
-    const c = labels[i];
-    if (c >= 0) {
-      if (!clusterMap.has(c)) clusterMap.set(c, []);
-      clusterMap.get(c)!.push(i);
-    }
+  const clusters = new Map<number, number[]>();
+  let clusteredPoints = 0;
+  for (let i = 0; i < labels.length; i++) {
+    const label = labels[i];
+    if (label < 0) continue; // Exclude noise.
+    if (!clusters.has(label)) clusters.set(label, []);
+    clusters.get(label)!.push(i);
+    clusteredPoints++;
   }
 
-  // Must have at least 2 distinct clusters
-  if (clusterMap.size < 2) return null;
+  if (clusters.size < 2 || clusters.size === clusteredPoints) return null;
 
-  let totalSilhouette = 0;
-  let validPoints = 0;
-
-  for (let i = 0; i < n; i++) {
-    const c = labels[i];
-    if (c < 0) continue; // Skip noise
-
-    const sameCluster = clusterMap.get(c)!;
-    if (sameCluster.length <= 1) continue;
-
-    // Calculate a(i): mean intra-cluster distance
-    let aSum = 0;
-    for (const j of sameCluster) {
+  const dimension = data[0].length;
+  const distanceSum = (i: number, neighbors: number[]) => {
+    let sum = 0;
+    for (const j of neighbors) {
       if (i === j) continue;
-      let dist = 0;
-      for (let k = 0; k < d; k++) {
-        const diff = data[i][k] - data[j][k];
-        dist += diff * diff;
+      let squared = 0;
+      for (let k = 0; k < dimension; k++) {
+        const difference = data[i][k] - data[j][k];
+        squared += difference * difference;
       }
-      aSum += Math.sqrt(dist);
+      sum += Math.sqrt(squared);
     }
-    const a = aSum / (sameCluster.length - 1);
+    return sum;
+  };
 
-    // Calculate b(i): minimum mean distance to another cluster
-    let b = Infinity;
-    clusterMap.forEach((otherIndices, otherC) => {
-      if (otherC === c || otherIndices.length === 0) return;
-      let bSum = 0;
-      for (const j of otherIndices) {
-        let dist = 0;
-        for (let k = 0; k < d; k++) {
-          const diff = data[i][k] - data[j][k];
-          dist += diff * diff;
-        }
-        bSum += Math.sqrt(dist);
+  let total = 0;
+  for (const [label, members] of clusters) {
+    if (members.length === 1) continue; // This point contributes zero to the mean.
+    for (const i of members) {
+      const a = distanceSum(i, members) / (members.length - 1);
+      let b = Infinity;
+      for (const [otherLabel, neighbors] of clusters) {
+        if (label !== otherLabel) b = Math.min(b, distanceSum(i, neighbors) / neighbors.length);
       }
-      const meanB = bSum / otherIndices.length;
-      if (meanB < b) b = meanB;
-    });
-
-    if (b === Infinity) continue;
-
-    const s = (b - a) / Math.max(a, b);
-    totalSilhouette += s;
-    validPoints++;
+      const scale = Math.max(a, b);
+      if (!Number.isFinite(scale)) return null;
+      if (scale > 0) total += (b - a) / scale;
+    }
   }
+  return total / clusteredPoints;
+}
 
-  return validPoints > 0 ? totalSilhouette / validPoints : null;
+/** An empty assignment list represents a projection without clustering. */
+export function summarizeClustering(data: number[][], assignments: number[], groundTruth: DataValue[] = []) {
+  const clusterCounts: Record<number, number> = {};
+  let noiseCount = 0;
+  for (const cluster of assignments) {
+    if (cluster === -1) noiseCount++;
+    else if (cluster >= 0) clusterCounts[cluster] = (clusterCounts[cluster] ?? 0) + 1;
+  }
+  return {
+    clusterCounts,
+    noiseCount,
+    silhouetteScore: computeSilhouetteScore(data, assignments),
+    adjustedRandIndex: computeARI(groundTruth, assignments),
+  };
 }
 
 export function computeARI(
   groundTruth: DataValue[],
   predicted: number[]
 ): number | null {
-  const n = groundTruth.length;
-  if (n <= 1 || predicted.length !== n) return null;
-
-  // Contingency table: n_ij
-  const rowLabels = Array.from(new Set(groundTruth));
-  const colLabels = Array.from(new Set(predicted));
-
-  if (rowLabels.length <= 1 || colLabels.length <= 1) return 0;
-
-  const rowMap = new Map<DataValue, number>();
-  rowLabels.forEach((lbl, idx) => rowMap.set(lbl, idx));
-
-  const colMap = new Map<number, number>();
-  colLabels.forEach((lbl, idx) => colMap.set(lbl, idx));
-
-  const table: number[][] = Array.from({ length: rowLabels.length }, () =>
-    new Array(colLabels.length).fill(0)
-  );
-
-  for (let i = 0; i < n; i++) {
-    const r = rowMap.get(groundTruth[i])!;
-    const c = colMap.get(predicted[i])!;
-    table[r][c]++;
+  if (predicted.length !== groundTruth.length) return null;
+  const rows = new Map<DataValue, number>();
+  const columns = new Map<number, number>();
+  const cells = new Map<DataValue, Map<number, number>>();
+  // Adding an observation forms one pair with each existing member.
+  function addPairCount<Key>(counts: Map<Key, number>, key: Key) {
+    const previous = counts.get(key) ?? 0;
+    counts.set(key, previous + 1);
+    return previous;
   }
-
-  // Helper: n choose 2
-  const comb2 = (val: number) => (val * (val - 1)) / 2;
-
+  let n = 0;
   let sumNij = 0;
-  for (let r = 0; r < rowLabels.length; r++) {
-    for (let c = 0; c < colLabels.length; c++) {
-      sumNij += comb2(table[r][c]);
-    }
-  }
-
-  // Row sums: a_i
   let sumAi = 0;
-  for (let r = 0; r < rowLabels.length; r++) {
-    let a_i = 0;
-    for (let c = 0; c < colLabels.length; c++) a_i += table[r][c];
-    sumAi += comb2(a_i);
-  }
-
-  // Col sums: b_j
   let sumBj = 0;
-  for (let c = 0; c < colLabels.length; c++) {
-    let b_j = 0;
-    for (let r = 0; r < rowLabels.length; r++) b_j += table[r][c];
-    sumBj += comb2(b_j);
+  for (let i = 0; i < groundTruth.length; i++) {
+    const actual = groundTruth[i];
+    if (actual === null || actual === '') continue;
+    const cluster = predicted[i];
+    let row = cells.get(actual);
+    if (!row) { row = new Map(); cells.set(actual, row); }
+    sumNij += addPairCount(row, cluster);
+    sumAi += addPairCount(rows, actual);
+    sumBj += addPairCount(columns, cluster);
+    n++;
   }
-
-  const totalComb = comb2(n);
+  if (n < 2) return null;
+  const totalComb = n * (n - 1) / 2;
   const expectedIndex = (sumAi * sumBj) / totalComb;
   const maxIndex = (sumAi + sumBj) / 2;
   const denominator = maxIndex - expectedIndex;

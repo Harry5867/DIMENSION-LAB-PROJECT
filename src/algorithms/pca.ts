@@ -66,7 +66,7 @@ export function computePCA(matrix: number[][]): PCAResult {
   for (let j = 0; j < d; j++) {
     totalVariance += cov[j][j];
   }
-  if (totalVariance <= 0) totalVariance = 1e-9;
+  const rankTolerance = totalVariance * Number.EPSILON * d * 16;
 
   // 3. Power Iteration with Hotelling Deflation to extract top 3 eigenvectors
   const eigenvectors: number[][] = [];
@@ -102,7 +102,7 @@ export function computePCA(matrix: number[][]): PCAResult {
       }
 
       norm = Math.hypot(...vNext);
-      if (norm < 1e-12) {
+      if (norm <= rankTolerance) {
         lambda = 0;
         break;
       }
@@ -118,6 +118,7 @@ export function computePCA(matrix: number[][]): PCAResult {
       if (diff < eps) break;
     }
 
+    if (lambda <= rankTolerance) break;
     eigenvectors.push(Array.from(v));
     eigenvalues.push(Math.max(0, lambda));
 
@@ -129,7 +130,7 @@ export function computePCA(matrix: number[][]): PCAResult {
     }
   }
 
-  // Pad to 3 components if d < 3
+  // Pad null directions with zero vectors so their scores cannot change distances.
   while (eigenvectors.length < 3) {
     const v = new Array(d).fill(0);
     eigenvectors.push(v);
@@ -151,9 +152,10 @@ export function computePCA(matrix: number[][]): PCAResult {
   }
 
   // Compute explained variance ratios
-  const expVar1 = (eigenvalues[0] || 0) / totalVariance;
-  const expVar2 = (eigenvalues[1] || 0) / totalVariance;
-  const expVar3 = (eigenvalues[2] || 0) / totalVariance;
+  const variance = totalVariance || 1;
+  const expVar1 = eigenvalues[0] / variance;
+  const expVar2 = eigenvalues[1] / variance;
+  const expVar3 = eigenvalues[2] / variance;
 
   return {
     coordinates,

@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { randomBytes } from 'node:crypto';
 import { UnauthorizedError, ForbiddenError } from './errors';
 
 export type UserRole = 'admin' | 'researcher' | 'viewer';
@@ -11,20 +12,20 @@ export interface AuthUser {
 }
 
 // Tài khoản giả lập cho môi trường nghiên cứu & kiểm thử
-export const DEMO_USERS: Record<string, AuthUser> = {
-  admin_token: {
+const DEMO_USERS: Record<UserRole, AuthUser> = {
+  admin: {
     id: 'user_01',
     username: 'admin',
     name: 'System Administrator',
     role: 'admin',
   },
-  researcher_token: {
+  researcher: {
     id: 'user_02',
     username: 'researcher',
     name: 'Researcher',
     role: 'researcher',
   },
-  viewer_token: {
+  viewer: {
     id: 'user_03',
     username: 'viewer',
     name: 'Viewer',
@@ -36,25 +37,46 @@ export interface AuthenticatedRequest extends Request {
   user?: AuthUser;
 }
 
+export const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
+const sessions = new Map<string, { user: AuthUser; expires: number }>();
+
+export function issueSession(role: UserRole, now = Date.now()) {
+  const user = DEMO_USERS[role];
+  const token = randomBytes(32).toString('base64url');
+  for (const [key, session] of sessions) {
+    if (session.expires <= now) sessions.delete(key);
+  }
+  if (sessions.size >= 1024) {
+    const oldest = sessions.keys().next().value;
+    if (oldest) sessions.delete(oldest);
+  }
+  sessions.set(token, { user, expires: now + SESSION_DURATION_MS });
+  return { user, token };
+}
+
+function bearerToken(req: Request) {
+  return /^Bearer ([A-Za-z0-9_-]+)$/i.exec(req.headers.authorization ?? '')?.[1];
+}
+
+export function revokeSession(req: Request) {
+  const token = bearerToken(req);
+  if (token) sessions.delete(token);
+}
+
 /**
  * Middleware trích xuất Token từ Authorization Header (Bearer Token)
  */
 export function authenticate(req: AuthenticatedRequest, _res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    // Nếu không truyền token, mặc định cấp quyền viewer công khai
-    req.user = DEMO_USERS['admin_token']; // Mặc định chế độ dev cho phép trải nghiệm
-    return next();
-  }
+  if (req.headers.authorization === undefined) return next();
 
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
-  const user = DEMO_USERS[token];
-
-  if (!user) {
+  const token = bearerToken(req);
+  const session = token ? sessions.get(token) : undefined;
+  if (!session || session.expires <= Date.now()) {
+    if (token) sessions.delete(token);
     return next(new UnauthorizedError('Invalid or expired access token.'));
   }
 
-  req.user = user;
+  req.user = session.user;
   next();
 }
 

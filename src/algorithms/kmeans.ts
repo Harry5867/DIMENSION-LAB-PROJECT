@@ -2,6 +2,8 @@
  * K-Means Clustering with K-Means++ initialization.
  */
 
+import { clusterCountError } from './unsupervised';
+
 export interface KMeansResult {
   clusters: number[]; // Cluster ID for each point (0 to k-1)
   centroids: number[][]; // Centroid coordinates
@@ -15,12 +17,13 @@ export function computeKMeans(
   maxIterations: number = 50
 ): KMeansResult {
   const n = data.length;
-  if (n === 0 || k <= 0) {
+  if (n === 0) {
     return { clusters: [], centroids: [], iterations: 0, inertia: 0 };
   }
 
+  const error = clusterCountError('K-Means', k, n);
+  if (error) throw new RangeError(error);
   const d = data[0].length;
-  k = Math.min(k, n);
 
   // 1. K-Means++ Initialization
   const centroids: number[][] = [];

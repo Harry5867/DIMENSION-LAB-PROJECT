@@ -84,7 +84,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .workspace-layout { height: 100%; display: flex; flex-direction: column; }
 .workspace-header { height: 66px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-panel); }
 .workspace-brand { display: flex; align-items: center; gap: 9px; color: var(--text-main); text-decoration: none; font-size: 13px; letter-spacing: .08em; font-weight: 600; white-space: nowrap; }
-.brand-mark { font-size: 28px; line-height: 1; margin-right: 6px; font-weight: 400; color: var(--accent-primary); }
 .brand-slash { font-weight: 400; color: #9ba694; }
 .workspace-header nav { height: 100%; display: flex; gap: 30px; align-items: stretch; }
 .workspace-header nav > * { display: flex; align-items: center; font: 10px var(--font-mono); letter-spacing: .1em; color: var(--text-muted); border: 0; border-bottom: 2px solid transparent; background: none; text-decoration: none; }
@@ -180,7 +179,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 599px) {
  .workspace-header { height: 56px; padding: 0 16px; }
  .workspace-brand { font-size: 10px; gap: 5px; }
- .brand-mark { font-size: 23px; margin-right: 2px; }
  .workspace-header nav { gap: 12px; }
  .workspace-header nav > * { font-size: 8px; letter-spacing: 0; }
  .workspace-icon { display: none; }
@@ -238,9 +236,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lab-modal-body > p:first-child { margin-top: 0; }
 .lab-modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
 .lab-modal-footer button { display: inline-flex; justify-content: center; align-items: center; gap: 7px; border: 1px solid var(--border-subtle); border-radius: 4px; padding: 9px 13px; background: var(--bg-interactive); color: var(--text-main); font-size: 11px; }
-.workspace-activity { display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding: 10px 32px; font-size: 12px; border-top: 1px solid var(--border-subtle); background: var(--bg-interactive); }
+.workspace-activity { position:absolute; z-index:5; bottom:12px; left:50%; transform:translateX(-50%); max-width:calc(100% - 24px); display:flex; align-items:center; gap:8px; padding:8px 14px; font-size:12px; color:var(--text-main); border:1px solid var(--border-subtle); border-radius:999px; background:var(--bg-panel); pointer-events:none; }
+.workspace-stage:fullscreen .workspace-activity, .workspace-stage.is-expanded .workspace-activity { bottom:58px; }
 .workspace-activity progress { width: 72px; height: 4px; accent-color: var(--accent-primary); }
-.workspace-run-error { margin: 0 32px 14px; padding: 14px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--danger-border); background: var(--danger-bg); color: var(--danger-text); font-size: 12px; border-radius: 4px; }
+.workspace-run-error { position:absolute; z-index:6; inset:auto 12px 12px; margin-inline:auto; max-width:560px; padding:14px; display:flex; align-items:center; gap:12px; border:1px solid var(--danger-border); background:var(--danger-bg); color:var(--danger-text); font-size:12px; border-radius:4px; }
+.workspace-stage:is(:fullscreen,.is-expanded) .workspace-run-error { bottom:58px; }
 .workspace-run-error > div { flex: 1; }
 .workspace-run-error p { margin: 6px 0; }
 .workspace-run-error small { font-size: 10px; }
@@ -260,8 +260,8 @@ kbd { border: 1px solid var(--border-subtle); padding: 2px 4px; border-radius: 3
  .lab-modal-header h2 { font-size: 20px; }
  .lab-modal-footer { padding: 12px 16px; }
  .workspace-notice { left: 12px; right: 12px; max-width: none; }
- .workspace-activity { padding: 8px 16px; }
- .workspace-run-error { margin: 0 12px 12px; flex-wrap: wrap; }
+ .workspace-activity { padding: 7px 10px; }
+ .workspace-run-error { flex-wrap: wrap; }
  .workspace-run-error > div { flex-basis: 100%; }
 }
 
@@ -273,7 +273,6 @@ kbd { border: 1px solid var(--border-subtle); padding: 2px 4px; border-radius: 3
 }
 .workspace-header { justify-content: flex-start; gap: clamp(24px, 5vw, 72px); }
 .workspace-header > .workspace-icon { margin-left: auto; border: 0; display: inline-flex; }
-.brand-mark { transform: skewY(-14deg); stroke-width: 1.25; }
 .workspace-body { isolation: isolate; display: block; margin: 0; border: 0; }
 .workspace-stage { position: absolute; inset: 0; }
 .workspace-setup, .workspace-insights {
@@ -390,7 +389,7 @@ kbd { border: 1px solid var(--border-subtle); padding: 2px 4px; border-radius: 3
 
 /* Explore: keep the canvas mounted while either side panel changes width. */
 .workspace-layout {
-  --plot-bg: #ffffff;
+  --plot-bg: #f7f8f6;
   --explore-space: 16px;
   min-width: 0;
 }
@@ -563,7 +562,9 @@ body:not(.light-theme) .explorer-app {
   background: linear-gradient(155deg, var(--glass-highlight), transparent 60%), var(--glass-hover);
   box-shadow: var(--glass-rim);
 }
-.workspace-viewing { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 8px 48px 8px 12px; color: var(--text-main); background: var(--plot-bg); font-size: 12px; overflow-wrap: anywhere; flex-shrink: 0; }
+.workspace-viewing { position: absolute; z-index: 4; inset: 10px 50px auto; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--text-main); font-size: 12px; overflow-wrap: anywhere; pointer-events: none; }
+.workspace-visualization > .workspace-exit-preview { position: absolute; z-index: 4; top: 39px; left: 50px; margin: 0; }
+.workspace-viewing > span, .workspace-viewing > strong { padding: 3px 6px; border-radius: 4px; background: var(--bg-panel); }
 .workspace-viewing .result-stale { font-size: 11px; font-weight: 500; }
 .workspace-exit-preview { align-self: flex-start; margin: 5px 12px; padding: 4px 8px; font-size: 12px; border: 1px solid var(--border-subtle); background: var(--bg-panel); border-radius: 4px; }
 .view-options-panel select { display: block; width: 100%; margin-top: 4px; padding: 4px; color: var(--text-main); background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 3px; }

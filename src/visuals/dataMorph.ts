@@ -7,6 +7,10 @@ export const morphScenes = [
   { id: 'gmm', label: 'GMM', category: 'Soft clustering', color: '#258d8d' },
   { id: 'dbscan', label: 'DBSCAN', category: 'Density-based clustering', color: '#527f54' },
   { id: 'anomaly', label: 'Isolation Forest', category: 'Anomaly detection', color: '#c45b4b' },
+  { id: 'spectral', label: 'Spectral clustering', category: 'Clustering', color: '#387e9a' },
+  { id: 'hierarchical', label: 'Agglomerative clustering', category: 'Clustering', color: '#8870a9' },
+  { id: 'optics', label: 'OPTICS', category: 'Density-based clustering', color: '#3c8a70' },
+  { id: 'lof', label: 'Local Outlier Factor', category: 'Anomaly detection', color: '#b57c49' },
   { id: 'association', label: 'Apriori', category: 'Association rules', color: '#b47b35' },
 ] as const;
 
@@ -15,6 +19,7 @@ export const morphSettings = {
   desktopPoints: 4800, mobilePoints: 2400, lowPowerPoints: 1600, fallbackPoints: 1000,
   maxDpr: 1.5, pixelBudget: 1_100_000,
   pointSize: 3.7, breathe: .05, bob: .075,
+  idleYaw: .2, idlePitch: .035, pointerYaw: .12, pointerPitch: .08, pointerFollow: 4.6,
 };
 
 export function morphDisplayColor(hex: string, theme: 'light' | 'dark') {
@@ -31,6 +36,59 @@ export function morphFrame(seconds: number) {
   const local = Math.max(0, time - turn * morphSettings.sceneSeconds);
   const blend = Math.max(0, Math.min(1, (local - (morphSettings.sceneSeconds - morphSettings.transitionSeconds)) / morphSettings.transitionSeconds));
   return { scene, next: (scene + 1) % morphScenes.length, blend, label: blend < .5 ? scene : (scene + 1) % morphScenes.length };
+}
+
+export type MorphSceneId = typeof morphScenes[number]['id'];
+export type MorphPose = number | readonly number[];
+export interface MorphBlend { from: MorphPose; to: MorphPose; blend: number }
+
+export function poseWeight(pose: MorphPose, scene: number) {
+  return typeof pose === 'number' ? Number(pose === scene) : pose[scene];
+}
+
+function snapshot({ from, to, blend }: MorphBlend): MorphPose {
+  if (blend === 0 || from === to) return from;
+  if (blend === 1) return to;
+  return morphScenes.map((_, i) => poseWeight(from, i) * (1 - blend) + poseWeight(to, i) * blend);
+}
+
+/** Pause the neutral loop during a preview and retarget from the pose already on screen. */
+export function createMorphDirector() {
+  const previewDuration = .48;
+  let time = morphSettings.sceneSeconds; // Open on the four t-SNE groups.
+  let preview: MorphSceneId | undefined;
+  let moving: { from: MorphPose; to: MorphPose; elapsed: number } | undefined;
+  const neutral = (): MorphBlend => {
+    const { scene, next, blend } = morphFrame(time);
+    return { from: scene, to: next, blend: blend * blend * (3 - 2 * blend) };
+  };
+  let current = neutral();
+  return {
+    select(scene: MorphSceneId | undefined, immediate: boolean) {
+      if (scene === preview && (!immediate || !moving)) return;
+      const from = snapshot(current);
+      preview = scene;
+      const to = scene ? morphScenes.findIndex(item => item.id === scene) : snapshot(neutral());
+      moving = !immediate && from !== to ? { from, to, elapsed: 0 } : undefined;
+      if (!moving) current = scene ? { from: to, to, blend: 0 } : neutral();
+    },
+    advance(dt: number): MorphBlend {
+      if (moving) {
+        moving.elapsed += dt;
+        const progress = Math.min(1, moving.elapsed / previewDuration);
+        const { from, to } = moving;
+        current = { from, to, blend: progress * progress * (3 - 2 * progress) };
+        if (progress === 1) {
+          current = preview ? { from: to, to, blend: 0 } : neutral();
+          moving = undefined;
+        }
+      } else if (!preview) {
+        time += dt;
+        current = neutral();
+      }
+      return current;
+    },
+  };
 }
 
 export function morphBudget(width: number, height: number, dpr: number, lowPower = false) {
@@ -101,6 +159,34 @@ export function createMorphShapes(count: number): MorphShape[] {
           x = Math.cos(angle) * (1.35 + s.v * .33); y = Math.sin(angle) * (1 + s.v * .25); z = s.c * .5;
           color = i % 2 ? '#ca5a4c' : '#da8250';
         }
+      } else if (scene.id === 'spectral') {
+        const angle = s.u * Math.PI * 2;
+        const ring = i % 3;
+        const radius = .44 + ring * .48 + s.a * .048;
+        x = Math.cos(angle) * radius; y = Math.sin(angle) * radius * .82;
+        z = s.c * .11 + (ring - 1) * .12;
+        color = ['#398a79', '#437aab', '#ba8050'][ring];
+      } else if (scene.id === 'hierarchical') {
+        const branch = s.node % 4;
+        const side = branch < 2 ? -1 : 1;
+        x = side * (1.05 + s.a * .26) + (branch % 2 ? .25 : -.25);
+        y = (branch % 2 ? .5 : -.52) + s.b * .22;
+        z = side * s.v * .64 + s.c * .18;
+        color = palette[branch];
+      } else if (scene.id === 'optics') {
+        const band = i % 3;
+        const angle = .1 + s.u * Math.PI * (1.1 + band * .24);
+        const spread = .045 + band * .065;
+        x = Math.cos(angle + band * 1.6) * (.58 + band * .37) + s.a * spread;
+        y = Math.sin(angle + band * 1.6) * (.48 + band * .26) + s.b * spread;
+        z = s.c * .32 + (band - 1) * .22;
+        color = ['#3a8874', '#569a93', '#a68c65'][band];
+      } else if (scene.id === 'lof') {
+        const sparse = i % 4 === 0;
+        x = (sparse ? .75 : -.64) + s.a * (sparse ? .57 : .24);
+        y = s.b * (sparse ? .62 : .29);
+        z = s.c * (sparse ? .48 : .26);
+        color = sparse && i % 19 === 0 ? '#bf6658' : sparse ? '#b48d63' : '#438b80';
       } else {
         const node = associationCenters[s.node];
         x = node[0] + s.a * .13; y = node[1] + s.b * .13; z = node[2] + s.c * .14;

@@ -1,11 +1,13 @@
-import { integer, randomSource, validateMatrix } from './unsupervised';
+import { clusterCountError, integer, randomSource, validateMatrix } from './unsupervised';
 export interface GMMOptions { k: number; maxIterations?: number; tolerance?: number; seed?: number }
 export interface GMMResult { clusters: number[]; probabilities: number[][]; means: number[][]; variances: number[][]; weights: number[]; logLikelihood: number; iterations: number; converged: boolean; aic: number; bic: number }
 /** EM with diagonal covariance, variance floor and log-sum-exp responsibilities. */
 export function computeGMM(data: number[][], options: GMMOptions): GMMResult {
   validateMatrix(data);
   const n = data.length, d = data[0].length, { k, maxIterations = 100, tolerance = 1e-5, seed = 42 } = options;
-  integer(k, 1, Math.min(n, 100), 'Components'); integer(maxIterations, 1, 1000, 'Iterations');
+  const countError = clusterCountError('GMM', k, n);
+  if (countError) throw new RangeError(countError);
+  integer(maxIterations, 1, 1000, 'Iterations');
   if (!Number.isFinite(tolerance) || tolerance <= 0) throw new Error('Tolerance must be positive.');
   const random = randomSource(seed), mean = Array(d).fill(0) as number[];
   data.forEach(row => row.forEach((v, j) => mean[j] += v / n));

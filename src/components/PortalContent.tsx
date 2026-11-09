@@ -25,7 +25,7 @@ function Guide() {
 
 function About() {
   const { tr } = useAppLanguage();
-  return <div className="portal-prose"><h2>{tr("Make complex data visible.")}</h2><p>{tr("DIMENSION / LAB is a space for learning and practicing high-dimensional data visualization. The project connects dimensionality reduction, clustering, anomaly detection and association rules with interactive data exploration.")}</p>
+  return <div className="portal-prose"><h2>{tr("Make complex data visible.")}</h2><p>{tr("This project is a space for learning and practicing high-dimensional data visualization. It connects dimensionality reduction, clustering, anomaly detection and association rules with interactive data exploration.")}</p>
     <h2>{tr("What are we building?")}</h2><p>{tr("A workflow that takes learners from theory to experimentation: understand an algorithm, adjust its settings, explore the results and check findings against individual source rows.")}</p>
     <div className="portal-team-placeholder"><strong>{tr("Team information — Coming soon")}</strong><p>{tr("The official project title, team members and their roles will be added when the team provides this information.")}</p></div>
     <a className="portal-action" href="#/theory">{tr("Explore the theory")} <ArrowUpRight size={16} /></a>

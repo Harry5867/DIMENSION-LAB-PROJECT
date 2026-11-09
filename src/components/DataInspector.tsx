@@ -110,7 +110,7 @@ export const DataInspector: React.FC<DataInspectorProps> = ({ point, onClose, on
                 {key}
               </span>
               <span className="font-mono text-[11px] font-medium text-[var(--accent-primary)]">
-                {val}
+                {val ?? '—'}
               </span>
             </div>
           ))

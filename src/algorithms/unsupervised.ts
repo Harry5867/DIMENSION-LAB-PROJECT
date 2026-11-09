@@ -3,6 +3,13 @@ export function randomSource(seed = 42) {
   let state = seed >>> 0;
   return () => { state += 0x6D2B79F5; let t = state; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
+export function clusterCountError(method: string, k: number, pointCount: number): string | null {
+  if (method !== 'K-Means' && method !== 'GMM') return null;
+  const max = method === 'GMM' ? Math.min(pointCount, 100) : pointCount;
+  if (max === 0) return 'Clustering requires at least one point.';
+  return Number.isInteger(k) && k >= 1 && k <= max ? null : `${method}: k must be an integer from 1 to ${max}.`;
+}
+
 export function validateMatrix(data: number[][]) {
   if (!data.length || !data[0].length || data.some(r => r.length !== data[0].length || r.some(v => !Number.isFinite(v)))) throw new Error('Expected a nonempty rectangular finite matrix.');
 }

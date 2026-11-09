@@ -1,7 +1,8 @@
 import { useAppLanguage } from "./components/WelcomeLanguage";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Welcome } from './components/Welcome';
-import { clearDemoSession, hasDemoSession, saveDemoSession } from './utils/demoSession';
+import { clearDemoSession, getAccessToken, hasDemoSession, saveDemoSession } from './utils/demoSession';
+import { fetchWithTimeout, SESSION_EXPIRED_EVENT } from './utils/network';
 import { Portal } from './components/Portal';
 import { isModelRoute, isWelcomeRoute, portalRoute, type PortalRoute, type PortalSection } from './utils/portalNavigation';
 import { captureSectionSource, shouldAnimateLink, type SectionNavigation } from './utils/sectionTransition';
@@ -12,7 +13,7 @@ const Workspace = lazy(() => import('./App'));
 type EntrancePhase = 'idle' | 'covering' | 'revealing';
 type EntranceDirection = 'in' | 'out';
 
-const glassControlSelector = 'button:not(.workspace-scrim, .globe-capital-marker, .portal-signout, .theme-toggle, .welcome-primary, .login-visibility-toggle, .login-demo-action, .welcome-setting-control, .globe-mode-option, .genesis-start), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a';
+const glassControlSelector = 'button:not(.workspace-scrim, .globe-capital-marker, .portal-signout, .theme-toggle, .welcome-primary, .login-visibility-toggle, .login-demo-action, .welcome-setting-control, .globe-mode-option, .genesis-start), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
 
 export function Entry() {
   const { tr, t } = useAppLanguage();
@@ -48,6 +49,23 @@ export function Entry() {
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
   useEffect(() => { if (modelActive) setModelVisited(true); }, [modelActive]);
+  useEffect(() => {
+    const expire = () => {
+      entrancePhaseRef.current = 'idle'; setEntrancePhase('idle');
+      navigationRef.current = null; setSectionNavigation(null); setArrivingRoute(null);
+      setSignedIn(false); setModelVisited(false); setAtWelcome(true);
+      window.location.hash = '';
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, expire);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
+  }, []);
+  useEffect(() => {
+    if (!signedIn || !getAccessToken()) return;
+    const controller = new AbortController();
+    void fetchWithTimeout('/api/auth/me', { signal: controller.signal })
+      .catch(() => { /* Local tools remain available offline. */ });
+    return () => controller.abort();
+  }, [signedIn]);
   const coverSection = useCallback((id: number) => {
     const pending = navigationRef.current;
     if (!pending || pending.id !== id || pending.phase !== 'covering') return;
@@ -100,7 +118,7 @@ export function Entry() {
       // Switch screens only after the gateway is opaque in either direction.
       entrancePhaseRef.current = 'revealing';
       if (entranceDirectionRef.current === 'in') {
-        saveDemoSession(); window.location.hash = '/overview';
+        window.location.hash = '/overview';
         setRoute('overview'); setAtWelcome(false); setWorkspaceEntering(true); setSignedIn(true); setHomeArrival(null);
       } else {
         setSignedIn(false); setModelVisited(false); setRoute('overview'); setAtWelcome(true); window.location.hash = '';
@@ -110,19 +128,17 @@ export function Entry() {
       entrancePhaseRef.current = 'idle'; setEntrancePhase('idle');
     }
   }, []);
-  const signIn = () => {
+  const signIn = (token?: string | null) => {
     if (entrancePhaseRef.current !== 'idle') return;
+    if (token !== undefined) saveDemoSession(token);
     entranceDirectionRef.current = 'in'; setEntranceDirection('in');
     entrancePhaseRef.current = 'covering'; setEntrancePhase('covering');
   };
   const signOut = () => {
     if (!signedIn || entrancePhaseRef.current !== 'idle') return;
-    let reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    try {
-      const saved = sessionStorage.getItem('dimension-lab:welcome-motion');
-      if (saved === 'full' || saved === 'gentle') reduced = saved === 'gentle';
-    } catch { /* Follow the OS if storage is unavailable. */ }
-    const bounds = document.querySelector('.workspace-map')?.getBoundingClientRect();
+    if (getAccessToken()) void fetchWithTimeout('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const bounds = document.querySelector('.workspace-directory')?.getBoundingClientRect();
     if (bounds?.width && bounds.height) setExitCenter({
       x: Math.min(.9, Math.max(.1, (bounds.left + bounds.width * .5) / window.innerWidth)),
       y: Math.min(.9, Math.max(.1, (bounds.top + bounds.height * .46) / window.innerHeight)),
@@ -155,7 +171,7 @@ export function Entry() {
   useEffect(() => {
     if (!workspaceEntering) return;
     if (route !== 'overview') { setWorkspaceEntering(false); return; }
-    // Keep the entry class until the last station has settled.
+    // Keep the entry class until the last shortcut has settled.
     const timer = window.setTimeout(() => setWorkspaceEntering(false), 1600);
     return () => window.clearTimeout(timer);
   }, [workspaceEntering, route]);
@@ -185,7 +201,7 @@ export function Entry() {
         {!modelActive && <Portal key={route} route={route} onSignOut={signOut} entering={workspaceEntering} interactive={!transitioning}
           onOpenSection={openSection} openingId={sectionNavigation?.phase === 'covering' ? sectionNavigation.section?.id : undefined}
           sectionEntering={arrivingRoute === route && route !== 'overview'} returning={arrivingRoute === 'overview'}
-          titleInTransit={sectionNavigation?.kind === 'open' && sectionNavigation.phase === 'revealing'} />}
+          titleInTransit={Boolean(sectionNavigation?.source?.title && sectionNavigation.phase === 'revealing')} />}
       </> : <Welcome onSignIn={signIn} signedIn={signedIn} arrival={homeArrival} />}
       {signedIn && (modelVisited || modelActive) && <div className={'model-session' + (modelActive && arrivingRoute === route ? ' model-session--arriving' : '')} hidden={!modelActive}>
         <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} /></Suspense>

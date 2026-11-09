@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { numericValue } from './analysisPresentation';
 import {
   DatasetRow,
   DataValue,
@@ -7,63 +8,79 @@ import {
   NormalizationMethod,
 } from '../types';
 
+export const MAX_CSV_BYTES = 5 * 1024 * 1024;
+export const MAX_CSV_ROWS = 10_000;
+export const MAX_CSV_COLUMNS = 128;
+
+function isIdHeader(header: string) {
+  const name = header.toLowerCase();
+  return name === 'id' || name.endsWith('_id') || name === 'index';
+}
+
+const labelHeaders = new Set(['diagnosis', 'target', 'label', 'class', 'channel', 'category', 'species', 'outcome']);
+const decimal = /^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+
+function parseCell(value: string | undefined, header: string): DataValue {
+  if (value === undefined || !value.trim()) return null;
+  if (isIdHeader(header) || labelHeaders.has(header.toLowerCase())) return value;
+  const trimmed = value.trim();
+  if (trimmed === 'true' || trimmed === 'TRUE') return true;
+  if (trimmed === 'false' || trimmed === 'FALSE') return false;
+  const number = Number(trimmed);
+  return decimal.test(trimmed) && Math.abs(number) < 2 ** 53 ? number : value;
+}
+
 export function parseCSVString(csvContent: string, fileName: string = 'Uploaded Dataset'): ParsedDataset {
+  if (new TextEncoder().encode(csvContent).byteLength > MAX_CSV_BYTES) {
+    throw new Error('The CSV exceeds the 5 MiB file limit.');
+  }
   if (!csvContent.trim()) {
     throw new Error('The CSV file is empty.');
   }
 
-  const result = Papa.parse<Record<string, unknown>>(csvContent.replace(/^\uFEFF/, '').trim(), {
+  const result = Papa.parse<Record<string, string>>(csvContent.replace(/^\uFEFF/, ''), {
     header: true,
-    dynamicTyping: true,
+    transformHeader: (header) => header.trim(),
     skipEmptyLines: true,
+    preview: MAX_CSV_ROWS + 1,
   });
 
-  const structuralError = result.errors.find((error) => error.code !== 'TooFewFields');
+  const fields = result.meta.fields ?? [];
+  if (result.data.length > MAX_CSV_ROWS || fields.length > MAX_CSV_COLUMNS) {
+    throw new Error(`The CSV limit is ${MAX_CSV_ROWS} rows and ${MAX_CSV_COLUMNS} columns.`);
+  }
+  if (result.meta.renamedHeaders && Object.keys(result.meta.renamedHeaders).length) {
+    throw new Error('The CSV contains duplicate column names. Give each column a unique name.');
+  }
+  // WDBC has an unused delimiter at the end of the header.
+  const trailingPadding = fields.at(-1) === '' && !fields.slice(0, -1).includes('')
+    && result.data.every((row) => row[''] == null || row[''] === '');
+  const structuralError = result.errors.find((error) => !(error.code === 'TooFewFields' && trailingPadding
+    && error.row !== undefined && Object.keys(result.data[error.row] ?? {}).length === fields.length - 1));
   if (structuralError) {
     const row = structuralError.row === undefined ? '' : ` on row ${structuralError.row + 1}`;
     throw new Error(`Invalid CSV${row}: ${structuralError.message}`);
   }
 
-  const rawRows: DatasetRow[] = result.data.map((row) =>
-    Object.fromEntries(
-      Object.entries(row).map(([key, value]): [string, DataValue] => [
-        key.trim(),
-        typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-          ? value
-          : null,
-      ])
-    )
-  );
+  const headers = trailingPadding ? fields.slice(0, -1) : fields;
+  if (headers.length < MIN_NUMERIC_FEATURES || headers.some((header) =>
+    !header || header === '__parsed_extra' || Object.hasOwn(Object.prototype, header))) {
+    throw new Error(`The CSV needs valid column names and at least ${MIN_NUMERIC_FEATURES} data columns.`);
+  }
+  const rawRows: DatasetRow[] = result.data.map((row) => Object.fromEntries(
+    headers.map(key => [key, parseCell(row[key], key)]),
+  ));
   if (rawRows.length < 2) {
     throw new Error('The CSV needs a header and at least two data rows.');
   }
-
-  // Ignore an unnamed padding column only when it contains no data (e.g. WDBC).
-  // An unnamed column with a value must still fail header validation below.
-  for (const header of Object.keys(rawRows[0])) {
-    if (!header.trim() && rawRows.every((row) => row[header] == null || row[header] === '')) {
-      rawRows.forEach((row) => { delete row[header]; });
-    }
-  }
-
-  const headers = Object.keys(rawRows[0]).map(h => h.trim());
-  if (headers.length < MIN_NUMERIC_FEATURES || headers.some((header) => !header)) {
-    throw new Error(`The CSV needs valid column names and at least ${MIN_NUMERIC_FEATURES} data columns.`);
-  }
-  if (new Set(headers).size !== headers.length) {
-    throw new Error('The CSV contains duplicate column names. Give each column a unique name.');
-  }
-
   // Heuristic detection for ID, Label, and Numerical Features
   let idColumn: string | null = null;
-  let labelColumn: string | null = null;
+  let labelColumn = headers.find(header => labelHeaders.has(header.toLowerCase())) ?? null;
   const featureColumns: string[] = [];
 
   for (const col of headers) {
-    const lowerCol = col.toLowerCase();
-    
     // Check if ID column
-    if (!idColumn && (lowerCol === 'id' || lowerCol.endsWith('_id') || lowerCol === 'index')) {
+    if (!idColumn && isIdHeader(col)) {
       idColumn = col;
       continue;
     }
@@ -86,41 +103,14 @@ export function parseCSVString(csvContent: string, fileName: string = 'Uploaded 
 
     const isNumeric = validCount > 0 && (numCount / validCount >= 0.85);
 
-    // If explicit label naming
-    const isLikelyLabel = (
-      lowerCol === 'diagnosis' ||
-      lowerCol === 'target' ||
-      lowerCol === 'label' ||
-      lowerCol === 'class' ||
-      lowerCol === 'category' ||
-      lowerCol === 'species' ||
-      lowerCol === 'outcome'
-    );
-
-    if (isLikelyLabel && !labelColumn) {
-      labelColumn = col;
-    } else if (!isNumeric && uniqueValues.size <= 30 && !labelColumn) {
+    if (col === labelColumn) continue;
+    if (!isNumeric && uniqueValues.size <= 30 && !labelColumn) {
       // Categorical with few classes -> candidate for label
       labelColumn = col;
     } else if (isNumeric) {
       // Only treat as numerical feature if it's not ID or single-constant
       if (uniqueValues.size > 1) {
         featureColumns.push(col);
-      }
-    }
-  }
-
-  // Fallback: If no label found, but there is a column with <= 10 unique values, use it as label
-  if (!labelColumn) {
-    for (const col of headers) {
-      if (col === idColumn) continue;
-      const values = new Set(rawRows.map(r => r[col]));
-      if (values.size >= 2 && values.size <= 10) {
-        labelColumn = col;
-        // remove from features if it was there
-        const idx = featureColumns.indexOf(col);
-        if (idx >= 0) featureColumns.splice(idx, 1);
-        break;
       }
     }
   }
@@ -161,13 +151,11 @@ export function extractFeatureMatrix(
     const row = rows[i];
     const rowVec: number[] = new Array(d);
     for (let j = 0; j < d; j++) {
-      const val = Number(row[featureColumns[j]]);
-      if (!isNaN(val) && isFinite(val)) {
-        rowVec[j] = val;
+      const val = numericValue(row[featureColumns[j]]);
+      rowVec[j] = val ?? NaN;
+      if (val !== null) {
         colSums[j] += val;
         colValidCounts[j]++;
-      } else {
-        rowVec[j] = 0; // Temporary placeholder
       }
     }
     matrix.push(rowVec);
@@ -182,8 +170,7 @@ export function extractFeatureMatrix(
   // Impute missing values
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < d; j++) {
-      const val = Number(rows[i][featureColumns[j]]);
-      if (isNaN(val) || !isFinite(val)) {
+      if (Number.isNaN(matrix[i][j])) {
         matrix[i][j] = colMeans[j];
       }
     }

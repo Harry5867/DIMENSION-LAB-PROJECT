@@ -42,6 +42,7 @@
  transition:box-shadow 240ms ease,scale 140ms cubic-bezier(.16,1,.3,1);
 }
 #root .welcome-page .welcome-primary > :is(span,svg) { position:relative; z-index:1; }
+#root .welcome-page .welcome-enter { justify-content:center; text-align:center; min-width:0; }
 /* The glow is painted once; only its opacity changes during interaction. */
 #root .welcome-page .welcome-primary::before {
  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; pointer-events:none;
@@ -72,13 +73,20 @@
 .welcome-page .data-globe { position:absolute; inset:0 0 0 43%; container-type:size; --globe-center:.5; --globe-fit:1; --globe-toolbar-left:50%; }
 .welcome-page .globe-viewport { inset:40px 0 42px; }
 .welcome-page .globe-renderer { mask-image:none; }
+@media(min-width:600px) {
+ .welcome-page[data-globe-mode=atlas] .globe-viewport {
+   --atlas-bleed:100px;
+   inset:calc(40px - var(--atlas-bleed)) 0 calc(42px - var(--atlas-bleed));
+ }
+ .welcome-page[data-globe-mode=atlas] .globe-renderer {
+   mask-image:linear-gradient(to bottom,transparent,#000 46px,#000 calc(100% - 46px),transparent),
+     linear-gradient(to right,transparent,#000 5%,#000 97%,transparent);
+   mask-composite:intersect;
+ }
+}
 .welcome-page .globe-renderer::before { box-shadow:inset 0 0 0 1px #d0ded5; }
 .welcome-page .globe-controls { bottom:0; }
 .welcome-footer { position:relative; z-index:4; display:flex; justify-content:space-between; align-items:center; gap:18px; flex-shrink:0; min-height:54px; padding:12px 4.5%; font:10px var(--font-mono); letter-spacing:.08em; color:var(--text-muted); pointer-events:none; }
-.welcome-footer > span { display:flex; align-items:center; gap:14px; }.welcome-footer i { width:36px; height:1px; background:#a3b1a8; }
-.welcome-concept { position:absolute; z-index:6; bottom:10%; right:6%; width:300px; padding:24px; background:#fffffff5; border:1px solid #dce3df; box-shadow:0 12px 40px #24301a12; }
-.welcome-concept > button { float:right; }.welcome-concept h2 { font-size:23px; font-weight:400; letter-spacing:-.04em; margin:15px 0; }.welcome-concept > p:last-child { font-size:13px; line-height:1.8; color:var(--text-muted); }
-.welcome-concept .welcome-information-action { display:inline-flex; float:none; align-items:center; gap:10px; margin-top:14px; font-size:12px; }
 .welcome-page :is(.atlas-coordinate,.globe-capital-tooltip span,.globe-city-panel dt,.globe-city-panel a,.globe-directory-panel small,.globe-directory-panel p,.story-count,.story-marker-preview small,.story-marker-preview > span,.story-source,.story-demo-note) { color:var(--text-muted); }
 .login-backdrop { position:fixed; inset:0; z-index:80; display:flex; justify-content:flex-end; isolation:isolate; }
 .login-backdrop::before { content:''; position:absolute; inset:0; z-index:-1; background:rgb(12 27 24 / .4); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); animation:login-backdrop-in 400ms ease both; }
@@ -140,7 +148,6 @@
 @media(max-width:999px) {
  .welcome-header { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0 18px; min-height:116px; padding-block:10px; }
  .welcome-header .workspace-brand { grid-column:1; grid-row:1; justify-self:start; }
- .welcome-header > nav:not(.welcome-concepts) { grid-column:2; grid-row:1; justify-self:end; }
  .welcome-header .welcome-concepts { position:static; transform:none; margin-left:0; grid-column:1; grid-row:2; justify-self:start; gap:2px; }
  .welcome-globe-modes { grid-column:2; grid-row:2; justify-self:end; margin:0; }
  .welcome-concepts button { width:36px; }
@@ -153,14 +160,19 @@
  .welcome-main { display:flex; flex-direction:column; align-items:stretch; flex:none; min-height:auto; }
  .welcome-copy { padding:28px 24px 16px; }.welcome-copy h1 { font-size:clamp(26px,8.5vw,50px); margin:20px 0 16px; }.welcome-description { font-size:12px; max-width:320px; }.welcome-actions { margin-top:24px; }
  .welcome-page .data-globe { position:relative; inset:auto; width:100%; height:clamp(330px,100vw,470px); --globe-center:.5; }
- .welcome-page .globe-viewport { inset:38px 0 40px; }.welcome-footer { flex-wrap:wrap; padding:16px 24px; font-size:8.5px; min-height:52px; }.welcome-footer i { width:20px; }
- .welcome-concept { bottom:60px; right:24px; left:24px; width:auto; }.login-panel { padding:24px; }.login-panel h2 { font-size:38px; }.login-panel input { font-size:16px; }.login-logo { margin-top:24px; }.workspace-signout span { display:none; }
+ .welcome-page .globe-viewport { inset:38px 0 40px; }
+ .welcome-page[data-globe-mode=atlas] .globe-viewport {
+   --atlas-bleed:32px;
+   inset:calc(38px - var(--atlas-bleed)) 0 calc(40px - var(--atlas-bleed));
+ }
+ .welcome-page[data-globe-mode=atlas] .globe-renderer {
+   mask-image:linear-gradient(to bottom,transparent,#000 24px,#000 calc(100% - 24px),transparent);
+ }
+ .welcome-footer { padding:12px 24px; }
+ .login-panel { padding:24px; }.login-panel h2 { font-size:38px; }.login-panel input { font-size:16px; }.login-logo { margin-top:24px; }.workspace-signout span { display:none; }
 }
 
-.welcome-motion-toggle { pointer-events:auto; flex-shrink:0; padding:8px 0; min-height:36px; border:0; border-bottom:1px solid #91aaa0; border-radius:0; background:none; color:#4a5568; font:9px var(--font-mono); letter-spacing:.03em; }
-#root .welcome-motion-toggle::after { content:none; }
-.welcome-motion-toggle:is(:hover,:focus-visible) { color:#007a6e; border-color:#007a6e; }
-/* Explicit, local opt-in permits the requested full motion without changing OS settings. */
+/* Full motion is enabled when the operating system allows it. */
 .welcome-page[data-motion=full] .welcome-title-line > span { animation:welcome-text-reveal 700ms 80ms cubic-bezier(.16,1,.3,1) both; animation-duration:700ms !important; }
 .welcome-page[data-motion=full] .welcome-title-line:nth-child(2) > span { animation-delay:180ms; }
 .welcome-page[data-motion=full] .login-panel { animation:login-drawer-in 450ms cubic-bezier(.16,1,.3,1) both; animation-duration:450ms !important; }

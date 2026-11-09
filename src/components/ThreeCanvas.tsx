@@ -1,6 +1,6 @@
 import { useAppLanguage } from "./WelcomeLanguage";
 import type { GMMResult } from '../algorithms/gmm';
-import React, { useCallback, useEffect, useId, useRef, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -8,11 +8,12 @@ import { DataPoint, ColorMode } from '../types';
 import { getErrorMessage } from '../utils/typeGuards';
 import { Orbit, ScanEye, Crosshair, CircleDot, Palette, Maximize, Minimize } from 'lucide-react';
 import { createPlotGrid } from './plotGrid';
+import { createPlotCloud, makePlotColors, normalizePlotPoints, type PlotTransition } from './plotCloud';
 
 interface ThreeCanvasProps {
   gmm?: GMMResult;
   active?: boolean;
-  viewKey?: string;
+  transitionRef?: React.RefObject<PlotTransition | null>;
   snapshotRef?: React.RefObject<(() => void) | null>;
   hasClustering?: boolean;
   dataPoints: DataPoint[];
@@ -37,25 +38,11 @@ interface ThreeCanvasProps {
   onToggleFullscreen?: () => void;
 }
 
-// Categorical palette for cluster coloring (independent from UI theme)
-const CLUSTER_COLORS = [
-  '#4E79A7', // Steel Blue
-  '#F28E2B', // Orange
-  '#E15759', // Coral Red
-  '#76B7B2', // Teal
-  '#59A14F', // Green
-  '#EDC948', // Yellow
-  '#B07AA1', // Purple
-  '#FF9DA7', // Pink
-  '#9C755F', // Brown
-  '#BAB0AC', // Gray
-];
-
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   gmm,
   active = true,
   dataPoints = [],
-  viewKey = 'all',
+  transitionRef,
   snapshotRef,
   hasClustering = true,
   colorMode,
@@ -84,7 +71,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   activeRef.current = active;
   const [isAutoRotating, setIsAutoRotating] = useState(false);
   const viewMenuName = useId();
-  const [pointScale, setPointScale] = useState(0.7);
+  const [pointScale, setPointScale] = useState(0.48);
   const [centroidsVisible, setCentroidsVisible] = useState(showCentroids);
   const [biplotVisible, setBiplotVisible] = useState(showBiplot);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
@@ -92,9 +79,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const isSpotlightActive = showOutliersSpotlight !== undefined ? showOutliersSpotlight : internalSpotlight;
   const isSpotlightActiveRef = useRef(isSpotlightActive);
   isSpotlightActiveRef.current = isSpotlightActive;
-
-  const pointScaleRef = useRef(pointScale);
-  pointScaleRef.current = pointScale;
 
   const selectedPointRef = useRef(selectedPoint);
   selectedPointRef.current = selectedPoint;
@@ -110,41 +94,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     else setInternalSpotlight((prev) => !prev);
   };
 
-  // Track positions of points currently on screen
-  const currentPositionsRef = useRef<{ x: number; y: number; z: number }[]>([]);
-
-  // Morph animation state
-  interface MorphAnim {
-    active: boolean;
-    startTime: number;
-    duration: number;
-    fromCoords: { x: number; y: number; z: number }[];
-    toCoords: { x: number; y: number; z: number }[];
-    outlierIndices: number[];
-  }
-  const morphAnimRef = useRef<MorphAnim | null>(null);
-
-
-  // Dynamic ground-truth classification labels extracted from dataPoints
-  const uniqueLabels = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of dataPoints) {
-      if (p.label !== undefined && p.label !== null && String(p.label).trim() !== '') {
-        set.add(String(p.label).trim());
-      }
-    }
-    return Array.from(set).sort();
-  }, [dataPoints]);
-
-  const labelColorMap = useMemo(() => {
-    const map: Record<string, string> = Object.create(null);
-    uniqueLabels.forEach((label, idx) => {
-      if (label === 'M' || label === '1') map[label] = '#E15759';
-      else if (label === 'B' || label === '0') map[label] = '#59A14F';
-      else map[label] = CLUSTER_COLORS[idx % CLUSTER_COLORS.length];
-    });
-    return map;
-  }, [uniqueLabels]);
+  const plotColors = useMemo(() => makePlotColors(dataPoints, colorMode, selectedFeature, theme === 'dark'),
+    [dataPoints, colorMode, selectedFeature, theme]);
+  const colors = useMemo(() => dataPoints.map(plotColors.forPoint), [dataPoints, plotColors]);
 
   const legendGroups = useMemo(() => {
     const counts = new Map<number | string, number>();
@@ -171,8 +123,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
-  const instancedMeshRef = useRef<THREE.InstancedMesh | null>(null);
+  const cloudRef = useRef<ReturnType<typeof createPlotCloud> | null>(null);
   const centroidGroupRef = useRef<THREE.Group | null>(null);
+  const gmmGroupRef = useRef<THREE.Group | null>(null);
   const biplotGroupRef = useRef<THREE.Group | null>(null);
   const axesGroupRef = useRef<THREE.Group | null>(null);
   const gridRef = useRef<ReturnType<typeof createPlotGrid> | null>(null);
@@ -180,60 +133,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
   const showAxes = true;
 
-  // Normalized points to fit cleanly in [-36, 36] coordinate box
-  const { points: normalizedPoints, groundY } = useMemo(() => {
-    if (dataPoints.length === 0) {
-      return { points: [], groundY: -36 };
-    }
-
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    let minZ = Infinity, maxZ = -Infinity;
-
-    for (const p of dataPoints) {
-      const px = Number.isFinite(p.x) ? p.x : 0;
-      const py = Number.isFinite(p.y) ? p.y : 0;
-      const pz = Number.isFinite(p.z) ? p.z : 0;
-      if (px < minX) minX = px;
-      if (px > maxX) maxX = px;
-      if (py < minY) minY = py;
-      if (py > maxY) maxY = py;
-      if (pz < minZ) minZ = pz;
-      if (pz > maxZ) maxZ = pz;
-    }
-
-    const rangeX = maxX - minX || 1;
-    const rangeY = maxY - minY || 1;
-    const rangeZ = maxZ - minZ || 1;
-    const maxRange = Math.max(rangeX, rangeY, rangeZ) || 1;
-
-    const midX = (minX + maxX) / 2;
-    const midY = (minY + maxY) / 2;
-    const midZ = (minZ + maxZ) / 2;
-
-    const scale = 72 / maxRange;
-
-    const points = dataPoints.map((p) => {
-      const px = Number.isFinite(p.x) ? p.x : 0;
-      const py = Number.isFinite(p.y) ? p.y : 0;
-      const pz = Number.isFinite(p.z) ? p.z : 0;
-      return {
-        ...p,
-        x: (px - midX) * scale,
-        y: (py - midY) * scale,
-        z: (pz - midZ) * scale,
-      };
-    });
-    return {
-      points,
-      groundY: (minY - midY) * scale - 3,
-    };
-  }, [dataPoints]);
-
+  const plot = useMemo(() => normalizePlotPoints(dataPoints), [dataPoints]);
+  const { points: normalizedPoints, groundY } = plot;
   const pointsRef = useRef(dataPoints);
   pointsRef.current = dataPoints;
-  const normalizedPointsRef = useRef(normalizedPoints);
-  normalizedPointsRef.current = normalizedPoints;
 
   // 1. INITIALIZE THREE.JS SCENE (Mount Once)
   useEffect(() => {
@@ -312,17 +215,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       renderer.domElement.style.cursor = 'grab';
     });
 
-    // Clean, Neutral Lighting (avoids tinting scientific clusters)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
-    scene.add(ambientLight);
-
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    keyLight.position.set(60, 80, 60);
-    scene.add(keyLight);
-
-    const fillLight = new THREE.DirectionalLight(0xd1d5db, 0.7);
-    fillLight.position.set(-60, -40, -60);
-    scene.add(fillLight);
+    const cloud = createPlotCloud(scene);
+    cloudRef.current = cloud;
 
     const grid = createPlotGrid(camera.far);
     gridRef.current = grid;
@@ -348,6 +242,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     };
 
     let pointerDownPos = { x: 0, y: 0 };
+    let lastHoverCheck = -Infinity;
     const handlePointerDown = (e: PointerEvent) => {
       pointerDownPos = { x: e.clientX, y: e.clientY };
     };
@@ -356,7 +251,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
       if (dist < 5) {
         updatePointer(e.clientX, e.clientY);
-        const mesh = instancedMeshRef.current;
+        const mesh = cloud.mesh;
         if (!mesh) return;
 
         raycaster.setFromCamera(pointer, camera);
@@ -371,8 +266,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     };
 
     const handlePointerMove = (e: PointerEvent) => {
+      if (interactingRef.current || e.timeStamp - lastHoverCheck < 40) return;
+      lastHoverCheck = e.timeStamp;
       updatePointer(e.clientX, e.clientY);
-      const mesh = instancedMeshRef.current;
+      const mesh = cloud.mesh;
       if (!mesh) return;
 
       raycaster.setFromCamera(pointer, camera);
@@ -412,76 +309,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       const now = performance.now(), delta = Math.min(.05, (now - previousFrame) / 1000);
       previousFrame = now;
       if (!activeRef.current) return;
-      controls.autoRotate = autoRotateRef.current && !selectedPointRef.current && !interactingRef.current;
+      controls.autoRotate = autoRotateRef.current && !selectedPointRef.current && !interactingRef.current && !cloud.transitioning;
       controls.update(delta);
-      // Bulletproof morphing particle transition animation
-      if (morphAnimRef.current?.active && instancedMeshRef.current) {
-        const { startTime, duration, fromCoords, toCoords } = morphAnimRef.current;
-        const elapsed = performance.now() - startTime;
-        const t = Math.min(1, elapsed / duration);
-        const ease = 1 - Math.pow(1 - t, 3); // Cubic ease out
-
-        const mesh = instancedMeshRef.current;
-        const dummy = new THREE.Object3D();
-        const curScale = pointScaleRef.current;
-        const selPt = selectedPointRef.current;
-
-        for (let i = 0; i < toCoords.length; i++) {
-          const from = fromCoords[i] || toCoords[i];
-          const to = toCoords[i];
-          const curX = from.x + (to.x - from.x) * ease;
-          const curY = from.y + (to.y - from.y) * ease;
-          const curZ = from.z + (to.z - from.z) * ease;
-
-          const isSelected = selPt && (selPt.rowIndex ?? selPt.id) === (normalizedPointsRef.current[i]?.rowIndex ?? normalizedPointsRef.current[i]?.id);
-          const r = (isSelected ? 1.9 : 1.0) * curScale;
-
-          dummy.position.set(curX, curY, curZ);
-          dummy.scale.set(r, r, r);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(i, dummy.matrix);
-        }
-
-        mesh.instanceMatrix.needsUpdate = true;
-
-        // Move the highlight rings together with their points.
-        if (outlierGroupRef.current && outlierGroupRef.current.children.length === morphAnimRef.current.outlierIndices.length) {
-          morphAnimRef.current.outlierIndices.forEach((ptIdx, ringIdx) => {
-            const ring = outlierGroupRef.current?.children[ringIdx];
-            if (ring) {
-              const from = fromCoords[ptIdx] || toCoords[ptIdx];
-              const to = toCoords[ptIdx];
-              ring.position.set(
-                from.x + (to.x - from.x) * ease,
-                from.y + (to.y - from.y) * ease,
-                from.z + (to.z - from.z) * ease
-              );
-            }
-          });
-        }
-
-        if (t >= 1) {
-          morphAnimRef.current.active = false;
-        }
-      }
-
-      if (outlierGroupRef.current) {
-        const active = isSpotlightActiveRef.current;
-        outlierGroupRef.current.visible = active;
-        if (active && outlierGroupRef.current.children.length > 0) {
-          const time = performance.now() * 0.005;
-          const scale = 1.0 + Math.sin(time) * 0.32;
-          const opacity = 0.6 + Math.cos(time) * 0.35;
-          for (const child of outlierGroupRef.current.children) {
-            if (child instanceof THREE.Mesh) {
-              child.scale.set(scale, scale, scale);
-              child.quaternion.copy(camera.quaternion);
-              if (child.material && 'opacity' in child.material) {
-                child.material.opacity = opacity;
-              }
-            }
-          }
-        }
+      const wasTransitioning = cloud.transitioning;
+      cloud.tick(now);
+      if (wasTransitioning && !cloud.transitioning) return;
+      outlierGroup.visible = !cloud.transitioning && isSpotlightActiveRef.current;
+      centroidGroup.visible = biplotGroup.visible = !cloud.transitioning;
+      if (gmmGroupRef.current) gmmGroupRef.current.visible = !cloud.transitioning;
+      if (outlierGroup.visible) {
+        for (const ring of outlierGroup.children) ring.quaternion.copy(camera.quaternion);
       }
 
       grid.position.x = camera.position.x;
@@ -515,6 +352,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       dom.removeEventListener('pointermove', handlePointerMove);
       cancelAnimationFrame(animId);
       if (axesGroupRef.current) {
+        disposePlotMarkers(axesGroupRef.current);
         scene.remove(axesGroupRef.current);
         axesGroupRef.current = null;
       }
@@ -525,6 +363,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       if (container.contains(dom)) {
         container.removeChild(dom);
       }
+      cloud.destroy();
+      cloudRef.current = null;
+      disposePlotMarkers(outlierGroup);
+      disposePlotMarkers(centroidGroup);
+      disposePlotMarkers(biplotGroup);
       controls.dispose();
       gridRef.current = null;
       grid.geometry.dispose();
@@ -533,8 +376,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     };
   }, []);
 
-  useEffect(() => {
-    if (sceneRef.current) sceneRef.current.background = new THREE.Color(theme === 'light' ? '#ffffff' : '#101815');
+  useLayoutEffect(() => {
+    if (sceneRef.current) sceneRef.current.background = new THREE.Color(theme === 'light' ? '#f7f8f6' : '#101815');
     gridRef.current?.material.uniforms.gridColor.value.set(theme === 'light' ? '#8296ad' : '#678575');
     for (const group of [axesGroupRef.current, biplotGroupRef.current]) group?.traverse(object => {
       if (!(object instanceof THREE.Sprite) || typeof object.userData.label !== 'string') return;
@@ -545,7 +388,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     });
   }, [theme, sceneReady]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const grid = gridRef.current;
     const axes = axesGroupRef.current;
     if (!grid || !axes) return;
@@ -554,214 +397,86 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     axes.position.y = groundY;
   }, [groundY, sceneReady]);
 
-  // Auto-rotate toggle
+  useLayoutEffect(() => {
+    cloudRef.current?.sync(normalizedPoints, colors, pointScale, selectedPoint);
+  }, [sceneReady, normalizedPoints, colors, pointScale, selectedPoint]);
+
+  useLayoutEffect(() => {
+    if (!transitionRef || !sceneReady) return;
+    transitionRef.current = async (points, mode, feature, sameDataset, signal) => {
+      if (!activeRef.current || signal.aborted || document.hidden
+        || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const cloud = cloudRef.current;
+      if (!cloud) return;
+      const targetColors = makePlotColors(points, mode, feature, theme === 'dark');
+      await cloud.stage(normalizePlotPoints(points).points, points.map(targetColors.forPoint), sameDataset, signal, () => selectedPointRef.current);
+    };
+    return () => { transitionRef.current = null; };
+  }, [sceneReady, theme, transitionRef]);
+
   useEffect(() => {
-    if (controlsRef.current) {
-      controlsRef.current.autoRotate = isAutoRotating && !selectedPoint && !interactingRef.current;
-    }
-  }, [isAutoRotating, selectedPoint]);
+    if (!active) cloudRef.current?.cancel();
+  }, [active]);
 
-  // 2. UPDATE INSTANCED MESH DATA POINTS & CENTROIDS
-  useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene || !sceneReady) return;
-
-    if (instancedMeshRef.current) {
-      scene.remove(instancedMeshRef.current);
-      instancedMeshRef.current.geometry.dispose();
-      (instancedMeshRef.current.material as THREE.Material).dispose();
-      instancedMeshRef.current = null;
-    }
-
-    if (outlierGroupRef.current) {
-      while (outlierGroupRef.current.children.length > 0) {
-        const obj = outlierGroupRef.current.children[0];
-        outlierGroupRef.current.remove(obj);
-        if (obj instanceof THREE.Mesh && obj.geometry) {
-          obj.geometry.dispose();
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
-        }
+  useLayoutEffect(() => {
+    const outliers = outlierGroupRef.current;
+    const centroids = centroidGroupRef.current;
+    if (!sceneReady || !outliers || !centroids) return;
+    disposePlotMarkers(outliers);
+    disposePlotMarkers(centroids);
+    const clusterSums = new Map<number, { sum: THREE.Vector3; count: number }>();
+    for (const point of normalizedPoints) {
+      if (point.isOutlier || point.cluster === -1) {
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(1.6 * pointScale, 2.3 * pointScale, 16),
+          new THREE.MeshBasicMaterial({ color: '#bd6269', side: THREE.DoubleSide,
+            transparent: true, opacity: .52, depthWrite: false, toneMapped: false }),
+        );
+        ring.position.set(point.x, point.y, point.z);
+        outliers.add(ring);
       }
+      if (!centroidsVisible || !hasClustering || !Number.isInteger(point.cluster) || point.cluster < 0) continue;
+      let group = clusterSums.get(point.cluster);
+      if (!group) { group = { sum: new THREE.Vector3(), count: 0 }; clusterSums.set(point.cluster, group); }
+      group.sum.x += point.x; group.sum.y += point.y; group.sum.z += point.z;
+      group.count++;
     }
-
-    if (centroidGroupRef.current) {
-      while (centroidGroupRef.current.children.length > 0) {
-        const obj = centroidGroupRef.current.children[0];
-        centroidGroupRef.current.remove(obj);
-      }
+    for (const [cluster, { sum, count }] of clusterSums) {
+      const core = new THREE.Mesh(new THREE.SphereGeometry(1.6, 10, 8),
+        new THREE.MeshBasicMaterial({ color: plotColors.clusters[cluster % plotColors.clusters.length],
+          wireframe: true, transparent: true, opacity: .75, toneMapped: false }));
+      core.position.copy(sum.divideScalar(count));
+      centroids.add(core);
     }
-
-    const count = normalizedPoints.length;
-    if (count === 0) return;
-
-    const toCoords = normalizedPoints.map((p) => ({ x: p.x, y: p.y, z: p.z }));
-    const fromCoords = currentPositionsRef.current;
-    const outlierIndices: number[] = [];
-
-    // Trigger smooth particle morphing transition if previous coordinates exist
-    const shouldMorph = fromCoords.length === count && fromCoords.length > 0;
-    if (shouldMorph) {
-      morphAnimRef.current = {
-        active: true,
-        startTime: performance.now(),
-        duration: 1100,
-        fromCoords: [...fromCoords],
-        toCoords: [...toCoords],
-        outlierIndices,
-      };
-    } else {
-      morphAnimRef.current = null;
-    }
-    // Update current positions tracker
-    currentPositionsRef.current = toCoords;
-
-    const sphereGeo = new THREE.SphereGeometry(1, 16, 16);
-    const sphereMat = new THREE.MeshStandardMaterial({
-      roughness: 0.25,
-      metalness: 0.35,
-    });
-
-    const mesh = new THREE.InstancedMesh(sphereGeo, sphereMat, count);
-    const dummy = new THREE.Object3D();
-    const color = new THREE.Color();
-
-    let fMin = Infinity, fMax = -Infinity;
-    if (colorMode === 'feature' && selectedFeature) {
-      for (const p of dataPoints) {
-        const val = p.originalFeatures[selectedFeature];
-        if (typeof val === 'number') {
-          if (val < fMin) fMin = val;
-          if (val > fMax) fMax = val;
-        }
-      }
-    }
-    const fRange = fMax - fMin || 1;
-
-    for (let i = 0; i < count; i++) {
-      const pt = normalizedPoints[i];
-      const isSelected = selectedPoint && (selectedPoint.rowIndex ?? selectedPoint.id) === (pt.rowIndex ?? pt.id);
-      const r = (isSelected ? 1.9 : 1.0) * pointScale;
-
-      const startPos = shouldMorph ? fromCoords[i] : toCoords[i];
-      dummy.position.set(startPos.x, startPos.y, startPos.z);
-      dummy.scale.set(r, r, r);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-
-      if (isSelected) {
-        color.set('#FFFFFF');
-      } else if (selectedFeature === '__rule_match' && colorMode === 'feature') {
-        color.set(pt.analysisMatch ? '#f97316' : '#475569');
-      } else if (isSpotlightActive && (pt.isOutlier || pt.cluster === -1)) {
-        color.set('#F43F5E'); // Outlier spotlight warning red (sáng rực rỡ như lúc đầu)
-      } else if (colorMode === 'ground-truth') {
-        const hex = labelColorMap[String(pt.label ?? '').trim()] || '#929EAF';
-        color.set(hex);
-      } else if (colorMode === 'cluster') {
-        if (pt.cluster === -1) {
-          color.set('#64748B'); // Noise
-        } else {
-          const hex = CLUSTER_COLORS[pt.cluster % CLUSTER_COLORS.length] || '#4E79A7';
-          color.set(hex);
-        }
-      } else if (colorMode === 'feature' && selectedFeature) {
-        const val = pt.originalFeatures[selectedFeature] || 0;
-        const norm = Math.max(0, Math.min(1, (val - fMin) / fRange));
-        color.setHSL(0.66 - norm * 0.66, 0.85, 0.55);
-      } else {
-        color.set('#8B9CFB');
-      }
-
-      mesh.setColorAt(i, color);
-
-      // Highlight ring for an outlier or noise point.
-      if (pt.isOutlier || pt.cluster === -1) {
-        outlierIndices.push(i);
-        const ringGeo = new THREE.RingGeometry(1.6 * pointScale, 2.5 * pointScale, 24);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: 0xf43f5e,
-          side: THREE.DoubleSide,
-          transparent: true,
-          opacity: 0.85,
-          depthWrite: false,
-        });
-        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-        ringMesh.position.set(startPos.x, startPos.y, startPos.z);
-        outlierGroupRef.current?.add(ringMesh);
-      }
-    }
-
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-
-    scene.add(mesh);
-    instancedMeshRef.current = mesh;
-
-
-    // Centroids visualization
-    if (centroidsVisible && hasClustering) {
-      const clusterSums: Record<number, { x: number; y: number; z: number; count: number }> = {};
-      for (const p of normalizedPoints) {
-        if (!Number.isInteger(p.cluster) || p.cluster < 0) continue;
-        if (!clusterSums[p.cluster]) {
-          clusterSums[p.cluster] = { x: 0, y: 0, z: 0, count: 0 };
-        }
-        clusterSums[p.cluster].x += p.x;
-        clusterSums[p.cluster].y += p.y;
-        clusterSums[p.cluster].z += p.z;
-        clusterSums[p.cluster].count += 1;
-      }
-
-      Object.entries(clusterSums).forEach(([clStr, sum]) => {
-        const cId = parseInt(clStr, 10);
-        const cx = sum.x / sum.count;
-        const cy = sum.y / sum.count;
-        const cz = sum.z / sum.count;
-        const cColor = CLUSTER_COLORS[cId % CLUSTER_COLORS.length] || '#8B9CFB';
-
-        const coreGeo = new THREE.SphereGeometry(2.0, 16, 16);
-        const coreMat = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(cColor),
-          wireframe: true,
-          transparent: true,
-          opacity: 0.8,
-        });
-        const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-        coreMesh.position.set(cx, cy, cz);
-
-        centroidGroupRef.current?.add(coreMesh);
-      });
-    }
-  }, [sceneReady, normalizedPoints, colorMode, selectedFeature, selectedPoint, pointScale, centroidsVisible, dataPoints, labelColorMap, isSpotlightActive, hasClustering]);
+  }, [sceneReady, normalizedPoints, pointScale, centroidsVisible, hasClustering, plotColors.clusters]);
 
   // Gaussian surfaces use the same transform as the point cloud.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scene = sceneRef.current;
-    if (!scene || !sceneReady || !gmm || !dataPoints.length) return;
+    const { center, scale } = plot;
+    if (!scene || !sceneReady || !gmm || !center) return;
     const group = new THREE.Group();
-    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
-    dataPoints.forEach(p => [p.x, p.y, p.z].forEach((v, j) => { min[j] = Math.min(min[j], v); max[j] = Math.max(max[j], v); }));
-    const scale = 72 / Math.max(...min.map((v, j) => max[j] - v || 1));
     gmm.means.forEach((mean, c) => {
       const geometry = new THREE.SphereGeometry(1, 24, 16);
-      const material = new THREE.MeshBasicMaterial({ color: CLUSTER_COLORS[c % CLUSTER_COLORS.length], wireframe: true, transparent: true, opacity: 0.22, depthWrite: false });
+      const material = new THREE.MeshBasicMaterial({ color: plotColors.clusters[c % plotColors.clusters.length], wireframe: true, transparent: true, opacity: 0.22, depthWrite: false });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(...mean.map((v, j) => (v - (min[j] + max[j]) / 2) * scale) as [number, number, number]);
+      mesh.position.set(...mean.map((v, j) => (v - center[j]) * scale) as [number, number, number]);
       mesh.scale.set(...gmm.variances[c].map(v => 2 * Math.sqrt(v) * scale) as [number, number, number]); group.add(mesh);
     });
     scene.add(group);
-    return () => { scene.remove(group); group.children.forEach(child => { const mesh = child as THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>; mesh.geometry.dispose(); mesh.material.dispose(); }); };
-  }, [gmm, dataPoints, sceneReady]);
+    gmmGroupRef.current = group;
+    return () => {
+      gmmGroupRef.current = null;
+      scene.remove(group);
+      disposePlotMarkers(group);
+    };
+  }, [gmm, plot, sceneReady, plotColors.clusters]);
 
   // 3. RENDER PCA FEATURE LOADINGS (BIPLOT)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!biplotGroupRef.current || !sceneReady) return;
 
-    while (biplotGroupRef.current.children.length > 0) {
-      const obj = biplotGroupRef.current.children[0];
-      biplotGroupRef.current.remove(obj);
-    }
+    disposePlotMarkers(biplotGroupRef.current);
 
     if (!biplotVisible || reductionMethod !== 'PCA' || !pcaComponents || !featureNames || pcaComponents.length < 3) {
       return;
@@ -800,16 +515,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   }, [sceneReady, biplotVisible, reductionMethod, pcaComponents, featureNames, biplotTopK]);
 
   // 4. Render axis guides in local coordinates. The group follows the grid in Y.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!axesGroupRef.current || !sceneReady) return;
-
-    while (axesGroupRef.current.children.length > 0) {
-      const obj = axesGroupRef.current.children[0];
-      axesGroupRef.current.remove(obj);
-      if (obj instanceof THREE.Mesh && obj.geometry) {
-        obj.geometry.dispose();
-      }
-    }
+    disposePlotMarkers(axesGroupRef.current);
 
     if (!showAxes) return;
 
@@ -853,40 +561,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
 
 
-  useEffect(() => {
-    setIsAutoRotating(false);
-    if (cameraRef.current && controlsRef.current) {
-      controlsRef.current.maxDistance = 260;
-      cameraRef.current.position.set(65, 45, 80);
-      controlsRef.current.target.set(0, 0, 0);
-      controlsRef.current.update();
-    }
-  }, [viewKey]);
-
-  // 5. SMOOTH CAMERA FLY-TO FOCUS ON SELECTED POINT
-  useEffect(() => {
-    if (!selectedPoint || !controlsRef.current || !cameraRef.current) return;
-    const pt = normalizedPoints.find((p) => (p.rowIndex ?? p.id) === (selectedPoint.rowIndex ?? selectedPoint.id));
-    if (!pt) return;
-
-    const targetPos = new THREE.Vector3(pt.x, pt.y, pt.z);
-    let frame = 0;
-    const totalFrames = 25;
-    const startTarget = controlsRef.current.target.clone();
-
-    const flyTo = () => {
-      frame++;
-      const progress = Math.min(1, frame / totalFrames);
-      const ease = 1 - Math.pow(1 - progress, 3);
-      controlsRef.current?.target.lerpVectors(startTarget, targetPos, ease);
-      controlsRef.current?.update();
-
-      if (frame < totalFrames) {
-        requestAnimationFrame(flyTo);
-      }
-    };
-    flyTo();
-  }, [selectedPoint, normalizedPoints]);
+  // Selection changes the highlight while preserving the current orbit and zoom.
 
   const handleResetCamera = () => {
     if (controlsRef.current && cameraRef.current) {
@@ -1007,15 +682,20 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             <strong>{legendTitle}</strong>
             {colorMode === 'feature' ? (
               <div className="view-legend-items">
-                <span>{selectedFeature === '__anomaly_score' ? tr("Higher score = easier isolation") : selectedFeature === '__rule_match' ? tr("Blue: not matched · Red: matched") : selectedFeature || tr("No feature selected")}</span>
-                {selectedFeature && <div className="view-color-scale"><span>{tr("Low")}</span><i /><span>{tr("High")}</span></div>}
+                <span>{selectedFeature === '__anomaly_score' ? tr("Higher score = easier isolation") : selectedFeature === '__rule_match' ? tr("Association rule") : selectedFeature || tr("No feature selected")}</span>
+                {selectedFeature === '__rule_match' ? <div className="view-color-scale">
+                  <i style={{ background: plotColors.rules[0], width: 9 }} /><span>{tr('Does not match')}</span>
+                  <i style={{ background: plotColors.rules[1], width: 9 }} /><span>{tr('Matches')}</span>
+                </div> : selectedFeature && <div className="view-color-scale"><span>{tr("Low")}</span>
+                  <i style={{ background: `linear-gradient(90deg, ${plotColors.low}, ${plotColors.mid}, ${plotColors.high})` }} />
+                  <span>{tr("High")}</span></div>}
               </div>
             ) : (
               <ul className="view-legend-items" aria-label={tr("Groups in the current view")}>
                 {legendGroups.map(([group, count]) => {
                   const cluster = typeof group === 'number' ? group : null;
                   const name = cluster === null ? String(group) || tr('Unlabeled') : cluster === -1 ? tr('Noise') : tr('Cluster') + ' ' + cluster;
-                  const swatch = cluster === null ? labelColorMap[String(group)] ?? '#929EAF' : cluster === -1 ? '#64748B' : CLUSTER_COLORS[cluster % CLUSTER_COLORS.length];
+                  const swatch = cluster === null ? plotColors.byLabel.get(String(group)) ?? plotColors.missing : cluster === -1 ? plotColors.noise : plotColors.clusters[cluster % plotColors.clusters.length];
                   return <li key={group}><i style={{ background: swatch }} /><span>{name}</span><small>{count.toLocaleString(language)}</small></li>;
                 })}
               </ul>
@@ -1028,6 +708,21 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     </div>
   );
 };
+
+function disposePlotMarkers(group: THREE.Group) {
+  for (const child of [...group.children]) {
+    group.remove(child);
+    if (child instanceof THREE.Mesh) {
+      child.geometry.dispose();
+      (child.material as THREE.Material).dispose();
+    } else if (child instanceof THREE.ArrowHelper) {
+      for (const material of [child.line.material, child.cone.material].flat()) material.dispose();
+    } else if (child instanceof THREE.Sprite) {
+      child.material.map?.dispose();
+      child.material.dispose();
+    }
+  }
+}
 
 function paintTextLabel(canvas: HTMLCanvasElement, text: string, strokeColor: string, theme: 'light' | 'dark') {
   const ctx = canvas.getContext('2d');
