@@ -1,3 +1,4 @@
+import { computeGMM } from '../algorithms/gmm';
 import { ClusteringConfig, DataPoint, EvaluationMetrics, ParsedDataset, ReductionConfig } from '../types';
 import { computePCA } from '../algorithms/pca';
 import { computeTSNE } from '../algorithms/tsne';
@@ -21,7 +22,7 @@ export function reductionKey(features: string[], config: ReductionConfig): strin
 }
 
 export function clusteringKey(config: ClusteringConfig): string {
-  return JSON.stringify([config.method, config.method === 'K-Means' ? config.k
+  return JSON.stringify([config.method, config.method === 'GMM' ? [config.k, config.gmmIterations ?? 100, config.gmmTolerance ?? 1e-5, config.seed ?? 42] : config.method === 'K-Means' ? config.k
     : config.method === 'DBSCAN' ? [config.epsilon, config.minPts] : null]);
 }
 
@@ -60,6 +61,7 @@ export function pendingAnalysisChanges(previous: AnalysisSnapshot, next: Analysi
   const c = previous.clustering, d = next.clustering;
   compare('Clustering', c.method, d.method);
   if (c.method === d.method && d.method === 'K-Means') compare('Clusters', c.k, d.k);
+  if (c.method === d.method && d.method === 'GMM') { compare('Components', c.k, d.k); compare('Iterations', c.gmmIterations ?? 100, d.gmmIterations ?? 100); compare('Tolerance', c.gmmTolerance ?? 1e-5, d.gmmTolerance ?? 1e-5); compare('Seed', c.seed ?? 42, d.seed ?? 42); }
   if (c.method === d.method && d.method === 'DBSCAN') {
     compare('Radius (ε)', c.epsilon, d.epsilon);
     compare('Minimum points', c.minPts, d.minPts);
@@ -91,15 +93,19 @@ export function clusterPoints(points: DataPoint[], config: ClusteringConfig, has
   const coordinates = points.map(p => [p.x, p.y, p.z]);
   let labels = points.map(() => 0);
   let outliers: boolean[];
+  let gmm: ReturnType<typeof computeGMM> | undefined;
   if (config.method === 'K-Means') {
     const result = computeKMeans(coordinates, config.k);
     labels = result.clusters;
     outliers = detectKMeansOutliers(points, labels, result.centroids);
+  } else if (config.method === 'GMM') {
+    gmm = computeGMM(coordinates, { k: config.k, maxIterations: config.gmmIterations, tolerance: config.gmmTolerance, seed: config.seed });
+    labels = gmm.clusters; outliers = detectOutliers3D(points);
   } else if (config.method === 'DBSCAN') {
     labels = computeDBSCAN(coordinates, config.epsilon, config.minPts).clusters;
     outliers = labels.map(label => label === -1);
   } else outliers = detectOutliers3D(points);
-  const updated = points.map((p, i) => ({ ...p, cluster: labels[i], isOutlier: outliers[i] }));
+  const updated = points.map((p, i) => ({ ...p, cluster: labels[i], isOutlier: outliers[i], clusterConfidence: gmm ? Math.max(...gmm.probabilities[i]) : undefined }));
   const counts: Record<number, number> = {};
   if (config.method !== 'None') labels.forEach(c => { if (c >= 0) counts[c] = (counts[c] ?? 0) + 1; });
   const finiteOrNull = (value: number | null) => value !== null && Number.isFinite(value) ? value : null;
@@ -108,7 +114,7 @@ export function clusterPoints(points: DataPoint[], config: ClusteringConfig, has
     adjustedRandIndex: config.method === 'None' || !hasLabels ? null : finiteOrNull(computeARI(updated.map(p => p.label ?? null), labels)),
     clusterCounts: counts, noiseCount: labels.filter(c => c === -1).length, outlierCount: outliers.filter(Boolean).length,
   };
-  return { points: updated, metrics };
+  return { points: updated, metrics, gmm };
 }
 
 export function focusPoints(points: DataPoint[], cluster: number | null): DataPoint[] {

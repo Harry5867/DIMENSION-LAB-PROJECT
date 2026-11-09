@@ -1,0 +1,78 @@
+/* Terrain and Stories share the hero's left column; the renderer stays mounted. */
+.welcome-page:not([data-globe-mode=atlas]) .welcome-main { grid-template-rows:minmax(0,1fr); }
+.welcome-page .welcome-copy--exploring { align-self:stretch; height:100%; max-height:100%; display:flex; flex-direction:column; justify-content:center; }
+.welcome-copy--exploring .welcome-mode-intro { flex-shrink:0; animation:welcome-exploration-intro 260ms cubic-bezier(.16,1,.3,1) both; }
+.welcome-page .welcome-copy--exploring .welcome-title-line > span { animation:none; }
+.welcome-page[data-globe-mode=stories][lang=vi] .welcome-mode-intro { container-type:inline-size; }
+.welcome-page[data-globe-mode=stories][lang=vi] .welcome-copy h1 { font-size:min(clamp(30px,4.1vw,84px),8.5cqw); }
+.welcome-copy--exploring .welcome-actions { flex-shrink:0; }
+.welcome-exploration-controls { flex:0 1 auto; min-height:0; width:100%; max-width:390px; margin-top:18px; padding-right:10px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--border-subtle) transparent; scrollbar-gutter:stable; pointer-events:auto; }
+.welcome-exploration-controls[hidden] { display:none; }
+.welcome-exploration-controls:focus-visible { outline:1px solid var(--explore-primary); outline-offset:4px; }
+.welcome-page[data-globe-mode] .welcome-exploration-controls :is(.globe-terrain-panel,.globe-story-panel) { position:static; inset:auto; width:100%; max-height:none; overflow:visible; padding:0; border:0; border-radius:0; background:transparent; color:var(--text-main); box-shadow:none; animation:none; }
+.welcome-exploration-controls :is(.terrain-controls-body,.story-controls-body) { gap:9px; padding:0; }
+.welcome-exploration-controls :is(button,select,input,summary) { pointer-events:auto; }
+#root .welcome-exploration-controls :is(button,summary)::after { content:none; }
+#root .welcome-exploration-controls button { box-shadow:none; scale:1; color:var(--text-main); transition:color 160ms ease,background-color 160ms ease; }
+#root .welcome-exploration-controls button:hover { color:var(--explore-primary); background:var(--bg-interactive); }
+#root .welcome-exploration-controls button:active { scale:1; }
+#root .welcome-exploration-controls :is(button,summary,select):focus-visible { outline:2px solid var(--explore-primary); outline-offset:2px; }
+#root .welcome-exploration-controls summary { position:relative; display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:36px; padding:6px 0; border-radius:0; cursor:pointer; list-style:none; font-size:12px; }
+#root .welcome-exploration-controls summary:hover { color:var(--explore-primary); }
+.welcome-exploration-controls summary::-webkit-details-marker { display:none; }
+.welcome-exploration-controls summary > svg { flex-shrink:0; transition:transform 180ms ease; }
+.welcome-exploration-controls details[open] > summary > svg { transform:rotate(180deg); }
+.welcome-exploration-controls .terrain-range { min-height:36px; grid-template-columns:82px minmax(0,1fr) 35px; gap:12px; }
+.welcome-exploration-controls .terrain-range label { font-size:12px; }
+.welcome-exploration-controls .terrain-range output { font-size:10px; }
+.welcome-exploration-controls .terrain-visibility-row label { min-height:36px; font-size:12px; }
+.welcome-exploration-controls .terrain-visibility-row button { min-height:34px; padding:6px 12px; border-color:var(--border-subtle); font-size:11px; }
+.welcome-exploration-controls .terrain-color-key { margin-block:7px; font-size:10px; }
+.welcome-exploration-controls .terrain-data-details { border-color:var(--border-subtle); }
+.welcome-exploration-controls .terrain-reading p { color:var(--text-muted); font-size:11px; }
+.welcome-exploration-controls .terrain-data-body { gap:10px; }
+.welcome-exploration-controls .terrain-source { flex-wrap:wrap; margin:0; font-size:10px; }
+.welcome-exploration-controls .terrain-sampling { font-size:11px; line-height:1.6; }
+.welcome-exploration-controls .terrain-sampling p { margin-block:8px; }
+.welcome-page[data-globe-mode] .welcome-exploration-controls :is(.terrain-controls-body,.story-controls-body) select { min-height:42px; padding:10px; background:var(--bg-interactive); color:var(--text-main); border-color:var(--border-subtle); font-size:12px; }
+.welcome-page[data-globe-mode=stories] .welcome-exploration-controls { display:flex; overflow:auto; scrollbar-gutter:auto; }
+.welcome-page[data-globe-mode=stories] .welcome-exploration-controls .globe-story-panel { display:flex; flex-direction:column; min-height:0; height:100%; }
+.welcome-exploration-controls .story-controls-body { display:flex; flex-direction:column; min-height:0; height:100%; }
+.welcome-exploration-controls .story-filter-bar { display:grid; flex-shrink:0; gap:9px; }
+.welcome-exploration-controls .story-filter-bar > label { font-size:12px; }
+.welcome-exploration-controls .story-count { margin:0; font-size:11px; }
+.welcome-exploration-controls .story-selection-hint { margin:0; border-top:1px solid var(--border-subtle); padding-top:14px; color:var(--text-muted); font-size:12px; line-height:1.7; }
+.welcome-exploration-controls .story-information { flex:0 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--border-subtle) transparent; align-content:start; gap:10px; padding:12px 10px 2px 0; border-color:var(--border-subtle); animation:welcome-exploration-intro 180ms ease-out both; }
+.welcome-page[data-globe-mode] .welcome-exploration-controls .story-information header { position:static; background:transparent; color:var(--text-muted); font-size:10px; }
+.welcome-exploration-controls .story-detail-intro { display:grid; grid-template-columns:76px minmax(0,1fr); align-items:center; gap:14px; }
+.welcome-exploration-controls :is(.story-panel-image,.story-image-placeholder) { width:76px; height:76px; aspect-ratio:1; object-fit:contain; background:var(--bg-interactive); border-color:var(--border-subtle); }
+.welcome-exploration-controls .story-information h2 { margin:0; font-size:20px; }
+.welcome-exploration-controls .story-information p { margin:0; font-size:12px; line-height:1.65; }
+.welcome-exploration-controls .story-information .story-location { margin-top:6px; font-size:11px; }
+.welcome-exploration-controls .story-information :is(.story-source,.story-demo-note) { color:var(--text-muted); font-size:10px; }
+.welcome-exploration-controls .story-atlas-action { min-height:38px; border-color:var(--border-subtle); font-size:12px; }
+.welcome-page[data-globe-mode] .welcome-exploration-controls a { color:var(--explore-primary); }
+.welcome-page[data-globe-mode=stories] .story-marker-preview { width:176px; }
+@keyframes welcome-exploration-intro { from { opacity:0; transform:translateY(7px); } to { opacity:1; transform:translateY(0); } }
+.welcome-page[data-motion=gentle] .welcome-copy--exploring .welcome-mode-intro,
+.welcome-page[data-motion=gentle] .welcome-exploration-controls .story-information { animation:none; }
+@media(min-width:600px) and (max-height:720px) {
+  .welcome-page[data-globe-mode=stories] .welcome-exploration-controls { display:block; }
+  .welcome-page[data-globe-mode=stories] .welcome-exploration-controls .globe-story-panel,
+  .welcome-exploration-controls .story-controls-body { height:auto; }
+  .welcome-exploration-controls .story-information { flex:none; overflow:visible; }
+}
+@media(max-width:599px) {
+  .welcome-page:not([data-globe-mode=atlas]) .welcome-main { display:flex; flex-direction:column; align-items:stretch; flex:none; min-height:0; }
+  .welcome-page .welcome-copy--exploring { display:contents; }
+  .welcome-copy--exploring .welcome-mode-intro { order:1; width:100%; padding:28px 24px 16px; }
+  .welcome-page:not([data-globe-mode=atlas]) .data-globe { order:2; position:relative; inset:auto; width:100%; height:clamp(330px,100vw,470px); }
+  .welcome-exploration-controls, .welcome-page[data-globe-mode=stories] .welcome-exploration-controls { display:block; order:3; align-self:center; flex:none; width:calc(100% - 48px); max-width:420px; margin:12px auto 0; padding:0; max-height:none; overflow:visible; scrollbar-gutter:auto; }
+  .welcome-page[data-globe-mode=stories] .welcome-exploration-controls .globe-story-panel, .welcome-exploration-controls .story-controls-body { height:auto; }
+  .welcome-exploration-controls .story-information { flex:none; overflow:visible; padding-right:0; }
+  .welcome-copy--exploring .welcome-actions { order:4; align-self:center; width:calc(100% - 48px); max-width:420px; margin:20px auto 24px; padding-top:0; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .welcome-copy--exploring .welcome-mode-intro, .welcome-exploration-controls .story-information { animation:none; }
+  #root .welcome-exploration-controls button, .welcome-exploration-controls summary > svg { transition:none; }
+}

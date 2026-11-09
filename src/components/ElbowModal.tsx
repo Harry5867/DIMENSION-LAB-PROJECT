@@ -1,6 +1,7 @@
+import { useAppLanguage } from "./WelcomeLanguage";
 import { useDialogFocus } from '../utils/useDialogFocus';
 import React, { useMemo, useState } from 'react';
-import { X, TrendingDown, Award, CheckCircle2, Sparkles, RefreshCw } from 'lucide-react';
+import { X, TrendingDown, Award, CheckCircle2, Sparkles } from 'lucide-react';
 import { computeKMeans } from '../algorithms/kmeans';
 import { computeSilhouetteScore } from '../algorithms/metrics';
 
@@ -27,9 +28,9 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
   onApplyK,
   theme = 'dark',
 }) => {
+  const { tr } = useAppLanguage();
   const isLight = theme === 'light';
   const [selectedK, setSelectedK] = useState<number>(currentK);
-  const [isComputing, setIsComputing] = useState(false);
 
   // Compute metrics for K = 2..8
   const kRange = [2, 3, 4, 5, 6, 7, 8];
@@ -106,7 +107,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
             </div>
             <div>
               <h2 id="ElbowModal-title" className={`text-lg font-bold flex items-center gap-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                Choose a cluster count
+                {tr("Choose a cluster count")}
                 <span className={`px-2 py-0.5 rounded text-[11px] font-mono border ${
                   isLight ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-indigo-900/60 text-indigo-300 border-indigo-700/50'
                 }`}>
@@ -114,12 +115,12 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
                 </span>
               </h2>
               <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-                Compare inertia and silhouette across values of K.
+                {tr("Compare inertia and silhouette across values of K.")}
               </p>
             </div>
           </div>
           <button
-            aria-label="Close cluster analysis" onClick={onClose}
+            aria-label={tr("Close cluster analysis")} onClick={onClose}
             className={`p-1.5 rounded-lg transition-colors ${
               isLight ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
@@ -138,11 +139,11 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5 font-medium">
                   <span className="w-3 h-1 bg-amber-500 rounded-full inline-block" />
-                  <span className={isLight ? 'text-amber-700' : 'text-amber-300'}>Inertia / WCSS (Left axis: lower means tighter clusters)</span>
+                  <span className={isLight ? 'text-amber-700' : 'text-amber-300'}>{tr("Inertia / WCSS (Left axis: lower means tighter clusters)")}</span>
                 </div>
                 <div className="flex items-center gap-1.5 font-medium">
                   <span className="w-3 h-1 bg-emerald-500 rounded-full inline-block" />
-                  <span className={isLight ? 'text-emerald-700' : 'text-emerald-300'}>Silhouette Score (Right axis: higher means better separation)</span>
+                  <span className={isLight ? 'text-emerald-700' : 'text-emerald-300'}>{tr("Silhouette Score (Right axis: higher means better separation)")}</span>
                 </div>
               </div>
             </div>
@@ -249,7 +250,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
                             fontSize="9"
                             fontWeight="bold"
                           >
-                            Best
+                            {tr("Best")}
                           </text>
                         </g>
                       )}
@@ -312,18 +313,18 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
           }`}>
             <Award className="text-indigo-500 shrink-0 mt-0.5" size={20} />
             <div className="text-xs leading-relaxed">
-              <span className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Recommendation: </span>
+              <span className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{tr("Recommendation:")} </span>
               {bestKBySilhouette === 2 ? (
                 <span>
-                  At <strong>K = 2</strong>, silhouette peaks at{' '}
+                  {tr("At")} <strong>K = 2</strong>{tr(", silhouette peaks at")}{' '}
                   <span className="font-mono font-bold text-emerald-500">
                     ({metricsList.find(m => m.k === 2)?.silhouette.toFixed(3)})
                   </span>{' '}
-                  and inertia shows an elbow. This suggests two well-separated clusters.
+                  {tr("and inertia shows an elbow. This suggests two well-separated clusters.")}
                 </span>
               ) : (
                 <span>
-                  The best separation is at <strong>K = {bestKBySilhouette}</strong>, with a silhouette score of{' '}
+                  {tr("The best separation is at")} <strong>K = {bestKBySilhouette}</strong>{tr(", with a silhouette score of")}{' '}
                   <span className="font-mono font-bold text-emerald-500">
                     ({metricsList.find(m => m.k === bestKBySilhouette)?.silhouette.toFixed(3)})
                   </span>.
@@ -338,7 +339,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
           isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
         }`}>
           <div className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-            Selected cluster count: <span className="font-bold text-indigo-600">K = {selectedK}</span>
+            {tr("Selected cluster count:")} <span className="font-bold text-indigo-600">K = {selectedK}</span>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -347,7 +348,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
                 isLight ? 'text-slate-600 hover:text-slate-900 bg-slate-200 hover:bg-slate-300' : 'text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700'
               }`}
             >
-              Close
+              {tr("Close")}
             </button>
             <button
               onClick={() => {
@@ -357,7 +358,7 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30 transition-all"
             >
               <CheckCircle2 size={14} />
-              <span>Apply K = {selectedK}</span>
+              <span>{tr("Apply K =")} {selectedK}</span>
             </button>
           </div>
         </div>

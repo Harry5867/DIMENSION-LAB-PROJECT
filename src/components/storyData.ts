@@ -10,6 +10,7 @@ export interface StoryRecord {
   latitude: number; longitude: number; position: Vector3;
   imageUrl: string; imageAlt: string; description: string; year: number;
   source: { label: string; url: string | null }; datasetReference: string; demo: boolean;
+  photo: { author: string; title: string; url: string; license: string; licenseUrl: string; changes: string };
 }
 export interface StoryGroup { key: string; members: StoryRecord[]; position: Vector3 }
 export function parseStories(input: unknown): StoryRecord[] {
@@ -29,6 +30,9 @@ export function parseStories(input: unknown): StoryRecord[] {
     const source = s.source as Record<string, unknown> | null;
     if (!source || typeof source.label !== 'string' || !source.label.trim() || (source.url !== null && (typeof source.url !== 'string' || !/^https:\/\//.test(source.url)))) throw new Error('Invalid story source');
     if (!s.demo && !source.url) throw new Error('A real story needs a linked source');
+    const photo = s.photo as Record<string, unknown> | null;
+    if (!photo || ['author', 'title', 'license', 'changes'].some(key => typeof photo[key] !== 'string' || !(photo[key] as string).trim())
+      || ['url', 'licenseUrl'].some(key => typeof photo[key] !== 'string' || !/^https:\/\//.test(photo[key] as string))) throw new Error('Invalid photo credit');
     return { ...s, source, position: earthPosition(s.latitude, s.longitude) } as unknown as StoryRecord;
   });
 }
@@ -61,7 +65,7 @@ export function projectStoryGroups(groups: StoryGroup[], orientation: Quaternion
     if (projected.z <= .12 || x < frame.left + 24 || x > frame.width - 24 || y < frame.top + 24 || y > frame.bottom - 24) return [];
     const priority = group.members.some(member => member.id === selected) ? 3 : group.key === hovered ? 2 : projected.z;
     return [{ group, x, y, anchorX: x, anchorY: y, priority }];
-  }).sort((a, b) => b.priority - a.priority).slice(0, frame.compact ? 8 : 16)
+  }).sort((a, b) => b.priority - a.priority).slice(0, frame.compact ? 6 : 10)
     .sort((a, b) => a.group.key.localeCompare(b.group.key));
   const size = frame.compact ? 40 : 48, step = size + 8;
   const placed: Array<{ x: number; y: number }> = [];

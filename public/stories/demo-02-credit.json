@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-02.webp",
+  "imageAlt": "Photograph of Nairobi, Kenya; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Daniel Case",
+    "title": "Nairobi_skyline_from_Gem_Hotel.jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Nairobi_skyline_from_Gem_Hotel.jpg",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

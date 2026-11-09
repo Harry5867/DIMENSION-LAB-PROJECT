@@ -1,5 +1,5 @@
 export type ReductionMethod = 'PCA' | 't-SNE' | 'UMAP';
-export type ClusteringMethod = 'K-Means' | 'DBSCAN' | 'None';
+export type ClusteringMethod = 'K-Means' | 'DBSCAN' | 'GMM' | 'None';
 export type ColorMode = 'ground-truth' | 'cluster' | 'feature';
 export type NormalizationMethod = 'z-score' | 'min-max' | 'none';
 export const MIN_NUMERIC_FEATURES = 3;
@@ -91,6 +91,9 @@ export interface DataPoint {
   // Assigned cluster (-1 for noise in DBSCAN)
   cluster: number;
   isOutlier?: boolean;
+  clusterConfidence?: number;
+  anomalyScore?: number;
+  analysisMatch?: boolean;
 }
 
 export interface ParsedDataset {
@@ -118,6 +121,9 @@ export interface ReductionConfig {
 
 export interface ClusteringConfig {
   method: ClusteringMethod;
+  gmmIterations?: number;
+  gmmTolerance?: number;
+  seed?: number;
   // K-Means
   k: number;
   // DBSCAN

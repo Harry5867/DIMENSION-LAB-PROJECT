@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-15.webp",
+  "imageAlt": "Photograph of Brasília, Brazil; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Arturdiasr",
+    "title": "Planalto_Central_(cropped).jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Planalto_Central_(cropped).jpg",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

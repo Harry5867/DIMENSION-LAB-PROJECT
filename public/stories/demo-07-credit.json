@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-07.webp",
+  "imageAlt": "Photograph of London, United Kingdom; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Ilya Grigorik",
+    "title": "London_Skyline_(125508655).jpeg",
+    "url": "https://commons.wikimedia.org/wiki/File:London_Skyline_(125508655).jpeg",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

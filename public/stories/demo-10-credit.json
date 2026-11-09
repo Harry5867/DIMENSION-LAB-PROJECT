@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-10.webp",
+  "imageAlt": "Photograph of Berlin, Germany; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "File:Museumsinsel Berlin Juli 2021 1 (cropped).jpg: Kasa Fue\nderivative work: Georgfotoart",
+    "title": "Museumsinsel_Berlin_Juli_2021_1_(cropped)_b.jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Museumsinsel_Berlin_Juli_2021_1_(cropped)_b.jpg",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

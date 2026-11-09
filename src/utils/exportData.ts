@@ -7,7 +7,7 @@ export function safeFilename(name: string): string {
 }
 
 export function resultRows(dataset: ParsedDataset, points: DataPoint[], hasClusters: boolean): DatasetRow[] {
-  const reserved = ['id', 'label_ground_truth', 'predicted_cluster', 'coord_x_3d', 'coord_y_3d', 'coord_z_3d', 'source_row'];
+  const reserved = ['id', 'label_ground_truth', 'predicted_cluster', 'coord_x_3d', 'coord_y_3d', 'coord_z_3d', 'source_row', 'cluster_confidence'];
   const used = new Set(reserved);
   const mapping = new Map(dataset.headers.map(name => {
     let output = name;
@@ -21,7 +21,7 @@ export function resultRows(dataset: ParsedDataset, points: DataPoint[], hasClust
     mapping.forEach((output, input) => { row[output] = original[input] ?? null; });
     return { ...row, id: point.id, source_row: point.rowIndex === undefined ? null : point.rowIndex + 1,
       label_ground_truth: point.label ?? null, predicted_cluster: hasClusters ? (point.cluster === -1 ? 'Noise' : point.cluster) : null,
-      coord_x_3d: point.x, coord_y_3d: point.y, coord_z_3d: point.z };
+      cluster_confidence: point.clusterConfidence ?? null, coord_x_3d: point.x, coord_y_3d: point.y, coord_z_3d: point.z };
   });
 }
 

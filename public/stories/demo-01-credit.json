@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-01.webp",
+  "imageAlt": "Photograph of Hanoi, Vietnam; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Quangnlnhe182394",
+    "title": "Hanoi_skyline_with_Ba_Vi_Mountain.jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Hanoi_skyline_with_Ba_Vi_Mountain.jpg",
+    "license": "CC0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/deed.en",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

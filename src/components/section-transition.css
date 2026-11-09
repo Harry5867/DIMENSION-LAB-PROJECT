@@ -1,0 +1,21 @@
+.section-transition { position:fixed; inset:0; z-index:210; overflow:hidden; pointer-events:auto; }
+.section-transition-paper, .section-transition-wash { position:absolute; inset:0; background:var(--transition-paper,#f1eee6); transform-origin:0 0; }
+.section-transition-paper { will-change:transform,opacity; transform-origin:center; border:1px solid transparent; }
+.section-transition-wash { opacity:0; }
+.section-transition-label, .section-transition-icon { position:absolute; left:0; top:0; margin:0; transform-origin:0 0; will-change:transform,opacity; pointer-events:none; }
+.section-transition-icon { opacity:0; }
+.section-transition-icon .workspace-section-icon { width:100%; height:100%; }
+.section-transition--theory .section-transition-paper { transform-origin:0 0; border:0; }
+.section-transition--theory .section-transition-label { white-space:nowrap; line-height:1.1; letter-spacing:-.04em; }
+.section-transition--theory .section-transition-number { line-height:.9; letter-spacing:-.085em; }
+.portal-page--opening :is(.workspace-map-link:not([data-opening]), .portal-intro, .workspace-map-geometry) { opacity:.24; transition:opacity 190ms ease; }
+.portal-page[data-opening-section=theory] :is(.workspace-map-link:not([data-opening]), .portal-intro, .workspace-map-geometry) { opacity:.15; transition:none; }
+.portal-page[data-opening-section=theory] .workspace-map-link:not([data-opening]) { transition:opacity 140ms ease; }
+.portal-page--opening .workspace-map-link[data-opening] { opacity:0; }
+.portal-page--title-in-transit .portal-content-heading h1, .portal-page--title-in-transit [data-section-number] { visibility:hidden; }
+.portal-page--section-arriving .portal-content > .portal-prose,
+.portal-page--section-arriving .portal-content > .dataset-stories { animation:section-content-enter 320ms 120ms ease-out both; animation-duration:320ms !important; }
+.portal-page--returning .portal-overview { animation:section-return 180ms ease-out both; animation-duration:180ms !important; }
+.model-session--arriving .workspace-header, .model-session--arriving .workspace-content { animation:section-content-enter 240ms 60ms ease-out both; animation-duration:240ms !important; }
+@keyframes section-content-enter { from { opacity:0; translate:0 12px; } to { opacity:1; translate:0 0; } }
+@keyframes section-return { from { opacity:.5; } to { opacity:1; } }

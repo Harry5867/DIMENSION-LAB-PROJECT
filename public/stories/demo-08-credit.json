@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-08.webp",
+  "imageAlt": "Photograph of Singapore, Singapore; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Bijay Chaurasia",
+    "title": "Marina_Bay_Singapore-3499.jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Singapore-3499.jpg",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

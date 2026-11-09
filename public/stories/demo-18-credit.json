@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-18.webp",
+  "imageAlt": "Photograph of Pretoria, South Africa; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Davinci77",
+    "title": "Uniegebou.jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Uniegebou.jpg",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

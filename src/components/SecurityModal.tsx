@@ -1,3 +1,4 @@
+import { useAppLanguage } from "./WelcomeLanguage";
 import { useDialogFocus } from '../utils/useDialogFocus';
 import React, { useState, useEffect } from 'react';
 import { SystemHealth } from '../types';
@@ -8,10 +9,7 @@ import {
   Lock,
   Wifi,
   Database,
-  CheckCircle2,
-  AlertTriangle,
   Server,
-  Share2,
   Copy,
   Check,
   RefreshCw,
@@ -36,6 +34,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   dbStatus,
   onRefreshDb,
 }) => {
+  const { tr } = useAppLanguage();
   const [isPinging, setIsPinging] = useState(false);
   const [pingResult, setPingResult] = useState<string | null>(null);
   const [copiedCmd, setCopiedCmd] = useState(false);
@@ -124,15 +123,15 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
             </div>
             <div>
               <h2 id="SecurityModal-title" className="text-lg font-bold text-[var(--text-main)] flex items-center gap-2">
-                Workspace help
+                {tr("Workspace help")}
               </h2>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                Shortcuts, connection status, and local sharing.
+                {tr("Shortcuts, connection status, and local sharing.")}
               </p>
             </div>
           </div>
           <button
-            aria-label="Close help" onClick={onClose}
+            aria-label={tr("Close help")} onClick={onClose}
             className="workspace-icon"
           >
             <X size={20} />
@@ -146,7 +145,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Database size={18} className={isCloudConnected ? 'text-emerald-400' : 'text-amber-400'} />
-                <span className="text-sm font-bold text-[var(--text-main)]">Database status:</span>
+                <span className="text-sm font-bold text-[var(--text-main)]">{tr("Database status:")}</span>
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold flex items-center gap-1.5 ${
                     isCloudConnected
@@ -155,7 +154,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   }`}
                 >
                   <span className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                  {dbStatus}
+                  {tr(dbStatus)}
                 </span>
               </div>
 
@@ -165,13 +164,13 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-[var(--text-main)] transition-all shadow-md shadow-indigo-600/30 disabled:opacity-50"
               >
                 <RefreshCw size={13} className={isPinging ? 'animate-spin' : ''} />
-                <span>{isPinging ? 'Checking…' : 'Check connection'}</span>
+                <span>{isPinging ? tr("Checking…") : tr("Check connection")}</span>
               </button>
             </div>
 
             {pingResult && (
               <div className="text-xs p-2.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-subtle)] text-[var(--text-main)]">
-                {pingResult}
+                {tr(pingResult)}
               </div>
             )}
           </div>
@@ -181,10 +180,10 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
             <div className="p-4 rounded-xl bg-[var(--bg-main)]/80 border border-indigo-500/30 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-                  <Activity size={14} /> Server status
+                  <Activity size={14} /> {tr("Server status")}
                 </span>
                 <span className="text-[11px] font-mono text-[var(--text-muted)]">
-                  Uptime: {systemHealth.uptime}
+                  {tr("Uptime:")} {systemHealth.uptime}
                 </span>
               </div>
 
@@ -193,7 +192,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 <div className="p-3 rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] flex flex-col gap-1">
                   <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
                     <Cpu size={14} className="text-cyan-400" />
-                    <span>Node.js memory</span>
+                    <span>{tr("Node.js memory")}</span>
                   </div>
                   <div className="font-mono text-cyan-300 font-bold text-sm">
                     {systemHealth.memory?.heapUsedMb} <span className="text-[11px] font-normal text-[var(--text-muted)]">/ {systemHealth.memory?.heapTotalMb}</span>
@@ -205,30 +204,30 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 <div className="p-3 rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] flex flex-col gap-1">
                   <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
                     <Server size={14} className="text-emerald-400" />
-                    <span>Database latency</span>
+                    <span>{tr("Database latency")}</span>
                   </div>
                   <div className="font-mono text-emerald-400 font-bold text-sm">
                     {systemHealth.database?.latency || 'N/A'}
                   </div>
-                  <span className="text-[10px] text-[var(--text-muted)]">Documents: {systemHealth.database?.totalDocuments || 0}</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">{tr("Documents:")} {systemHealth.database?.totalDocuments || 0}</span>
                 </div>
 
                 {/* Compute Cache */}
                 <div className="p-3 rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] flex flex-col gap-1">
                   <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
                     <Zap size={14} className="text-amber-400" />
-                    <span>Cache</span>
+                    <span>{tr("Cache")}</span>
                   </div>
                   <div className="font-mono text-amber-300 font-bold text-sm">
-                    {systemHealth.cache?.memoryEntries || 0} entries
+                    {systemHealth.cache?.memoryEntries || 0} {tr('entries')}
                   </div>
-                  <span className="text-[10px] text-[var(--text-muted)]">Stored analysis results.</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">{tr("Stored analysis results.")}</span>
                 </div>
               </div>
 
               <div className="flex items-center justify-between pt-1">
                 <span className="text-[11px] text-[var(--text-muted)]">
-                  Cache and compression are enabled.
+                  {tr("Cache and compression are enabled.")}
                 </span>
                 <button
                   onClick={handleClearCache}
@@ -236,13 +235,13 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-interactive)] hover:bg-slate-700 text-rose-300 text-[11px] border border-rose-900/40 transition-colors"
                 >
                   <Trash2 size={12} />
-                  <span>{isClearingCache ? 'Clearing…' : 'Clear cache'}</span>
+                  <span>{isClearingCache ? tr("Clearing…") : tr("Clear cache")}</span>
                 </button>
               </div>
 
               {cacheMsg && (
                 <div className="text-[11px] p-2 rounded-lg bg-[var(--bg-panel)] border border-indigo-900 text-indigo-300">
-                  {cacheMsg}
+                  {tr(cacheMsg)}
                 </div>
               )}
             </div>
@@ -252,63 +251,63 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-3 flex items-center gap-2">
               <Lock size={14} className="text-indigo-400" />
-              Data and storage
+              {tr("Data and storage")}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3.5 rounded-xl bg-[var(--bg-interactive)]/40 border border-[var(--border-subtle)]/60 flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs">
                   <KeyRound size={15} />
-                  <span>Server credentials</span>
+                  <span>{tr("Server credentials")}</span>
                 </div>
                 <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                  Database credentials are configured in the server’s <code className="text-indigo-300">.env</code> file.
+                  {tr("Database credentials are configured in the server’s")} <code className="text-indigo-300">.env</code> {tr("file.")}
                 </p>
               </div>
 
               <div className="p-3.5 rounded-xl bg-[var(--bg-interactive)]/40 border border-[var(--border-subtle)]/60 flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
                   <Shield size={15} />
-                  <span>Encryption in transit</span>
+                  <span>{tr("Encryption in transit")}</span>
                 </div>
                 <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                  MongoDB Atlas connections use TLS.
+                  {tr("MongoDB Atlas connections use TLS.")}
                 </p>
               </div>
 
               <div className="p-3.5 rounded-xl bg-[var(--bg-interactive)]/40 border border-[var(--border-subtle)]/60 flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-cyan-400 font-semibold text-xs">
                   <Globe2 size={15} />
-                  <span>Database access</span>
+                  <span>{tr("Database access")}</span>
                 </div>
                 <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                  Atlas controls which IP addresses can connect.
+                  {tr("Atlas controls which IP addresses can connect.")}
                 </p>
               </div>
 
               <div className="p-3.5 rounded-xl bg-[var(--bg-interactive)]/40 border border-[var(--border-subtle)]/60 flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-amber-400 font-semibold text-xs">
                   <Server size={15} />
-                  <span>In-memory storage</span>
+                  <span>{tr("In-memory storage")}</span>
                 </div>
                 <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                  When Atlas is unavailable, the server can store results in memory.
+                  {tr("When Atlas is unavailable, the server can store results in memory.")}
                 </p>
               </div>
             </div>
           </div>
 
-          <section className="keyboard-help"><h3>Keyboard shortcuts</h3><p><kbd>Ctrl / ⌘ + Enter</kbd> Run analysis</p><p><kbd>Escape</kbd> Close the active dialog or panel, then exit cluster focus</p><p><kbd>R</kbd> Reset camera · <kbd>+</kbd> / <kbd>−</kbd> Zoom in or out</p><p>Camera shortcuts are disabled while typing or while a dialog is open.</p></section>
+          <section className="keyboard-help"><h3>{tr("Keyboard shortcuts")}</h3><p><kbd>Ctrl / ⌘ + Enter</kbd> {tr("Run analysis")}</p><p><kbd>Escape</kbd> {tr("Close the active dialog or panel, then exit cluster focus")}</p><p><kbd>R</kbd> {tr("Reset camera ·")} <kbd>+</kbd> / <kbd>−</kbd> {tr("Zoom in or out")}</p><p>{tr("Camera shortcuts are disabled while typing or while a dialog is open.")}</p></section>
           {/* 4. Hướng dẫn chia sẻ mạng nội bộ LAN */}
           <div className="p-4 rounded border border-[var(--border-subtle)] bg-[var(--bg-main)] flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Wifi size={18} className="text-cyan-400" />
-                <h3 className="text-sm font-bold text-[var(--text-main)]">Share on your local network</h3>
+                <h3 className="text-sm font-bold text-[var(--text-main)]">{tr("Share on your local network")}</h3>
               </div>
             </div>
 
             <p className="text-xs text-[var(--text-main)] leading-relaxed">
-              Run this command to open the explorer to devices on your local network:
+              {tr("Run this command to open the explorer to devices on your local network:")}
             </p>
 
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-[var(--bg-main)] border border-[var(--border-subtle)] font-mono text-xs">
@@ -318,12 +317,12 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-interactive)] hover:bg-slate-700 text-[var(--text-main)] text-[11px] transition-colors"
               >
                 {copiedCmd ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                <span>{copiedCmd ? 'Copied' : 'Copy command'}</span>
+                <span>{copiedCmd ? tr("Copied") : tr("Copy command")}</span>
               </button>
             </div>
 
             <p className="text-[11px] text-[var(--text-muted)]">
-              Open the network address printed by Vite on a device connected to the same network.
+              {tr("Open the network address printed by Vite on a device connected to the same network.")}
             </p>
           </div>
         </div>
@@ -331,12 +330,12 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
         {/* Footer */}
         <footer className="lab-modal-footer">
           <div className="text-xs text-[var(--text-muted)]">
-            Status reflects the connected server.
+            {tr("Status reflects the connected server.")}
           </div>
           <button
             onClick={onClose}
           >
-            Close
+            {tr("Close")}
           </button>
         </footer>
       </div>

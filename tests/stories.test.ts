@@ -23,17 +23,22 @@ test('demo collection has 21 disclosed stories, three per topic, using existing 
   }
 });
 
-test('every story illustration exists locally and has no remote images or executable content', async () => {
+test('every story photograph is a local WebP with explicit source and license attribution', async () => {
   for (const story of stories) {
-    const svg = await fs.readFile(new URL(`../public/${story.imageUrl}`, import.meta.url), 'utf8');
-    assert.match(svg, /<svg/); assert.match(svg, /DEMO/);
-    assert.doesNotMatch(svg, /<script|<foreignObject|\son\w+=|(?:href|src)=["']https?:/i);
+    const bytes = await fs.readFile(new URL(`../public/${story.imageUrl}`, import.meta.url));
+    assert.equal(bytes.toString('ascii', 0, 4), 'RIFF');
+    assert.equal(bytes.toString('ascii', 8, 12), 'WEBP');
+    assert.ok(bytes.length > 10_000 && bytes.length < 180_000);
+    assert.ok(story.photo.author.length > 0);
+    assert.match(story.photo.url, /^https:\/\/commons.wikimedia.org\/wiki\/File:/);
+    assert.match(story.photo.licenseUrl, /^https:\/\//);
+    assert.doesNotMatch(story.photo.title, /\.svg$/i);
   }
 });
 
 test('validation rejects duplicate IDs, absent disclosure, unsupported topics and unsafe assets/sources', () => {
   assert.throws(() => parseStories([collection[0], collection[0]]), /Duplicate/);
-  for (const patch of [{ latitude: 91 }, { longitude: Infinity }, { category: 'Invented' }, { demo: undefined }, { imageUrl: '../outside.svg' }, { imageUrl: 'https://example.com/a.svg' }, { source: { label: 'Test', url: 'javascript:alert(1)' } }, { demo: false }]) {
+  for (const patch of [{ latitude: 91 }, { longitude: Infinity }, { category: 'Invented' }, { demo: undefined }, { imageUrl: '../outside.svg' }, { imageUrl: 'https://example.com/a.svg' }, { source: { label: 'Test', url: 'javascript:alert(1)' } }, { demo: false }, { photo: undefined }, { photo: { ...collection[0].photo, url: 'javascript:alert(1)' } }]) {
     assert.throws(() => parseStories([{ ...collection[0], ...patch }]));
   }
   assert.deepEqual(parseStories([]), []);
@@ -80,7 +85,7 @@ test('projection hides the back face, obeys screen bounds, and keeps a mobile ma
   }
   const crowd = Array.from({ length: 25 }, (_, index) => ({ key: String(index), members: [{ ...stories[0], id: String(index) }], position: earthPosition(0, index * .2) }));
   const mobile = projectStoryGroups(crowd, new Quaternion(), { ...frame, centerX: 410, compact: true }, '24', null);
-  assert.equal(mobile.length, 8); assert.ok(mobile.some(item => item.group.members[0].id === '24'));
+  assert.equal(mobile.length, 6); assert.ok(mobile.some(item => item.group.members[0].id === '24'));
   const rear = { key: 'rear', members: [stories[0]], position: earthPosition(0, 180) };
   assert.equal(projectStoryGroups([rear], new Quaternion(), frame, stories[0].id, 'rear').length, 0);
 });

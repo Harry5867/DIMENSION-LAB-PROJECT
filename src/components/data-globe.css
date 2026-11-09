@@ -26,22 +26,40 @@
   border-radius: 8px;
   background: #fff;
 }
-.globe-mode-switcher button {
-  min-height: 33px;
-  padding-inline: 9px;
-  border-bottom: 2px solid transparent;
+#root .globe-mode-option {
+  position: relative;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
   border-radius: 4px;
-  color: #666;
+  background: transparent;
+  color: var(--text-muted, #4a5568);
   font: 10px var(--font-mono);
   letter-spacing: .06em;
   text-transform: uppercase;
+  box-shadow: none;
+  scale: 1;
+  transition: color 160ms ease, background-color 160ms ease;
 }
-.globe-mode-switcher button:hover { color: var(--text-main); }
-.globe-mode-switcher button[aria-pressed=true] {
-  border-bottom-color: #147d73;
-  color: #174d46;
+#root .globe-mode-option::after { content: none; }
+#root .globe-mode-option::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 4px;
+  height: 1px;
+  background: currentColor;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 180ms ease;
 }
-.globe-mode-switcher button:focus-visible { outline-offset: -2px; }
+#root .globe-mode-option:is(:hover, :focus-visible, [aria-pressed=true]) { color: var(--explore-primary, #007a6e); }
+#root .globe-mode-option:is(:hover, :focus-visible, [aria-pressed=true])::before { transform: scaleX(1); }
+#root .globe-mode-option:active { scale: 1; background: var(--bg-interactive, #f4f6f3); }
+#root .globe-mode-option:focus-visible { outline: 2px solid var(--explore-primary, #007a6e); outline-offset: -2px; }
+@media(prefers-reduced-motion:reduce) { #root .globe-mode-option, #root .globe-mode-option::before { transition: none; } }
 .globe-terrain-panel {
   position: absolute;
   z-index: 2;
@@ -303,6 +321,9 @@
 .globe-viewport:focus-visible { outline: 2px solid #147d73; outline-offset: -3px; }
 .story-marker { position: absolute; top: 0; left: 0; width: 48px; height: 48px; padding: 3px; border: 1px solid #dce3dd; border-radius: 7px; background: #fffffff0; box-shadow: 0 2px 9px #1d30251a; cursor: pointer; }
 .story-marker[hidden] { display: none; }
+.story-photo-credit, .story-earth-credit { font-size:11px; line-height:1.5; color:var(--welcome-muted,#59695f); overflow-wrap:anywhere; }
+.story-photo-credit a, .story-earth-credit a { text-decoration:underline; text-underline-offset:3px; }
+.story-marker:is(:hover,:focus-visible) { box-shadow:0 5px 18px #152b2c38; }
 .story-tether { position: absolute; top: 50%; left: 50%; z-index: -1; height: 1px; background: #81998b99; transform-origin: left center; pointer-events: none; }
 .story-anchor { position: absolute; top: 50%; left: 50%; width: 5px; height: 5px; border: 1px solid #fff; border-radius: 50%; background: #526f60; pointer-events: none; }
 .story-tether[hidden], .story-anchor[hidden] { display: none; }

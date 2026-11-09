@@ -1,3 +1,5 @@
+import { useAppLanguage } from "./WelcomeLanguage";
+import { RangeNumber } from './RangeNumber';
 import { normalizationLabels } from '../utils/exploration';
 import React, { useState, useRef } from 'react';
 import {
@@ -7,7 +9,6 @@ import {
   NormalizationMethod,
   ReductionConfig,
   ClusteringConfig,
-  DatasetRow,
   MIN_NUMERIC_FEATURES,
   DatasetSummary,
 } from '../types';
@@ -21,20 +22,16 @@ import {
   ShieldCheck,
   ChevronRight,
   ChevronDown,
-  Columns,
   FolderOpen,
   PanelLeftClose,
   PanelLeftOpen,
   Sliders,
   Settings2,
-  CheckCircle2,
   Layers,
   Sparkles,
   BarChart3,
   Search,
 } from 'lucide-react';
-
-export type SidebarTab = 'dataset' | 'reduction' | 'clustering' | 'display';
 
 const normalizationDescriptions: Record<NormalizationMethod, string> = {
   'z-score': 'Center each feature and scale it by its standard deviation.',
@@ -48,17 +45,17 @@ const reductionDescriptions: Record<ReductionMethod, string> = {
 };
 const clusteringDescriptions: Record<ClusteringMethod, string> = {
   'K-Means': 'Assign points to a fixed number of groups based on distance to their centers.',
+  GMM: 'Fit overlapping Gaussian components with diagonal covariance on the 3D projection.',
   DBSCAN: 'Find dense groups and mark isolated points as noise.',
   None: 'View the projection without assigning cluster labels.',
 };
 
 interface ControlSidebarProps {
+  additionalMethods?: React.ReactNode;
   embedded?: boolean;
   methodsOnly?: boolean;
   datasetName: string;
   totalRows: number;
-  rawRows: DatasetRow[];
-  headers: string[];
   featureColumns: string[];
   selectedFeatures: string[];
   onToggleFeature: (feature: string) => void;
@@ -73,68 +70,30 @@ interface ControlSidebarProps {
   selectedColorFeature: string;
   onChangeSelectedColorFeature: (feature: string) => void;
   onFileUpload: (file: File) => void;
-  onLoadPreloadedDataset: (type: 'cancer' | 'wholesale' | 'synthetic') => void;
   isComputing: boolean;
   hasResults: boolean;
-  onActiveTabChange: (tab: SidebarTab) => void;
   onRunComputation: () => void;
   onApplyClustering: () => void;
-  isDualView: boolean;
-  onToggleDualView: () => void;
-  dualSecondaryMethod: ReductionMethod;
-  onChangeDualSecondaryMethod: (m: ReductionMethod) => void;
   isLiveAnimating: boolean;
   onToggleLiveAnimation: () => void;
   onResetLiveAnimation: () => void;
-  liveCurrentIter: number;
-  liveMaxIter: number;
   onExportCSV: () => void;
   dbStatus: string;
   onOpenElbowModal?: () => void;
   onOpenSecurityModal?: () => void;
-  pcaComponents?: number[][];
-  explainedVariance?: [number, number, number];
-  totalVarianceExplained?: number;
   biplotVisible?: boolean;
   onToggleBiplot?: () => void;
   biplotTopK?: number;
   onChangeBiplotTopK?: (topK: number) => void;
-  biplotScale?: number;
-  onChangeBiplotScale?: (scale: number) => void;
   datasetList?: DatasetSummary[];
   activeDatasetId?: string;
   onSelectDataset?: (id: string) => void;
-  onRenameDataset?: (id: string, newName: string) => void;
-  onDeleteDataset?: (id: string) => void;
   onOpenRawDataModal?: () => void;
   onOpenDatasetManager?: () => void;
-  theme?: 'dark' | 'light';
-  onToggleTheme?: () => void;
-}
-
-function RangeNumber({ label, value, min, max, step, onChange }: {
-  label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const commit = (raw: string) => {
-    if (raw.trim() === '' || !Number.isFinite(Number(raw))) return;
-    const clamped = Math.min(max, Math.max(min, Number(raw)));
-    onChange(Number((min + Math.round((clamped - min) / step) * step).toFixed(8)));
-  };
-  return <div className="setup-range-number">
-    <label>{label}<input type="number" min={min} max={max} step={step} value={draft ?? value}
-      onChange={event => {
-        setDraft(event.target.value);
-        if (event.target.value && event.target.validity.valid) commit(event.target.value);
-      }}
-      onBlur={event => { commit(event.target.value); setDraft(null); }}
-      onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
-    <input type="range" aria-label={label + ' slider'} min={min} max={max} step={step} value={value}
-      onChange={event => { setDraft(null); commit(event.target.value); }} />
-  </div>;
 }
 
 export const ControlSidebar: React.FC<ControlSidebarProps> = ({
+  additionalMethods,
   embedded = false,
   methodsOnly = false,
   datasetName,
@@ -155,18 +114,11 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
   onFileUpload,
   isComputing,
   hasResults,
-  onActiveTabChange,
   onRunComputation,
   onApplyClustering,
-  isDualView,
-  onToggleDualView,
-  dualSecondaryMethod,
-  onChangeDualSecondaryMethod,
   isLiveAnimating,
   onToggleLiveAnimation,
   onResetLiveAnimation,
-  liveCurrentIter,
-  liveMaxIter,
   onExportCSV,
   dbStatus,
   onOpenElbowModal,
@@ -175,14 +127,13 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
   onToggleBiplot,
   biplotTopK = 6,
   onChangeBiplotTopK,
-  biplotScale = 30,
-  onChangeBiplotScale,
   datasetList = [],
   activeDatasetId = '',
   onSelectDataset,
   onOpenRawDataModal,
   onOpenDatasetManager,
 }) => {
+  const { tr } = useAppLanguage();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [featureSearch, setFeatureSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -199,9 +150,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
   const [showAdvancedReduction, setShowAdvancedReduction] = useState(false);
 
   const toggleGroup = (key: keyof typeof groupOpen) => {
-    const next = { ...groupOpen, [key]: !groupOpen[key] };
-    setGroupOpen(next);
-    if (!methodsOnly && next[key] && key !== 'preprocessing') onActiveTabChange(key);
+    setGroupOpen(previous => ({ ...previous, [key]: !previous[key] }));
 
   };
 
@@ -225,21 +174,21 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
         <button
           type="button"
           onClick={() => setIsCollapsed(false)}
-          title="Expand setup"
+          title={tr("Expand setup")}
           className="p-2 rounded hover:bg-[var(--bg-interactive)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors"
         >
           <PanelLeftOpen size={16} />
         </button>
         <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)]" title={datasetName} />
         <span className="text-[10px] font-mono text-[var(--text-muted)] [writing-mode:vertical-rl] tracking-wider mt-2">
-          {totalRows.toLocaleString('en-US')} POINTS
+          {totalRows.toLocaleString('en-US')} {tr('POINTS')}
         </span>
       </aside>
     );
   }
 
   return (
-    <aside className={`analysis-sidebar flex h-full w-80 shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-main)] select-none text-xs${methodsOnly ? ' methods-controls' : ''}`} aria-label={methodsOnly ? 'Analysis methods' : undefined}>
+    <aside className={`analysis-sidebar flex h-full w-80 shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-main)] select-none text-xs${methodsOnly ? ' methods-controls' : ''}`} aria-label={methodsOnly ? tr("Analysis methods") : undefined}>
       {/* 1. Scientific Header */}
       {!methodsOnly && <div className="px-3.5 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -248,9 +197,9 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
           </div>
           <div>
             <h2 className="text-xs font-bold tracking-wider uppercase text-[var(--text-main)]">
-              EXPLORATION SETUP
+              {tr("EXPLORATION SETUP")}
             </h2>
-            <p className="text-[10px] text-[var(--text-muted)]">01 — 04</p>
+            <p className="text-[10px] text-[var(--text-muted)]">01 — {additionalMethods ? '06' : '04'}</p>
           </div>
         </div>
 
@@ -259,7 +208,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
             <button
               type="button"
               onClick={onOpenSecurityModal}
-              title="System status and help"
+              title={tr("System status and help")}
               className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-interactive)] transition-colors"
             >
               <ShieldCheck size={14} className={isAtlas ? 'text-[var(--success-text)]' : 'text-[#fbbf24]'} />
@@ -269,7 +218,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
             type="button"
             hidden={embedded}
             onClick={() => setIsCollapsed(true)}
-            title="Collapse setup"
+            title={tr("Collapse setup")}
             className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-interactive)] transition-colors"
           >
             <PanelLeftClose size={15} />
@@ -291,7 +240,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
           >
             <span className="font-semibold text-[11px] uppercase tracking-wide text-[var(--text-main)] flex items-center gap-1.5">
               <Database size={13} className="text-[var(--accent-primary)]" />
-              Dataset
+              {tr("Dataset")}
             </span>
             <div className="flex items-center gap-1.5">
               <span className="setup-group-summary" title={datasetName}>{datasetName}</span>
@@ -304,23 +253,23 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
               {/* Dataset Selector */}
               <div>
                 <label className="text-[10px] uppercase font-semibold text-[var(--text-muted)] block mb-1">
-                  Active dataset
+                  {tr("Active dataset")}
                 </label>
                 <div className="flex items-center gap-1.5">
                   <select
-                    aria-label="Active dataset"
+                    aria-label={tr("Active dataset")}
                     value={activeDatasetId}
                     onChange={(e) => onSelectDataset && onSelectDataset(e.target.value)}
                     className="flex-1 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)] text-[var(--text-main)] px-2 py-1 text-xs outline-none focus:border-[var(--accent-primary)]"
                   >
                     {datasetList.map((d) => (
                       <option key={d.id} value={d.id}>
-                        {d.name} ({d.total_rows} points)
+                        {d.is_preloaded ? tr(d.name) : d.name} ({d.total_rows} {tr("points)")}
                       </option>
                     ))}
                     {!datasetList.some(item => item.id === activeDatasetId) && activeDatasetId !== '' && <option value={activeDatasetId}>{datasetName}</option>}
                     {datasetList.length === 0 && activeDatasetId === '' && (
-                      <option value="cancer_wdbc">Wisconsin Breast Cancer (569 points)</option>
+                      <option value="cancer_wdbc">{tr("Wisconsin Breast Cancer (569 points)")}</option>
                     )}
                   </select>
 
@@ -328,7 +277,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                     <button
                       type="button"
                       onClick={onOpenDatasetManager}
-                      title="Manage datasets"
+                      title={tr("Manage datasets")}
                       className="p-1.5 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
                     >
                       <FolderOpen size={13} />
@@ -338,8 +287,8 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
               </div>
 
               <div className="dataset-summary">
-                <div><strong>{totalRows.toLocaleString('en-US')}</strong><span>Data points</span></div>
-                <div><strong>{selectedFeatures.length.toLocaleString('en-US')}</strong><span>Features</span></div>
+                <div><strong>{totalRows.toLocaleString('en-US')}</strong><span>{tr("Data points")}</span></div>
+                <div><strong>{selectedFeatures.length.toLocaleString('en-US')}</strong><span>{tr("Features")}</span></div>
               </div>
               {/* Import and feature settings */}
               <div className="flex items-center gap-1.5">
@@ -356,12 +305,12 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                   className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-main)] transition-colors"
                 >
                   <Upload size={12} className="text-[var(--accent-primary)]" />
-                  <span>Import dataset</span><span className="dataset-filetype">.csv</span>
+                  <span>{tr("Import dataset")}</span><span className="dataset-filetype">.csv</span>
                 </button>
 
               </div>
               <details className="setup-detail">
-                <summary>Data options</summary>
+                <summary>{tr("Data options")}</summary>
                 {onOpenRawDataModal && (
                   <button
                     type="button"
@@ -369,7 +318,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                     className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-main)] transition-colors"
                   >
                     <FileSpreadsheet size={12} className="text-[var(--text-muted)]" />
-                    <span>View data</span>
+                    <span>{tr("View data")}</span>
                   </button>
                 )}
 
@@ -377,7 +326,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
               <div className="pt-2 border-t border-[var(--border-subtle)]">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[10px] uppercase font-semibold text-[var(--text-muted)]">
-                    Numeric features (min. 3)
+                    {tr("Numeric features (min. 3)")}
                   </span>
                   <div className="flex items-center gap-2 text-[10px]">
                     <button
@@ -385,7 +334,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                       onClick={onSelectAllFeatures}
                       className="text-[var(--accent-primary)] hover:underline"
                     >
-                      Select all
+                      {tr("Select all")}
                     </button>
                     <span className="text-[var(--border-subtle)]">|</span>
                     <button
@@ -393,7 +342,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                       onClick={onDeselectAllFeatures}
                       className="text-[var(--text-muted)] hover:text-[var(--text-main)]"
                     >
-                      Clear
+                      {tr("Clear")}
                     </button>
                   </div>
                 </div>
@@ -404,7 +353,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                     <Search size={11} className="absolute left-2 top-2 text-[var(--text-muted)]" />
                     <input
                       type="text"
-                      placeholder="Search features…"
+                      placeholder={tr("Search features…")}
                       value={featureSearch}
                       onChange={(e) => setFeatureSearch(e.target.value)}
                       className="w-full rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)] text-[var(--text-main)] pl-6 pr-2 py-1 text-[11px] outline-none"
@@ -454,11 +403,11 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
           >
             <span className="font-semibold text-[11px] uppercase tracking-wide text-[var(--text-main)] flex items-center gap-1.5">
               <Sliders size={13} className="text-[var(--accent-primary)]" />
-              Preprocessing
+              {tr("Preprocessing")}
             </span>
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-mono text-[var(--accent-primary)]">
-                {normalizationLabels[reductionConfig.normalization]}
+                {tr(normalizationLabels[reductionConfig.normalization])}
               </span>
               {groupOpen.preprocessing ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </div>
@@ -467,7 +416,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
           {groupOpen.preprocessing && (
             <div className="p-3 space-y-2 border-t border-[var(--border-subtle)]">
               <label className="text-[10px] uppercase font-semibold text-[var(--text-muted)] block">
-                Normalization
+                {tr("Normalization")}
               </label>
               <div className="grid grid-cols-3 gap-1.5">
                 {(['z-score', 'min-max', 'none'] as NormalizationMethod[]).map((norm) => (
@@ -482,17 +431,17 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                         : 'bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)]'
                     }`}
                   >
-                    {normalizationLabels[norm]}
+                    {tr(normalizationLabels[norm])}
                   </button>
                 ))}
               </div>
-              {methodsOnly && <p className="method-description">{normalizationDescriptions[reductionConfig.normalization]}</p>}
+              {methodsOnly && <p className="method-description">{tr(normalizationDescriptions[reductionConfig.normalization])}</p>}
               <p className="text-[10px] text-[var(--text-muted)] leading-relaxed pt-1">
                 {reductionConfig.normalization === 'z-score'
-                  ? 'Center features and scale to unit variance.'
+                  ? tr("Center features and scale to unit variance.")
                   : reductionConfig.normalization === 'min-max'
-                  ? 'Scale features to the range 0–1.'
-                  : 'Keep the original feature scales.'}
+                  ? tr("Scale features to the range 0–1.")
+                  : tr("Keep the original feature scales.")}
               </p>
             </div>
           )}
@@ -510,7 +459,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
           >
             <span className="font-semibold text-[11px] uppercase tracking-wide text-[var(--text-main)] flex items-center gap-1.5">
               <Layers size={13} className="text-[var(--accent-primary)]" />
-              Reduction
+              {tr("Reduction")}
             </span>
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-mono text-[var(--accent-primary)] font-bold">
@@ -541,21 +490,18 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                 ))}
               </div>
 
-              {methodsOnly && <p className="method-description">{reductionDescriptions[reductionConfig.method]}</p>}
-              <p className="setup-output">Output space <span>3 dimensions</span></p>
+              {methodsOnly && <p className="method-description">{tr(reductionDescriptions[reductionConfig.method])}</p>}
+              <p className="setup-output">{tr("Output space")} <span>{tr("3 dimensions")}</span></p>
               {!embedded && (
               /* Primary Run Reduction Button */
               <button
                 type="button"
-                onClick={() => {
-                  onActiveTabChange('reduction');
-                  onRunComputation();
-                }}
+                onClick={onRunComputation}
                 disabled={!canRun}
                 className="w-full flex items-center justify-center gap-2 py-2 rounded bg-[var(--accent-primary)] hover:bg-[#7a8ce8] text-[var(--bg-main)] font-semibold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Play size={13} className="fill-current" />
-                <span>{isComputing ? 'Analyzing…' : `Run projection (${reductionConfig.method})`}</span>
+                <span>{isComputing ? tr("Analyzing…") : `${tr('Run projection')} (${reductionConfig.method})`}</span>
               </button>
 
               )}
@@ -569,7 +515,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                 >
                   <span className="flex items-center gap-1">
                     <Settings2 size={11} />
-                    {methodsOnly ? 'Advanced settings' : reductionConfig.method + ' settings'}
+                    {methodsOnly ? tr("Advanced settings") : reductionConfig.method + tr(" settings")}
                   </span>
                   <span>{showAdvancedReduction ? '−' : '+'}</span>
                 </button>
@@ -602,7 +548,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
 
                         <div className="space-y-1">
                           <div className="flex justify-between text-[11px]">
-                            <span className="text-[var(--text-muted)]">Learning Rate:</span>
+                            <span className="text-[var(--text-muted)]">{tr("Learning Rate:")}</span>
                             <span className="font-mono text-[var(--accent-primary)]">{reductionConfig.learningRate}</span>
                           </div>
                           <input
@@ -629,13 +575,13 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                             className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)] text-[10px] text-[var(--text-main)]"
                           >
                             <Play size={10} />
-                            <span>{isLiveAnimating ? 'Pause' : 'Animate optimization'}</span>
+                            <span>{isLiveAnimating ? tr("Pause") : tr("Animate optimization")}</span>
                           </button>
                           <button
                             type="button"
                             onClick={onResetLiveAnimation}
                             className="p-1 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)] text-[var(--text-muted)]"
-                            title="Reset"
+                            title={tr("Reset")}
                           >
                             <RotateCcw size={11} />
                           </button>
@@ -648,7 +594,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                       <>
                         <div className="space-y-1">
                           <div className="flex justify-between text-[11px]">
-                            <span className="text-[var(--text-muted)]">Neighbors</span>
+                            <span className="text-[var(--text-muted)]">{tr("Neighbors")}</span>
                             <span className="font-mono text-[var(--accent-primary)]">{reductionConfig.nNeighbors}</span>
                           </div>
                           <input
@@ -669,7 +615,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
 
                         <div className="space-y-1">
                           <div className="flex justify-between text-[11px]">
-                            <span className="text-[var(--text-muted)]">Minimum distance</span>
+                            <span className="text-[var(--text-muted)]">{tr("Minimum distance")}</span>
                             <span className="font-mono text-[var(--accent-primary)]">{reductionConfig.minDist}</span>
                           </div>
                           <input
@@ -694,7 +640,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                     {reductionConfig.method === 'PCA' && !methodsOnly && (
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-[var(--text-muted)]">PCA biplot</span>
+                          <span className="text-[11px] text-[var(--text-muted)]">{tr("PCA biplot")}</span>
                           <button
                             type="button"
                             onClick={onToggleBiplot}
@@ -704,13 +650,13 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                                 : 'bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-muted)]'
                             }`}
                           >
-                            {biplotVisible ? 'On' : 'Off'}
+                            {biplotVisible ? tr("On") : tr("Off")}
                           </button>
                         </div>
                         {biplotVisible && onChangeBiplotTopK && (
                           <div className="space-y-1">
                             <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
-                              <span>Feature vectors</span>
+                              <span>{tr("Feature vectors")}</span>
                               <span className="font-mono text-[var(--accent-primary)]">{biplotTopK}</span>
                             </div>
                             <input
@@ -745,12 +691,12 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
           >
             <span className="font-semibold text-[11px] uppercase tracking-wide text-[var(--text-main)] flex items-center gap-1.5">
               <BarChart3 size={13} className="text-[var(--accent-primary)]" />
-              Clustering
+              {tr("Clustering")}
             </span>
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-mono text-[var(--accent-primary)] font-bold">
                 {clusteringConfig.method === 'DBSCAN' && !groupOpen.clustering
-                  ? 'DBSCAN · ε ' + clusteringConfig.epsilon + ' · Min ' + clusteringConfig.minPts
+                  ? 'DBSCAN · ε ' + clusteringConfig.epsilon + tr(" · Min ") + clusteringConfig.minPts
                   : clusteringConfig.method}
               </span>
               {groupOpen.clustering ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -761,7 +707,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
             <div className="p-3 space-y-2.5 border-t border-[var(--border-subtle)]">
               {/* Clustering Method Selection */}
               <div className="grid grid-cols-3 gap-1.5">
-                {(['K-Means', 'DBSCAN', 'None'] as ClusteringMethod[]).map((m) => (
+                {(['K-Means', 'DBSCAN', 'GMM', 'None'] as ClusteringMethod[]).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -773,17 +719,17 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                         : 'bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)]'
                     }`}
                   >
-                    {m === 'None' ? 'No clustering' : m}
+                    {m === 'None' ? tr("No clustering") : m}
                   </button>
                 ))}
               </div>
 
-              {methodsOnly && <p className="method-description">{clusteringDescriptions[clusteringConfig.method]}</p>}
+              {methodsOnly && <p className="method-description">{tr(clusteringDescriptions[clusteringConfig.method])}</p>}
               {/* Clustering Parameters */}
               {clusteringConfig.method === 'K-Means' && (
                 <div className="space-y-1.5 p-2 rounded bg-[var(--bg-main)] border border-[var(--border-subtle)]">
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-[var(--text-muted)]">Cluster count</span>
+                    <span className="text-[var(--text-muted)]">{tr("Cluster count")}</span>
                     <span className="font-mono text-[var(--accent-primary)] font-bold">{clusteringConfig.k}</span>
                   </div>
                   <input
@@ -806,17 +752,24 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                       onClick={onOpenElbowModal}
                       className="w-full mt-1 py-1 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[10px] text-[var(--accent-primary)] transition-colors"
                     >
-                      Explore cluster counts
+                      {tr("Explore cluster counts")}
                     </button>
                   )}
                 </div>
               )}
 
+              {clusteringConfig.method === 'GMM' && <div className="space-y-2">
+                <p className="method-description">{tr("Diagonal covariance · fitted on projected 3D coordinates.")}</p>
+                <RangeNumber label={tr("Components")} value={clusteringConfig.k} min={1} max={10} step={1} onChange={k => onChangeClusteringConfig({ ...clusteringConfig, k })} />
+                <RangeNumber label={tr("EM iterations")} value={clusteringConfig.gmmIterations ?? 100} min={10} max={500} step={10} onChange={gmmIterations => onChangeClusteringConfig({ ...clusteringConfig, gmmIterations })} />
+                <RangeNumber label={tr("Tolerance")} value={clusteringConfig.gmmTolerance ?? 0.00001} min={0.000001} max={0.1} step={0.000001} onChange={gmmTolerance => onChangeClusteringConfig({ ...clusteringConfig, gmmTolerance })} />
+                <RangeNumber label={tr("Random seed")} value={clusteringConfig.seed ?? 42} min={0} max={4294967295} step={1} onChange={seed => onChangeClusteringConfig({ ...clusteringConfig, seed })} />
+              </div>}
               {clusteringConfig.method === 'DBSCAN' && (
-                <div className="setup-dbscan" aria-label="DBSCAN settings">
-                  <RangeNumber label="Radius (ε)" value={clusteringConfig.epsilon} min={0.5} max={10} step={0.5}
+                <div className="setup-dbscan" aria-label={tr("DBSCAN settings")}>
+                  <RangeNumber label={tr("Radius (ε)")} value={clusteringConfig.epsilon} min={0.5} max={10} step={0.5}
                     onChange={epsilon => onChangeClusteringConfig({ ...clusteringConfig, epsilon })} />
-                  <RangeNumber label="Minimum points" value={clusteringConfig.minPts} min={2} max={15} step={1}
+                  <RangeNumber label={tr("Minimum points")} value={clusteringConfig.minPts} min={2} max={15} step={1}
                     onChange={minPts => onChangeClusteringConfig({ ...clusteringConfig, minPts })} />
                 </div>
               )}
@@ -825,22 +778,19 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
               /* Apply Clustering Button */
               <button
                 type="button"
-                onClick={() => {
-                  onActiveTabChange('clustering');
-                  onApplyClustering();
-                }}
+                onClick={() => onApplyClustering()}
                 disabled={!canRun}
                 className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-main)] font-semibold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <span>Apply clustering</span>
+                <span>{tr("Apply clustering")}</span>
               </button>
 
               )}
               {!methodsOnly && <details className="setup-detail">
-              <summary>Color options</summary>
+              <summary>{tr("Color options")}</summary>
               <div className="pt-2 border-t border-[var(--border-subtle)] space-y-1.5">
                 <label className="text-[10px] uppercase font-semibold text-[var(--text-muted)] block">
-                  Color by
+                  {tr("Color by")}
                 </label>
                 <div className="grid grid-cols-3 gap-1">
                   {(['ground-truth', 'cluster', 'feature'] as ColorMode[]).map((mode) => (
@@ -854,7 +804,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                           : 'bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-muted)]'
                       }`}
                     >
-                      {mode === 'ground-truth' ? 'Label' : mode === 'cluster' ? 'Cluster' : 'Feature'}
+                      {mode === 'ground-truth' ? tr("Label") : mode === 'cluster' ? tr("Cluster") : tr("Feature")}
                     </button>
                   ))}
                 </div>
@@ -885,13 +835,14 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                   className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-main)] text-[11px] transition-colors disabled:opacity-40"
                 >
                   <Download size={12} className="text-[var(--success-text)]" />
-                  <span>Export 3D point data</span>
+                  <span>{tr("Export 3D point data")}</span>
                 </button>
               </div>
               )}
             </div>
           )}
         </div>
+        {additionalMethods}
       </fieldset>
 
       {!embedded && (
@@ -899,7 +850,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
       <div className="px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--bg-main)] flex items-center justify-between text-[11px] text-[var(--text-muted)]">
         <div className="flex items-center gap-1.5">
           <span className={`w-2 h-2 rounded-full ${isAtlas ? 'bg-[var(--success-text)]' : 'bg-[#fbbf24]'}`} />
-          <span>Database: <strong className="text-[var(--text-main)]">{dbStatus}</strong></span>
+          <span>{tr("Database:")} <strong className="text-[var(--text-main)]">{tr(dbStatus)}</strong></span>
         </div>
         <span className="font-mono text-[10px] text-[var(--text-muted)]">v1.0 Sci-Workbench</span>
       </div>

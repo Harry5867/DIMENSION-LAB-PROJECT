@@ -27,10 +27,9 @@ Hệ thống được xây dựng theo kiến trúc **Fullstack 100% TypeScript/
 
 ### 1. 🌐 Không Gian Trực Quan Hóa 3D (Three.js WebGL)
 - **Tương tác 3D mượt mà**: Xoay (Orbit), Thu phóng (Zoom), Di chuyển (Pan) và Tự động xoay quanh tâm (Auto-rotation).
-- **Tùy chỉnh hạt phân tử**: Thanh trượt `TooltipSlider` chỉnh kích thước điểm dữ liệu `0.6x` – `3.5x` thời gian thực.
+- **Kích thước điểm** có thể chỉnh bằng thanh trượt **Point size** trong khung 3D.
 - **Tô màu đa chế độ**: Tô màu theo Nhãn bệnh án gốc (Ác tính / Lành tính), theo Cụm phân thuật toán (Clusters), hoặc theo Bản đồ nhiệt của từng đặc trưng (Continuous Heatmap).
 - **Chụp ảnh 3D phân giải cao**: Xuất ảnh 3D PNG sắc nét cho báo cáo nghiên cứu và thuyết trình.
-- **Chế độ màn hình đôi (Dual Viewport Comparison)**: So sánh đối chiếu 2 thuật toán cùng lúc với cơ chế khóa đồng bộ góc quay camera (Synchronized Camera Orbit).
 
 ### 2. 📉 Thuật Toán Giảm Chiều Không Gian (Dimensionality Reduction)
 - **PCA (Principal Component Analysis)**:
@@ -67,19 +66,19 @@ Hệ thống được xây dựng theo kiến trúc **Fullstack 100% TypeScript/
 
 | Thành phần | Công nghệ |
 | :--- | :--- |
-| **Frontend Core** | React 18, TypeScript, Vite 5 |
-| **3D Graphics Engine** | Three.js (WebGL), OrbitControls |
-| **Giao diện & Styling** | Vanilla CSS, TailwindCSS v4, Lucide Icons |
-| **Backend API** | Node.js, Express 4, tsx |
-| **Cơ sở dữ liệu** | MongoDB Atlas Cloud (M0 Cluster), SQLite fallback |
-| **Xử lý dữ liệu** | PapaParse, CSV Streams |
+| **Frontend** | React 19, TypeScript 6, Vite 5 |
+| **Trực quan hóa** | Three.js (WebGL), OrbitControls, Canvas 2D, SVG |
+| **Giao diện** | Tailwind CSS 4, CSS riêng, Lucide React |
+| **Backend** | Node.js, Express 4, REST API, Multer, tsx |
+| **Lưu trữ** | MongoDB. Nếu kết nối thất bại, máy chủ lưu tạm trong RAM và dữ liệu lưu tạm sẽ mất khi khởi động lại. |
+| **Xử lý dữ liệu** | Papa Parse đọc CSV. Giảm chiều và phân cụm gọi API. Anomaly Detection và Association Rules chạy bằng Web Workers trong trình duyệt. |
 
 ---
 
 ## 🚀 Hướng Dẫn Cài Đặt & Khởi Chạy
 
 ### 1. Yêu cầu hệ thống
-- Đã cài đặt **Node.js** (phiên bản v18 trở lên).
+- Đã cài đặt **Node.js** (phiên bản 20.19.0 trở lên).
 - Trình duyệt hiện đại hỗ trợ WebGL (Chrome, Edge, Brave, Firefox, Safari).
 
 ### 2. Cài đặt các thư viện phụ thuộc
@@ -126,7 +125,7 @@ Cancer.db/
 │   └── index.ts            # API Server, Gzip Compression, Endpoint tính toán
 ├── src/                    # Mã nguồn Frontend React & Three.js
 │   ├── algorithms/         # Thuật toán PCA, t-SNE, UMAP, K-Means, DBSCAN
-│   ├── components/         # Giao diện UI, TooltipSlider, 3D Canvas, Modals
+│   ├── components/         # Giao diện, khung 3D và hộp thoại
 │   ├── types/              # Định nghĩa kiểu dữ liệu TypeScript
 │   ├── utils/              # Tiện ích đọc CSV, tiền xử lý Z-Score / Min-Max
 │   ├── App.tsx             # Luồng điều khiển trung tâm của ứng dụng

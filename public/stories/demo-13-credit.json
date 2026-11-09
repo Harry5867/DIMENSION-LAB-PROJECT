@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-13.webp",
+  "imageAlt": "Photograph of Tokyo, Japan; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Morio",
+    "title": "Skyscrapers_of_Shinjuku_2009_January.jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Skyscrapers_of_Shinjuku_2009_January.jpg",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

@@ -1,15 +1,16 @@
+import { useAppLanguage } from "./WelcomeLanguage";
+import type { GMMResult } from '../algorithms/gmm';
 import React, { useCallback, useEffect, useId, useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DataPoint, ColorMode } from '../types';
 import { getErrorMessage } from '../utils/typeGuards';
-import { RotateCcw, Orbit, MousePointer2, Minus, Plus, Sliders, Palette, Maximize, Minimize, Focus } from 'lucide-react';
+import { Orbit, ScanEye, Crosshair, CircleDot, Palette, Maximize, Minimize } from 'lucide-react';
 import { createPlotGrid } from './plotGrid';
 
-type GridMode = 'ground' | 'zero' | 'off';
-
 interface ThreeCanvasProps {
+  gmm?: GMMResult;
   active?: boolean;
   viewKey?: string;
   snapshotRef?: React.RefObject<(() => void) | null>;
@@ -20,9 +21,6 @@ interface ThreeCanvasProps {
   onSelectPoint: (point: DataPoint | null) => void;
   selectedPoint: DataPoint | null;
   reductionMethod: string;
-  onCameraChange?: (camPos: THREE.Vector3, targetPos: THREE.Vector3) => void;
-  syncCameraPos?: THREE.Vector3 | null;
-  syncTargetPos?: THREE.Vector3 | null;
   titleBadge?: string;
   showProjectionBadge?: boolean;
   axisFeatures?: string[];
@@ -31,16 +29,11 @@ interface ThreeCanvasProps {
   featureNames?: string[];
   showBiplot?: boolean;
   biplotTopK?: number;
-  biplotScale?: number;
-  onToggleBiplot?: () => void;
   theme?: 'dark' | 'light';
-  onToggleTheme?: () => void;
   showOutliersSpotlight?: boolean;
   onToggleOutliersSpotlight?: () => void;
-  isComputing?: boolean;
   isFullscreen?: boolean;
   toolbarHost?: HTMLDivElement | null;
-  toolbarLabel?: string;
   onToggleFullscreen?: () => void;
 }
 
@@ -59,6 +52,7 @@ const CLUSTER_COLORS = [
 ];
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
+  gmm,
   active = true,
   dataPoints = [],
   viewKey = 'all',
@@ -69,9 +63,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onSelectPoint,
   selectedPoint,
   reductionMethod,
-  onCameraChange,
-  syncCameraPos,
-  syncTargetPos,
   titleBadge,
   showProjectionBadge = true,
   axisFeatures,
@@ -80,26 +71,18 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   featureNames,
   showBiplot = false,
   biplotTopK = 6,
-  biplotScale = 30,
-  onToggleBiplot,
   showOutliersSpotlight,
   onToggleOutliersSpotlight,
-  isComputing = false,
   isFullscreen = false,
   toolbarHost,
-  toolbarLabel = '3D view controls',
   onToggleFullscreen,
   theme = 'light',
 }) => {
+  const { language, tr } = useAppLanguage();
   const canvasMountRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
-  const [hoveredPoint, setHoveredPoint] = useState<DataPoint | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [isAutoRotating, setIsAutoRotating] = useState(false);
-  const [viewMode, setViewMode] = useState<'rotate' | 'select'>('rotate');
-  const [gridMode, setGridMode] = useState<GridMode>('ground');
-  const gridNoteId = useId();
   const viewMenuName = useId();
   const [pointScale, setPointScale] = useState(0.7);
   const [centroidsVisible, setCentroidsVisible] = useState(showCentroids);
@@ -115,6 +98,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
   const selectedPointRef = useRef(selectedPoint);
   selectedPointRef.current = selectedPoint;
+  const autoRotateRef = useRef(isAutoRotating);
+  autoRotateRef.current = isAutoRotating;
+  const interactingRef = useRef(false);
+  const fitRef = useRef<() => void>(() => {});
+  const hasOutliers = dataPoints.some(point => point.isOutlier);
+  const canShowCentroids = hasClustering && dataPoints.some(point => Number.isInteger(point.cluster) && point.cluster >= 0);
 
   const handleToggleSpotlight = () => {
     if (onToggleOutliersSpotlight) onToggleOutliersSpotlight();
@@ -175,8 +164,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   // Refs for callbacks to prevent destroying Three.js scene on prop changes
   const onSelectPointRef = useRef(onSelectPoint);
   onSelectPointRef.current = onSelectPoint;
-  const onCameraChangeRef = useRef(onCameraChange);
-  onCameraChangeRef.current = onCameraChange;
   const [sceneReady, setSceneReady] = useState(false);
 
   // Persistent Three.js references
@@ -190,26 +177,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const axesGroupRef = useRef<THREE.Group | null>(null);
   const gridRef = useRef<ReturnType<typeof createPlotGrid> | null>(null);
   const outlierGroupRef = useRef<THREE.Group | null>(null);
-  const isComputingRef = useRef(isComputing);
-  isComputingRef.current = isComputing;
-  const scanGroupRef = useRef<THREE.Group | null>(null);
-
-  interface ScanSequence {
-    active: boolean;
-    startTime: number;
-    duration: number;
-    startAngle: number;
-    radius: number;
-    initialY: number;
-  }
-  const scanSequenceRef = useRef<ScanSequence | null>(null);
 
   const showAxes = true;
 
   // Normalized points to fit cleanly in [-36, 36] coordinate box
-  const { points: normalizedPoints, groundY, zeroY, pointsRelativeToZero } = useMemo(() => {
+  const { points: normalizedPoints, groundY } = useMemo(() => {
     if (dataPoints.length === 0) {
-      return { points: [], groundY: -36, zeroY: 0, pointsRelativeToZero: null };
+      return { points: [], groundY: -36 };
     }
 
     let minX = Infinity, maxX = -Infinity;
@@ -253,8 +227,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     return {
       points,
       groundY: (minY - midY) * scale - 3,
-      zeroY: -midY * scale,
-      pointsRelativeToZero: minY > 0 ? 'above' : maxY < 0 ? 'below' : null,
     };
   }, [dataPoints]);
 
@@ -273,7 +245,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     // Scientific Background: #0D1117
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(getComputedStyle(container).getPropertyValue('--plot-bg').trim() || '#f7f8fa');
+    scene.background = new THREE.Color(getComputedStyle(container).getPropertyValue('--plot-bg').trim() || '#ffffff');
     sceneRef.current = scene;
 
     // Centroid Group
@@ -285,66 +257,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const biplotGroup = new THREE.Group();
     scene.add(biplotGroup);
     biplotGroupRef.current = biplotGroup;
-
-    // 3D Grid / Laser Scanning Plane for AI Computation Simulation
-    const scanGroup = new THREE.Group();
-    scanGroup.visible = false;
-
-    // A. Horizontal Wireframe Grid Plane (74x74 matching bounding box)
-    const gridGeo = new THREE.PlaneGeometry(74, 74, 14, 14);
-    const gridMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.35,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const gridMesh = new THREE.Mesh(gridGeo, gridMat);
-    gridMesh.rotation.x = Math.PI / 2;
-    scanGroup.add(gridMesh);
-
-    // B. Semi-transparent Glowing Laser Energy Sheet
-    const sheetGeo = new THREE.PlaneGeometry(74, 74);
-    const sheetMat = new THREE.MeshBasicMaterial({
-      color: 0x00f0ff,
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const sheetMesh = new THREE.Mesh(sheetGeo, sheetMat);
-    sheetMesh.rotation.x = Math.PI / 2;
-    scanGroup.add(sheetMesh);
-
-    // C. Bright Glowing Cyan Leading Edge Border
-    const edgeGeo = new THREE.EdgesGeometry(new THREE.PlaneGeometry(74, 74));
-    const edgeMat = new THREE.LineBasicMaterial({
-      color: 0x00f0ff,
-      transparent: true,
-      opacity: 0.95,
-      linewidth: 2,
-    });
-    const edgeLine = new THREE.LineSegments(edgeGeo, edgeMat);
-    edgeLine.rotation.x = Math.PI / 2;
-    scanGroup.add(edgeLine);
-
-    // D. Bright Center Scanning Beam Line
-    const beamGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-37, 0, 0),
-      new THREE.Vector3(37, 0, 0),
-    ]);
-    const beamMat = new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.9,
-    });
-    const beamLine = new THREE.Line(beamGeo, beamMat);
-    scanGroup.add(beamLine);
-
-    scene.add(scanGroup);
-    scanGroupRef.current = scanGroup;
-
 
     // Camera
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
@@ -382,16 +294,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     controls.minDistance = 15;
     controls.autoRotate = false;
     controls.autoRotateSpeed = 1.2;
+    const beginInteraction = () => { interactingRef.current = true; controls.autoRotate = false; };
+    const endInteraction = () => { interactingRef.current = false; };
+    controls.addEventListener('start', beginInteraction);
+    controls.addEventListener('end', endInteraction);
 
     controls.touches = {
       ONE: THREE.TOUCH.ROTATE,
       TWO: THREE.TOUCH.DOLLY_PAN,
     };
     controlsRef.current = controls;
-
-    controls.addEventListener('change', () => {
-      onCameraChangeRef.current?.(camera.position, controls.target);
-    });
 
     controls.addEventListener('start', () => {
       renderer.domElement.style.cursor = 'grabbing';
@@ -466,29 +378,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       raycaster.setFromCamera(pointer, camera);
       const intersects = raycaster.intersectObject(mesh);
 
-      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        const idx = intersects[0].instanceId;
-        const pt = pointsRef.current[idx];
-        setHoveredPoint(pt || null);
-        setTooltipPos({ x: e.clientX, y: e.clientY });
-        renderer.domElement.style.cursor = 'pointer';
-      } else {
-        setHoveredPoint(null);
-        setTooltipPos(null);
-        renderer.domElement.style.cursor = 'grab';
-      }
-    };
-
-    const handlePointerLeave = () => {
-      setHoveredPoint(null);
-      setTooltipPos(null);
+      renderer.domElement.style.cursor = intersects[0]?.instanceId !== undefined ? 'pointer' : 'grab';
     };
 
     const dom = renderer.domElement;
     dom.addEventListener('pointerdown', handlePointerDown);
     dom.addEventListener('pointerup', handlePointerUp);
     dom.addEventListener('pointermove', handlePointerMove);
-    dom.addEventListener('pointerleave', handlePointerLeave);
 
     // Keyboard Navigation
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -498,6 +394,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         || (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable="true"]'))) return;
       if (e.key === 'r' || e.key === 'R') {
         handleResetCamera();
+      } else if (e.key === 'f' || e.key === 'F') {
+        fitRef.current();
       } else if (e.key === '+' || e.key === '=') {
         handleZoom('in');
       } else if (e.key === '-' || e.key === '_') {
@@ -508,10 +406,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     // Animation Loop
     let animId: number;
+    let previousFrame = performance.now();
     const animate = () => {
       animId = requestAnimationFrame(animate);
+      const now = performance.now(), delta = Math.min(.05, (now - previousFrame) / 1000);
+      previousFrame = now;
       if (!activeRef.current) return;
-      controls.update();
+      controls.autoRotate = autoRotateRef.current && !selectedPointRef.current && !interactingRef.current;
+      controls.update(delta);
       // Bulletproof morphing particle transition animation
       if (morphAnimRef.current?.active && instancedMeshRef.current) {
         const { startTime, duration, fromCoords, toCoords } = morphAnimRef.current;
@@ -542,7 +444,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
         mesh.instanceMatrix.needsUpdate = true;
 
-        // Also morph the radar rings together with their outlier points!
+        // Move the highlight rings together with their points.
         if (outlierGroupRef.current && outlierGroupRef.current.children.length === morphAnimRef.current.outlierIndices.length) {
           morphAnimRef.current.outlierIndices.forEach((ptIdx, ringIdx) => {
             const ring = outlierGroupRef.current?.children[ringIdx];
@@ -563,7 +465,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         }
       }
 
-      // Pulsing radar animation for outlier beacons (only active when spotlight is ON)
       if (outlierGroupRef.current) {
         const active = isSpotlightActiveRef.current;
         outlierGroupRef.current.visible = active;
@@ -581,48 +482,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             }
           }
         }
-      }
-
-
-      // 360° Cinematic Orbit + Coordinated Laser Sweep during Computation
-      if (scanSequenceRef.current?.active && cameraRef.current && controlsRef.current) {
-        const { startTime, duration, startAngle, radius, initialY } = scanSequenceRef.current;
-        const elapsed = performance.now() - startTime;
-        const t = Math.min(1, elapsed / duration);
-        // Smooth sine ease in-out for natural camera movement
-        const ease = 0.5 - 0.5 * Math.cos(t * Math.PI);
-
-        // 1. Orbit camera 360 degrees around the center target
-        const target = controlsRef.current.target;
-        const currentAngle = startAngle + ease * Math.PI * 2;
-        camera.position.x = target.x + radius * Math.cos(currentAngle);
-        camera.position.z = target.z + radius * Math.sin(currentAngle);
-        camera.position.y = initialY;
-        camera.lookAt(target);
-        controls.update();
-
-        // 2. Coordinated Laser Grid Sweep from bottom (-36) to top (+36)
-        if (scanGroupRef.current) {
-          scanGroupRef.current.visible = true;
-          // Smooth sine sweep: starts at -36, sweeps to +36, then back down
-          const scanY = -36 + (Math.sin(t * Math.PI * 2 - Math.PI / 2) * 0.5 + 0.5) * 72;
-          scanGroupRef.current.position.y = Math.max(-36, Math.min(36, scanY));
-
-          // Energy pulse
-          const pulse = 0.7 + Math.sin(t * Math.PI * 8) * 0.3;
-          scanGroupRef.current.traverse((child) => {
-            if (child instanceof THREE.Mesh && child.material && 'opacity' in child.material) {
-              child.material.opacity = child.material.wireframe ? 0.35 * pulse : 0.1 * pulse;
-            }
-          });
-        }
-
-        if (t >= 1) {
-          scanSequenceRef.current.active = false;
-          if (scanGroupRef.current) scanGroupRef.current.visible = false;
-        }
-      } else if (scanGroupRef.current && !isComputingRef.current) {
-        scanGroupRef.current.visible = false;
       }
 
       grid.position.x = camera.position.x;
@@ -649,10 +508,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       setSceneReady(false);
       resizeObserver.disconnect();
       window.removeEventListener('keydown', handleKeyDown);
+      controls.removeEventListener('start', beginInteraction);
+      controls.removeEventListener('end', endInteraction);
       dom.removeEventListener('pointerdown', handlePointerDown);
       dom.removeEventListener('pointerup', handlePointerUp);
       dom.removeEventListener('pointermove', handlePointerMove);
-      dom.removeEventListener('pointerleave', handlePointerLeave);
       cancelAnimationFrame(animId);
       if (axesGroupRef.current) {
         scene.remove(axesGroupRef.current);
@@ -661,10 +521,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       if (outlierGroupRef.current) {
         scene.remove(outlierGroupRef.current);
         outlierGroupRef.current = null;
-      }
-      if (scanGroupRef.current) {
-        scene.remove(scanGroupRef.current);
-        scanGroupRef.current = null;
       }
       if (container.contains(dom)) {
         container.removeChild(dom);
@@ -678,60 +534,32 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   }, []);
 
   useEffect(() => {
-    if (sceneRef.current) sceneRef.current.background = new THREE.Color(theme === 'light' ? '#f7f8fa' : '#0d1117');
-    gridRef.current?.material.uniforms.gridColor.value.set(theme === 'light' ? '#8296ad' : '#697e99');
+    if (sceneRef.current) sceneRef.current.background = new THREE.Color(theme === 'light' ? '#ffffff' : '#101815');
+    gridRef.current?.material.uniforms.gridColor.value.set(theme === 'light' ? '#8296ad' : '#678575');
+    for (const group of [axesGroupRef.current, biplotGroupRef.current]) group?.traverse(object => {
+      if (!(object instanceof THREE.Sprite) || typeof object.userData.label !== 'string') return;
+      const texture = (object.material as THREE.SpriteMaterial).map;
+      if (!texture || !(texture.image instanceof HTMLCanvasElement)) return;
+      paintTextLabel(texture.image, object.userData.label, object.userData.stroke, theme);
+      texture.needsUpdate = true;
+    });
   }, [theme, sceneReady]);
 
   useEffect(() => {
     const grid = gridRef.current;
     const axes = axesGroupRef.current;
     if (!grid || !axes) return;
-    const planeY = gridMode === 'zero' ? zeroY : groundY;
-    grid.visible = gridMode !== 'off';
-    grid.position.y = planeY;
-    axes.position.y = planeY;
-  }, [gridMode, groundY, zeroY, sceneReady]);
-
-  // Dual Viewport Sync
-  useEffect(() => {
-    if (syncCameraPos && syncTargetPos && cameraRef.current && controlsRef.current) {
-      cameraRef.current.position.copy(syncCameraPos);
-      controlsRef.current.target.copy(syncTargetPos);
-      controlsRef.current.update();
-    }
-  }, [syncCameraPos, syncTargetPos]);
-
-
-  // Trigger 360° Camera Orbit & Laser Scan Sequence when isComputing is activated
-  useEffect(() => {
-    if (isComputing && cameraRef.current && controlsRef.current) {
-      const cam = cameraRef.current;
-      const target = controlsRef.current.target;
-      const dx = cam.position.x - target.x;
-      const dz = cam.position.z - target.z;
-      const radius = Math.hypot(dx, dz) || 100;
-      const startAngle = Math.atan2(dz, dx);
-
-      scanSequenceRef.current = {
-        active: true,
-        startTime: performance.now(),
-        duration: 2200, // 2.2s smooth cinematic scan
-        startAngle,
-        radius,
-        initialY: cam.position.y,
-      };
-    } else {
-      if (scanSequenceRef.current) scanSequenceRef.current.active = false;
-      if (scanGroupRef.current) scanGroupRef.current.visible = false;
-    }
-  }, [isComputing]);
+    grid.visible = true;
+    grid.position.y = groundY;
+    axes.position.y = groundY;
+  }, [groundY, sceneReady]);
 
   // Auto-rotate toggle
   useEffect(() => {
     if (controlsRef.current) {
-      controlsRef.current.autoRotate = isAutoRotating;
+      controlsRef.current.autoRotate = isAutoRotating && !selectedPoint && !interactingRef.current;
     }
-  }, [isAutoRotating]);
+  }, [isAutoRotating, selectedPoint]);
 
   // 2. UPDATE INSTANCED MESH DATA POINTS & CENTROIDS
   useEffect(() => {
@@ -823,6 +651,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
       if (isSelected) {
         color.set('#FFFFFF');
+      } else if (selectedFeature === '__rule_match' && colorMode === 'feature') {
+        color.set(pt.analysisMatch ? '#f97316' : '#475569');
       } else if (isSpotlightActive && (pt.isOutlier || pt.cluster === -1)) {
         color.set('#F43F5E'); // Outlier spotlight warning red (sáng rực rỡ như lúc đầu)
       } else if (colorMode === 'ground-truth') {
@@ -845,7 +675,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
       mesh.setColorAt(i, color);
 
-      // Glowing radar ring beacon for Outlier / Noise points
+      // Highlight ring for an outlier or noise point.
       if (pt.isOutlier || pt.cluster === -1) {
         outlierIndices.push(i);
         const ringGeo = new THREE.RingGeometry(1.6 * pointScale, 2.5 * pointScale, 24);
@@ -870,10 +700,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
 
     // Centroids visualization
-    if (centroidsVisible && colorMode === 'cluster' && hasClustering) {
+    if (centroidsVisible && hasClustering) {
       const clusterSums: Record<number, { x: number; y: number; z: number; count: number }> = {};
       for (const p of normalizedPoints) {
-        if (p.cluster === -1) continue;
+        if (!Number.isInteger(p.cluster) || p.cluster < 0) continue;
         if (!clusterSums[p.cluster]) {
           clusterSums[p.cluster] = { x: 0, y: 0, z: 0, count: 0 };
         }
@@ -905,6 +735,25 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     }
   }, [sceneReady, normalizedPoints, colorMode, selectedFeature, selectedPoint, pointScale, centroidsVisible, dataPoints, labelColorMap, isSpotlightActive, hasClustering]);
 
+  // Gaussian surfaces use the same transform as the point cloud.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene || !sceneReady || !gmm || !dataPoints.length) return;
+    const group = new THREE.Group();
+    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    dataPoints.forEach(p => [p.x, p.y, p.z].forEach((v, j) => { min[j] = Math.min(min[j], v); max[j] = Math.max(max[j], v); }));
+    const scale = 72 / Math.max(...min.map((v, j) => max[j] - v || 1));
+    gmm.means.forEach((mean, c) => {
+      const geometry = new THREE.SphereGeometry(1, 24, 16);
+      const material = new THREE.MeshBasicMaterial({ color: CLUSTER_COLORS[c % CLUSTER_COLORS.length], wireframe: true, transparent: true, opacity: 0.22, depthWrite: false });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...mean.map((v, j) => (v - (min[j] + max[j]) / 2) * scale) as [number, number, number]);
+      mesh.scale.set(...gmm.variances[c].map(v => 2 * Math.sqrt(v) * scale) as [number, number, number]); group.add(mesh);
+    });
+    scene.add(group);
+    return () => { scene.remove(group); group.children.forEach(child => { const mesh = child as THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>; mesh.geometry.dispose(); mesh.material.dispose(); }); };
+  }, [gmm, dataPoints, sceneReady]);
+
   // 3. RENDER PCA FEATURE LOADINGS (BIPLOT)
   useEffect(() => {
     if (!biplotGroupRef.current || !sceneReady) return;
@@ -935,6 +784,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     featureMagnitudes.sort((a, b) => b.mag - a.mag);
     const topFeatures = featureMagnitudes.slice(0, biplotTopK);
+    const biplotScale = 30;
 
     topFeatures.forEach((feat) => {
       const dir = new THREE.Vector3(feat.x, feat.y, feat.z).normalize();
@@ -943,11 +793,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       const arrowHelper = new THREE.ArrowHelper(dir, origin, biplotScale, 0x8B9CFB, 3.0, 1.4);
       biplotGroupRef.current?.add(arrowHelper);
 
-      const sprite = createTextLabelSprite(feat.name, '#8B9CFB');
+      const sprite = createTextLabelSprite(feat.name, '#8B9CFB', theme);
       sprite.position.copy(dir).multiplyScalar(biplotScale + 4);
       biplotGroupRef.current?.add(sprite);
     });
-  }, [sceneReady, biplotVisible, reductionMethod, pcaComponents, featureNames, biplotTopK, biplotScale]);
+  }, [sceneReady, biplotVisible, reductionMethod, pcaComponents, featureNames, biplotTopK]);
 
   // 4. Render axis guides in local coordinates. The group follows the grid in Y.
   useEffect(() => {
@@ -966,9 +816,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const origin = new THREE.Vector3(-36, 0, -36);
     const axisLength = 72;
 
-    let labelX = 'X axis';
-    let labelY = 'Y axis';
-    let labelZ = 'Z axis';
+    let labelX = tr('X axis');
+    let labelY = tr('Y axis');
+    let labelZ = tr('Z axis');
 
     if (reductionMethod === 'PCA') {
       labelX = 'PC1 (X)';
@@ -989,7 +839,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       axesGroupRef.current?.add(arrow);
 
       const hexColor = '#' + color.toString(16).padStart(6, '0');
-      const sprite = createTextLabelSprite(label, hexColor);
+      const sprite = createTextLabelSprite(label, hexColor, theme);
       const tipPos = origin.clone().add(dir.clone().multiplyScalar(axisLength + 6));
       sprite.position.copy(tipPos);
       axesGroupRef.current?.add(sprite);
@@ -998,13 +848,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     createAxis(new THREE.Vector3(1, 0, 0), 0xef4444, labelX);
     createAxis(new THREE.Vector3(0, 1, 0), 0x10b981, labelY);
     createAxis(new THREE.Vector3(0, 0, 1), 0x3b82f6, labelZ);
-  }, [sceneReady, showAxes, reductionMethod, axisFeatures]);
+  }, [sceneReady, showAxes, reductionMethod, axisFeatures, theme, tr]);
 
 
 
 
   useEffect(() => {
-    setHoveredPoint(null); setTooltipPos(null); setIsAutoRotating(false);
+    setIsAutoRotating(false);
     if (cameraRef.current && controlsRef.current) {
       controlsRef.current.maxDistance = 260;
       cameraRef.current.position.set(65, 45, 80);
@@ -1094,30 +944,24 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     return () => { snapshotRef.current = null; };
   }, [sceneReady, snapshotRef, handleTakeSnapshot]);
 
-  useEffect(() => {
-    const controls = controlsRef.current;
-    if (!controls) return;
-    controls.enableRotate = viewMode === 'rotate';
-    controls.enablePan = viewMode === 'rotate';
-  }, [sceneReady, theme, viewMode]);
+  fitRef.current = handleFitToData;
 
-  const legendTitle = colorMode === 'cluster' ? 'Predicted clusters' : colorMode === 'feature' ? 'Feature scale' : 'Original labels';
+  const legendTitle = tr(selectedFeature === '__anomaly_score' ? 'Isolation Forest score' : selectedFeature === '__rule_match' ? 'Rule membership' : colorMode === 'cluster' ? 'Predicted clusters' : colorMode === 'feature' ? 'Feature scale' : 'Original labels');
   const toolbar = (
-    <div className="view-toolbar" role="group" aria-label={toolbarLabel}>
-      <div className="view-toolbar-modes" data-mode={viewMode}>
-        <button type="button" title="Rotate view" aria-label="Rotate view" aria-pressed={viewMode === 'rotate'} onClick={() => setViewMode('rotate')}><Orbit size={17} /></button>
-        <button type="button" title="Select point" aria-label="Select point" aria-pressed={viewMode === 'select'} onClick={() => { setViewMode('select'); setIsAutoRotating(false); }}><MousePointer2 size={16} /></button>
-      </div>
-      <span aria-hidden="true" className="view-toolbar-divider" />
-      <button type="button" title="Zoom out (−)" aria-label="Zoom out" onClick={() => handleZoom('out')}><Minus size={17} /></button>
-      <button type="button" title="Zoom in (+)" aria-label="Zoom in" onClick={() => handleZoom('in')}><Plus size={17} /></button>
-      <button type="button" title="Fit to data" aria-label="Fit to data" onClick={handleFitToData}><Focus size={16} /></button>
-      <button type="button" title="Reset view (R)" aria-label="Reset view" onClick={handleResetCamera}><RotateCcw size={16} /></button>
+    <div className="view-toolbar view-toolbar--analysis" role="group" aria-label={tr("3D view controls")}>
+      <button type="button" title={isAutoRotating && selectedPoint ? tr("Auto-rotate paused while inspecting a point") : tr("Auto-rotate")} aria-label={tr("Auto-rotate")} aria-pressed={isAutoRotating} onClick={() => setIsAutoRotating(value => !value)}><Orbit size={17} /><span>{tr("Auto-rotate")}</span></button>
+      <button type="button" title={hasOutliers ? tr("Highlight marked outliers in the current view") : tr("No marked outliers in the current view")} aria-label={tr("Highlight outliers")} disabled={!hasOutliers} aria-pressed={hasOutliers && isSpotlightActive} onClick={handleToggleSpotlight}><ScanEye size={17} /><span>{tr("Highlight outliers")}</span></button>
+      <button type="button" title={canShowCentroids ? tr("Show cluster centroids") : tr("Run clustering to show centroids")} aria-label={tr("Show centroids")} disabled={!canShowCentroids} aria-pressed={canShowCentroids && centroidsVisible} onClick={() => setCentroidsVisible(value => !value)}><Crosshair size={17} /><span>{tr("Show centroids")}</span></button>
+      <details className="view-point-size" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); event.stopPropagation(); } }}>
+        <summary aria-label={tr("Point size")} title={tr("Point size")}><CircleDot size={17} /><span>{tr("Point size")}</span></summary>
+        <div className="view-point-size-panel"><label htmlFor={`${viewMenuName}-size`}>{tr("Point size")} <output>{pointScale.toFixed(1)}×</output></label><input id={`${viewMenuName}-size`} aria-label={tr("Point size scale")} type="range" min="0.3" max="2.9" step="0.2" value={pointScale} onChange={event => setPointScale(Number(event.target.value))} /></div>
+      </details>
       {onToggleFullscreen && (
         <button type="button" data-fullscreen-toggle
-          title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
-          aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'} onClick={onToggleFullscreen}>
+          title={isFullscreen ? tr("Exit fullscreen (Esc)") : tr("Fullscreen")}
+          aria-label={isFullscreen ? tr("Exit fullscreen") : tr("Fullscreen")} onClick={onToggleFullscreen}>
           {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+          <span>{isFullscreen ? tr("Exit fullscreen") : tr("Fullscreen")}</span>
         </button>
       )}
     </div>
@@ -1133,7 +977,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         {/* Error Notification */}
         {snapshotError && (
           <div role="alert" className="absolute right-4 top-4 z-30 px-3 py-1.5 rounded bg-[var(--danger-bg)] border border-[var(--danger-border)] text-xs text-[var(--danger-text)]">
-            {snapshotError}
+            {tr(snapshotError)}
           </div>
         )}
 
@@ -1141,7 +985,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         {showProjectionBadge && <div className="view-projection">
           <span aria-hidden="true">+</span>
           <span>
-            {titleBadge || `3D PROJECTION (${reductionMethod})`}
+            {tr(titleBadge || `3D PROJECTION (${reductionMethod})`)}
           </span>
         </div>
 
@@ -1151,28 +995,28 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           <div className="view-axis-info">
             {axisFeatures.map((feat, idx) => (
               <span key={feat} className="px-2 py-0.5 rounded bg-[var(--bg-panel)]/90 border border-[var(--border-subtle)] text-[10px] text-[var(--text-muted)]">
-                Axis {idx === 0 ? 'X' : idx === 1 ? 'Y' : 'Z'}: <strong className="text-[var(--text-main)]">{feat}</strong>
+                {tr("Axis")} {idx === 0 ? 'X' : idx === 1 ? 'Y' : 'Z'}: <strong className="text-[var(--text-main)]">{feat}</strong>
               </span>
             ))}
           </div>
         )}
 
         <details className="view-menu view-legend" name={viewMenuName}>
-          <summary aria-label={`Color legend: ${legendTitle}`} title={legendTitle}><Palette size={16} /></summary>
+          <summary aria-label={`${tr('Color legend')}: ${legendTitle}`} title={legendTitle}><Palette size={16} /></summary>
           <div className="view-menu-panel view-legend-panel">
             <strong>{legendTitle}</strong>
             {colorMode === 'feature' ? (
               <div className="view-legend-items">
-                <span>{selectedFeature || 'No feature selected'}</span>
-                {selectedFeature && <div className="view-color-scale"><span>Low</span><i /><span>High</span></div>}
+                <span>{selectedFeature === '__anomaly_score' ? tr("Higher score = easier isolation") : selectedFeature === '__rule_match' ? tr("Blue: not matched · Red: matched") : selectedFeature || tr("No feature selected")}</span>
+                {selectedFeature && <div className="view-color-scale"><span>{tr("Low")}</span><i /><span>{tr("High")}</span></div>}
               </div>
             ) : (
-              <ul className="view-legend-items" aria-label="Groups in the current view">
+              <ul className="view-legend-items" aria-label={tr("Groups in the current view")}>
                 {legendGroups.map(([group, count]) => {
                   const cluster = typeof group === 'number' ? group : null;
-                  const name = cluster === null ? String(group) || 'Unlabeled' : cluster === -1 ? 'Noise' : 'Cluster ' + cluster;
+                  const name = cluster === null ? String(group) || tr('Unlabeled') : cluster === -1 ? tr('Noise') : tr('Cluster') + ' ' + cluster;
                   const swatch = cluster === null ? labelColorMap[String(group)] ?? '#929EAF' : cluster === -1 ? '#64748B' : CLUSTER_COLORS[cluster % CLUSTER_COLORS.length];
-                  return <li key={group}><i style={{ background: swatch }} /><span>{name}</span><small>{count.toLocaleString('en-US')}</small></li>;
+                  return <li key={group}><i style={{ background: swatch }} /><span>{name}</span><small>{count.toLocaleString(language)}</small></li>;
                 })}
               </ul>
             )}
@@ -1180,59 +1024,42 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         </details>
 
         {!isFullscreen && toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
-          <details className="view-menu view-options" name={viewMenuName}>
-            <summary aria-label="View options" title="View options"><Sliders size={16} /></summary>
-            <div className="view-menu-panel view-options-panel">
-              <label>Grid
-                <select value={gridMode} onChange={event => setGridMode(event.target.value as GridMode)}
-                  aria-describedby={gridMode === 'zero' ? gridNoteId : undefined}>
-                  <option value="ground">Ground grid</option>
-                  <option value="zero">XZ plane (Y = 0)</option>
-                  <option value="off">Off</option>
-                </select>
-              </label>
-              {gridMode === 'zero' && (
-                <p id={gridNoteId} className="view-grid-note" role="status">
-                  {pointsRelativeToZero ? `All points are ${pointsRelativeToZero} Y = 0.` : 'The grid is at Y = 0 of the plotted data.'}
-                </p>
-              )}
-              <button type="button" aria-pressed={isAutoRotating} onClick={() => { setViewMode('rotate'); setIsAutoRotating(value => !value); }}>Auto-rotate</button>
-              <button type="button" aria-pressed={isSpotlightActive} onClick={handleToggleSpotlight}>Highlight outliers</button>
-              <button type="button" aria-pressed={centroidsVisible} onClick={() => setCentroidsVisible(value => !value)}>Show centroids</button>
-              {reductionMethod === 'PCA' && <button type="button" aria-pressed={biplotVisible} onClick={() => onToggleBiplot ? onToggleBiplot() : setBiplotVisible(value => !value)}>PCA biplot</button>}
-              <label>Point size <input type="range" min="0.3" max="2.9" step="0.2" value={pointScale} onChange={event => setPointScale(Number(event.target.value))} /></label>
-              {!snapshotRef && <button type="button" onClick={handleTakeSnapshot}>Export PNG</button>}
-            </div>
-          </details>
       </div>
     </div>
   );
 };
 
-function createTextLabelSprite(text: string, strokeColor: string = '#8B9CFB'): THREE.Sprite {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
+function paintTextLabel(canvas: HTMLCanvasElement, text: string, strokeColor: string, theme: 'light' | 'dark') {
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    ctx.fillStyle = 'rgba(250, 250, 247, 0.94)';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.beginPath();
+    ctx.fillStyle = theme === 'dark' ? 'rgba(24, 37, 30, 0.96)' : 'rgba(250, 250, 247, 0.94)';
     ctx.roundRect(4, 4, 248, 56, 8);
     ctx.fill();
+    ctx.beginPath();
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth = 2;
     ctx.roundRect(4, 4, 248, 56, 8);
     ctx.stroke();
 
-    ctx.fillStyle = '#344438';
+    ctx.fillStyle = theme === 'dark' ? '#e8ede4' : '#344438';
     ctx.font = 'bold 20px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, 128, 32);
   }
+}
+
+function createTextLabelSprite(text: string, strokeColor: string = '#8B9CFB', theme: 'light' | 'dark' = 'light'): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 64;
+  paintTextLabel(canvas, text, strokeColor, theme);
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
   const sprite = new THREE.Sprite(spriteMat);
+  sprite.userData.label = text; sprite.userData.stroke = strokeColor;
   sprite.scale.set(12, 3, 1);
   return sprite;
 }

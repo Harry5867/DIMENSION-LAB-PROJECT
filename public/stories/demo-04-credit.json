@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-04.webp",
+  "imageAlt": "Photograph of Paris, France; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Yann Caradec from Paris, France",
+    "title": "La_Tour_Eiffel_vue_de_la_Tour_Saint-Jacques,_Paris_août_2014_(2).jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:La_Tour_Eiffel_vue_de_la_Tour_Saint-Jacques,_Paris_ao%C3%BBt_2014_(2).jpg",
+    "license": "CC BY-SA 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

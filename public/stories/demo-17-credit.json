@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-17.webp",
+  "imageAlt": "Photograph of Cairo, Egypt; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Wael El Sisi",
+    "title": "Cairo_From_Tower_(cropped).jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Cairo_From_Tower_(cropped).jpg",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

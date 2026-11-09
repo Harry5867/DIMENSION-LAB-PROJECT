@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-06.webp",
+  "imageAlt": "Photograph of Buenos Aires, Argentina; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Deensel",
+    "title": "Puerto_Madero,_Buenos_Aires_(40689219792)_(cropped).jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Puerto_Madero,_Buenos_Aires_(40689219792)_(cropped).jpg",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

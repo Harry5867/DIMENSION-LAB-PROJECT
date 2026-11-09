@@ -1,0 +1,99 @@
+.entry-screen { display:contents; }
+/* Full motion was explicitly chosen for this entrance. Duration overrides are
+   restricted to these temporary layers; other reduced-motion rules stay intact. */
+.entry-curtain {
+  position:fixed; inset:0; z-index:200; overflow:hidden; pointer-events:auto;
+  color:#315844; animation:entry-gateway-arrive 360ms cubic-bezier(.22,.75,.28,1) both;
+  animation-duration:360ms !important;
+}
+.entry-curtain--revealing { animation-name:entry-gateway-handoff; animation-duration:1240ms !important; }
+.entry-gateway-field { position:absolute; inset:0; display:block; overflow:hidden; }
+.entry-gateway-hole { r:0; }
+.entry-curtain--revealing .entry-gateway-hole {
+  animation:entry-gateway-open 1000ms 240ms cubic-bezier(.45,0,.3,1) both;
+  animation-duration:1000ms !important;
+}
+.entry-gateway-rings, .entry-gateway-rays, .entry-gateway-nodes { transform-origin:0 0; }
+.entry-gateway-rings { animation:entry-rings-arrive 360ms ease-out both; animation-duration:360ms !important; }
+.entry-curtain--revealing .entry-gateway-rings { animation:entry-rings-expand 1240ms cubic-bezier(.22,.75,.28,1) both; animation-duration:1240ms !important; }
+.entry-curtain--revealing .entry-gateway-rays { animation:entry-rays-expand 1240ms ease-out both; animation-duration:1240ms !important; }
+.entry-gateway-nodes text { font:10px var(--font-mono); letter-spacing:.08em; }
+.entry-gateway-brand { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 5%; animation:entry-brand-arrive 360ms ease-out both; animation-duration:360ms !important; }
+.entry-gateway-eyebrow { display:flex; align-items:center; gap:16px; margin-bottom:26px; font:10px var(--font-mono); letter-spacing:.25em; }
+.entry-gateway-eyebrow svg { width:28px; height:34px; }
+.entry-gateway-wordmark { display:flex; align-items:baseline; gap:.2em; font:400 clamp(30px,7.7vw,128px)/1 var(--font-sans); letter-spacing:-.065em; white-space:nowrap; }
+.entry-gateway-slash { color:#8ba38c; font-weight:200; }
+.entry-gateway-caption { display:flex; align-items:center; gap:16px; width:min(390px,72%); margin-top:32px; font:9px var(--font-mono); letter-spacing:.12em; }
+.entry-gateway-caption i { flex:1; height:1px; background:#78967b66; }
+.entry-curtain--revealing .entry-gateway-brand { animation:entry-brand-depart 500ms 160ms ease-in both; animation-duration:500ms !important; }
+.entry-transition-status { position:fixed; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+
+@keyframes entry-gateway-arrive { from { opacity:0; } 75%, to { opacity:1; } }
+@keyframes entry-gateway-handoff { from { opacity:1; } to { opacity:1; } }
+@keyframes entry-gateway-open { from { r:0; } to { r:var(--gateway-radius,100vmax); } }
+@keyframes entry-rings-arrive { from { opacity:0; transform:scale(.72) rotate(-12deg); } to { opacity:1; transform:scale(1) rotate(0); } }
+@keyframes entry-rings-expand { from { transform:scale(1) rotate(0); } to { transform:scale(1.6) rotate(12deg); } }
+@keyframes entry-rays-expand { from { transform:scale(1); } to { transform:scale(1.35); } }
+@keyframes entry-brand-arrive { from { opacity:0; transform:translateY(16px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+@keyframes entry-brand-depart { from { opacity:1; transform:scale(1); } to { opacity:0; transform:scale(1.1); } }
+
+.portal-page--entering .portal-header { animation:portal-header-enter 360ms 520ms ease-out both; animation-duration:360ms !important; }
+.portal-page--entering .portal-intro { animation:portal-title-enter 640ms 360ms cubic-bezier(.16,1,.3,1) both; animation-duration:640ms !important; }
+@media (prefers-reduced-motion:no-preference) {
+  .portal-page--entering .workspace-map-link { animation:portal-station-enter 420ms var(--station-delay) cubic-bezier(.16,1,.3,1) both; }
+  .portal-page--entering .workspace-map-geometry { animation:portal-header-enter 480ms 360ms ease-out both; }
+}
+@keyframes portal-header-enter { from { opacity:0; } to { opacity:1; } }
+@keyframes portal-title-enter { from { opacity:0; transform:translateY(34px); } to { opacity:1; transform:translateY(0); } }
+@keyframes portal-station-enter { from { opacity:0; translate:0 10px; } to { opacity:1; translate:0 0; } }
+
+@media(max-width:599px) {
+  .entry-gateway-eyebrow { font-size:8px; letter-spacing:.15em; gap:12px; margin-bottom:22px; }
+  .entry-gateway-wordmark { font-size:clamp(27px,8.4vw,48px); gap:.18em; }
+  .entry-gateway-caption { width:86%; margin-top:24px; font-size:8px; gap:12px; }
+}
+
+/* Sign out closes the gateway around the map before revealing home. */
+.entry-curtain--out.entry-curtain--covering { animation:entry-exit-clock 700ms linear both; animation-duration:700ms !important; }
+.entry-curtain--out.entry-curtain--covering .entry-gateway-hole {
+  animation:entry-gateway-close 450ms 250ms cubic-bezier(.65,0,.35,1) both;
+  animation-duration:450ms !important;
+}
+.entry-curtain--out .entry-gateway-brand, .entry-curtain--out .entry-gateway-rays { display:none; }
+.entry-curtain--out .entry-gateway-rings, .entry-curtain--out .entry-gateway-nodes {
+  animation:entry-rings-close 700ms cubic-bezier(.45,0,.3,1) both; animation-duration:700ms !important;
+}
+.entry-curtain--out.entry-curtain--revealing { animation:entry-exit-reveal 300ms ease-out both; animation-duration:300ms !important; }
+.entry-curtain--out.entry-curtain--revealing .entry-gateway-hole { r:0; animation:none; }
+.entry-curtain--out.entry-curtain--revealing .entry-gateway-rings,
+.entry-curtain--out.entry-curtain--revealing .entry-gateway-nodes { display:none; }
+.entry-screen[data-transition=out][data-transition-phase=covering][data-transition-motion=full] :is(.portal-header,.portal-intro,.portal-content,.portal-footer,.data-atmosphere) {
+  animation:entry-workspace-fade 250ms ease-out both; animation-duration:250ms !important;
+}
+.entry-screen[data-transition=out][data-transition-phase=covering][data-transition-motion=full] .workspace-map {
+  transform-origin:50% 46%; animation:entry-workspace-recede 250ms ease-out both; animation-duration:250ms !important;
+}
+.welcome-page.welcome-page--returning[data-arrival-motion=full] .data-globe {
+  animation:entry-home-globe 300ms ease-out both; animation-duration:300ms !important;
+}
+.welcome-page.welcome-page--returning[data-arrival-motion=full] .welcome-copy .welcome-title-line > span {
+  animation:welcome-text-reveal 300ms 80ms cubic-bezier(.16,1,.3,1) both; animation-duration:300ms !important;
+}
+.welcome-page.welcome-page--returning[data-arrival-motion=full] .welcome-copy .welcome-title-line:nth-child(2) > span { animation-delay:120ms; }
+.welcome-page.welcome-page--returning[data-arrival-motion=full] :is(.welcome-eyebrow,.welcome-description,.welcome-actions) {
+  animation:entry-home-copy 250ms 160ms ease-out both; animation-duration:250ms !important;
+}
+.welcome-page.welcome-page--returning[data-arrival-motion=gentle] .welcome-title-line > span { animation:none; }
+.entry-curtain--out.entry-curtain--reduced.entry-curtain--covering { animation:entry-exit-soft-in 75ms ease-out both; animation-duration:75ms !important; }
+.entry-curtain--out.entry-curtain--reduced.entry-curtain--revealing { animation:entry-exit-reveal 75ms ease-out both; animation-duration:75ms !important; }
+.entry-curtain--out.entry-curtain--reduced .entry-gateway-hole { r:0; animation:none; }
+.entry-curtain--out.entry-curtain--reduced :is(.entry-gateway-rings,.entry-gateway-nodes) { display:none; }
+@keyframes entry-exit-clock { from, to { opacity:1; } }
+@keyframes entry-gateway-close { from { r:var(--gateway-radius,100vmax); } to { r:0; } }
+@keyframes entry-rings-close { from { opacity:0; transform:scale(1.05) rotate(0); } 20% { opacity:.75; } 75% { opacity:.65; } to { opacity:0; transform:scale(.12) rotate(-12deg); } }
+@keyframes entry-exit-reveal { from { opacity:1; } to { opacity:0; } }
+@keyframes entry-exit-soft-in { from { opacity:0; } to { opacity:1; } }
+@keyframes entry-workspace-fade { from { opacity:1; } to { opacity:0; } }
+@keyframes entry-workspace-recede { from { opacity:1; transform:scale(1); } to { opacity:0; transform:scale(.96); } }
+@keyframes entry-home-globe { from { opacity:0; } to { opacity:1; } }
+@keyframes entry-home-copy { from { opacity:0; translate:0 6px; } to { opacity:1; translate:0 0; } }

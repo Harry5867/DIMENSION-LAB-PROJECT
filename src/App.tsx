@@ -1,35 +1,29 @@
+import { useAppLanguage } from "./components/WelcomeLanguage";
+import { UnsupervisedPanel, AnalysisOverlay } from './components/UnsupervisedPanel';
+import { GMMResult } from './algorithms/gmm';
+import { useAppTheme } from './components/ThemeProvider';
 import { analysisReport, csvText, downloadText, resultRows, safeFilename } from './utils/exportData';
 import { experimentConfiguration } from './utils/history';
 import { fetchWithTimeout } from './utils/network';
 import { ExportModal } from './components/ExportModal';
-import React, { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import * as THREE from 'three';
-import Papa from 'papaparse';
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ParsedDataset,
   DataPoint,
-  DataValue,
   ReductionConfig,
   ClusteringConfig,
   ColorMode,
   EvaluationMetrics,
   MIN_NUMERIC_FEATURES,
-  ReductionMethod,
   DatasetSummary,
 } from './types';
 import { parseCSVString, extractFeatureMatrix } from './utils/dataParser';
-import { computePCA } from './algorithms/pca';
-import { computeTSNE } from './algorithms/tsne';
-import { computeUMAP } from './algorithms/umap';
-import { computeKMeans } from './algorithms/kmeans';
-import { computeDBSCAN } from './algorithms/dbscan';
-import { computeSilhouetteScore, computeARI, detectOutliers3D, detectKMeansOutliers } from './algorithms/metrics';
 import { initLiveTSNE, stepLiveTSNE, LiveTSNEState } from './algorithms/liveOptimization';
 import { ControlSidebar } from './components/ControlSidebar';
-import type { SidebarTab } from './components/ControlSidebar';
 import { AnalysisSnapshot, reductionKey, describeRun, normalizationLabels, pendingAnalysisChanges, reduceMatrix, makePoints, clusterPoints, focusPoints, evaluatePointSet } from './utils/exploration';
 import { ClusterFocus } from './components/ClusterFocus';
-import { WorkspaceLayout, workspacePages } from './components/WorkspaceLayout';
+import { WorkspaceLayout } from './components/WorkspaceLayout';
+import { isModelRoute, portalRoute } from './utils/portalNavigation';
 import type { WorkspacePage as WorkspaceRoute } from './components/WorkspaceLayout';
 import { WorkspacePage } from './components/WorkspacePage';
 import { MetricsPanel } from './components/MetricsPanel';
@@ -37,7 +31,6 @@ import { DataInspector } from './components/DataInspector';
 import { RawDataModal } from './components/RawDataModal';
 import { DatasetsPage } from './components/DatasetsPage';
 import { ExperimentRecord } from './types';
-import { Play, Square, Sparkles } from 'lucide-react';
 import {
   getErrorMessage,
   isComputeResult,
@@ -68,24 +61,30 @@ type ReductionOutput = {
 };
 
 function readWorkspacePage(): WorkspaceRoute {
-  return workspacePages.find(page => window.location.hash === '#/' + page) ?? 'explore';
+  const route = portalRoute(window.location.hash);
+  return isModelRoute(route) ? route : 'explore';
 }
 
 function openWorkspacePage(page: WorkspaceRoute) {
   window.location.hash = '/' + page;
 }
 
-export function App({ onSignOut }: { onSignOut?: () => void }) {
+export function App({ active = true }: { active?: boolean }) {
+  const { tr } = useAppLanguage();
   const [page, setPage] = useState(readWorkspacePage);
-  const exploring = page === 'explore';
+  const exploring = active && page === 'explore';
   useEffect(() => {
-    const syncPage = () => setPage(readWorkspacePage());
+    const syncPage = () => { if (isModelRoute(portalRoute(window.location.hash))) setPage(readWorkspacePage()); };
     window.addEventListener('hashchange', syncPage);
     return () => window.removeEventListener('hashchange', syncPage);
   }, []);
+  const [analysisOverlay, setAnalysisOverlay] = useState<AnalysisOverlay | null>(null);
+  const [gmmResult, setGmmResult] = useState<GMMResult | null>(null);
+  const [showGmm, setShowGmm] = useState(true);
   const [dataset, setDataset] = useState<ParsedDataset | null>(null);
+  const datasetTitle = dataset && (dataset.id === 'cancer_wdbc' || dataset.id === 'wholesale_customers' ? tr(dataset.name) : dataset.name);
+  useEffect(() => { setAnalysisOverlay(null); setGmmResult(null); }, [dataset]);
   const primarySnapshotRef = useRef<(() => void) | null>(null);
-  const [activeArea, setActiveArea] = useState<SidebarTab>('dataset');
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [dataPoints, setDataPoints] = useState<DataPoint[]>([]);
   const rawPreviewPoints = useMemo<DataPoint[]>(() => {
@@ -144,56 +143,14 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
   const [activeDatasetId, setActiveDatasetId] = useState<string>('cancer_wdbc');
   const [isRawDataModalOpen, setIsRawDataModalOpen] = useState<boolean>(false);
 
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    try {
-      const saved = localStorage.getItem('theme');
-      return saved === 'dark' ? 'dark' : 'light';
-    } catch {
-      return 'light';
-    }
-  });
-
-  useEffect(() => {
-    if (theme === 'light') {
-      document.body.classList.add('light-theme');
-    } else {
-      document.body.classList.remove('light-theme');
-    }
-    try {
-      localStorage.setItem('theme', theme);
-    } catch {
-      // ignore
-    }
-  }, [theme]);
-
-  const handleToggleTheme = useCallback(() => {
-    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
-  }, []);
-
-  const handleToggleBiplot = useCallback(() => {
-    setBiplotVisible((prev) => !prev);
-  }, []);
-
-
+  const { theme } = useAppTheme();
 
   // Outlier Spotlight Mode
   const [spotlightOutliers, setSpotlightOutliers] = useState<boolean>(false);
-
-  // Data Story Mode State
-  const [isStoryPlaying, setIsStoryPlaying] = useState<boolean>(false);
-  const [storyStep, setStoryStep] = useState<number>(0);
-  const storyTimersRef = useRef<NodeJS.Timeout[]>([]);
-
-  const handleStopStory = useCallback(() => {
-    storyTimersRef.current.forEach((t) => clearTimeout(t));
-    storyTimersRef.current = [];
-    setIsStoryPlaying(false);
-    setStoryStep(0);
-    setNotice({ type: 'info', message: 'Data Story stopped.' });
-  }, []);
+  useEffect(() => { if (analysisOverlay?.scores) setSpotlightOutliers(true); }, [analysisOverlay]);
 
   // Outlier Pruning State
-  const backupPointsRef = useRef<{ primary: DataPoint[]; dual: DataPoint[] } | null>(null);
+  const backupPointsRef = useRef<DataPoint[] | null>(null);
   const [isPruned, setIsPruned] = useState<boolean>(false);
   const [prunedCount, setPrunedCount] = useState<number>(0);
 
@@ -204,21 +161,9 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
   const [featureMatrix, setFeatureMatrix] = useState<number[][]>([]);
   const [biplotVisible, setBiplotVisible] = useState<boolean>(false);
   const [biplotTopK, setBiplotTopK] = useState<number>(6);
-  const [biplotScale, setBiplotScale] = useState<number>(30);
-
-  // Dual Viewport State
-  const [isDualView, setIsDualView] = useState<boolean>(false);
-  const [dualSecondaryMethod, setDualSecondaryMethod] = useState<ReductionMethod>('t-SNE');
-  const [dualDataPoints, setDualDataPoints] = useState<DataPoint[]>([]);
-
-  // Throttled Camera Sync to prevent destroying Viewport B during orbit
-  const [syncedCamPos, setSyncedCamPos] = useState<THREE.Vector3 | null>(null);
-  const [syncedTargetPos, setSyncedTargetPos] = useState<THREE.Vector3 | null>(null);
-  const syncRafRef = useRef<number | null>(null);
 
   // Live Optimization State
   const [isLiveAnimating, setIsLiveAnimating] = useState<boolean>(false);
-  const [liveCurrentIter, setLiveCurrentIter] = useState<number>(0);
   const liveStateRef = useRef<LiveTSNEState | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
@@ -268,8 +213,9 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
   const resultMethod = completedRun?.reduction.method ?? reductionConfig.method;
   const handleSelectPoint = useCallback((point: DataPoint | null) => setSelectedPoint(point), []);
 
-  // Check Database connection health periodically
+  // Check Database connection health while Model is visible.
   useEffect(() => {
+    if (!active) return;
     const checkDbHealth = async () => {
       try {
         const res = await fetchWithTimeout('/api/health');
@@ -284,7 +230,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     checkDbHealth();
     const interval = setInterval(checkDbHealth, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [active]);
 
   // Reset all computation & analytical states to ensure 100% data consistency
   const resetComputationState = useCallback(() => {
@@ -292,7 +238,6 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     setAnalysisError(null); setAnalyzingRun(null); setIsExportModalOpen(false); setLivePreview(null);
     setCompletedRun(null); setFocusedCluster(null); setIsPruned(false); setPrunedCount(0); backupPointsRef.current = null;
     setDataPoints([]);
-    setDualDataPoints([]);
     setSelectedPoint(null);
     setPcaComponents(undefined);
     setFeatureMatrix([]);
@@ -307,7 +252,6 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     }
     setIsLiveAnimating(false);
     liveStateRef.current = null;
-    setLiveCurrentIter(0);
   }, []);
 
   // Datasets kept in this tab remain selectable even when the server is unavailable.
@@ -482,14 +426,6 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     }
   };
 
-  const handleLoadPreloaded = async (type: 'cancer' | 'wholesale' | 'synthetic') => {
-    if (type === 'cancer') {
-      await handleSelectDataset('cancer_wdbc');
-    } else if (type === 'wholesale') {
-      await handleSelectDataset('wholesale_customers');
-    }
-  };
-
   const handleToggleFeature = (col: string) => {
     setSelectedFeatures((prev) =>
       prev.includes(col) ? prev.filter((f) => f !== col) : [...prev, col]
@@ -502,25 +438,6 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
 
   const handleDeselectAllFeatures = () => {
     setSelectedFeatures([]);
-  };
-
-  const computeCoordinates = (matrix: number[][], method: ReductionMethod): ReductionOutput => {
-    if (method === 'PCA') {
-      return computePCA(matrix);
-    } else if (method === 't-SNE') {
-      const coords = computeTSNE(matrix, {
-        perplexity: reductionConfig.perplexity,
-        learningRate: reductionConfig.learningRate,
-        iterations: reductionConfig.iterations,
-      });
-      return { coordinates: coords };
-    } else {
-      const coords = computeUMAP(matrix, {
-        nNeighbors: reductionConfig.nNeighbors,
-        minDist: reductionConfig.minDist,
-      });
-      return { coordinates: coords };
-    }
   };
 
   // A run owns one immutable configuration snapshot; focus is presentation only.
@@ -583,11 +500,11 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
       if (matrix) {
         setFeatureMatrix(matrix);
         setIsPruned(false); setPrunedCount(0); backupPointsRef.current = null;
-        setDualDataPoints([]);
       }
       setPcaComponents(components);
       setFocusedCluster(null);
       setSelectedPoint(null);
+      setAnalysisOverlay(null); setGmmResult(result.gmm ?? null);
       setDataPoints(result.points);
       setMetrics({ ...result.metrics, explainedVariance, totalVarianceExplained: totalVariance,
         executionTimeMs: Math.round(performance.now() - started) });
@@ -628,90 +545,6 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     if (focusedCluster !== null && !dataPoints.some(point => point.cluster === focusedCluster)) setFocusedCluster(null);
   }, [dataPoints, focusedCluster]);
 
-
-  const handlePlayStory = useCallback(() => {
-    if (!dataset || dataset.rawRows.length === 0) {
-      setNotice({ type: 'error', message: 'Choose or import a dataset to start Data Story.' });
-      return;
-    }
-
-    storyTimersRef.current.forEach((t) => clearTimeout(t));
-    storyTimersRef.current = [];
-
-    setIsStoryPlaying(true);
-    setStoryStep(1);
-    setNotice({
-      type: 'info',
-      message: '1/5 · Showing raw data…',
-    });
-
-    // Step 1: Raw Data preview
-    setDataPoints([]);
-    setActiveArea('dataset');
-    setColorMode('ground-truth');
-    setSpotlightOutliers(false);
-
-    // Step 2: Normalize
-    const t1 = setTimeout(() => {
-      setStoryStep(2);
-      setReductionConfig((prev) => ({ ...prev, normalization: 'z-score' }));
-      setNotice({
-        type: 'info',
-        message: '2/5 · Standardizing features…',
-      });
-    }, 2500);
-
-    // Step 3: Dimensionality reduction (PCA 3D + Biplot) with 360° scan + particle morphing
-    const t2 = setTimeout(async () => {
-      setStoryStep(3);
-      setNotice({
-        type: 'info',
-        message: '3/5 · Projecting the data with PCA…',
-      });
-      setBiplotVisible(true);
-      await runPipeline();
-    }, 5200);
-
-    // Step 4: Clustering
-    const t3 = setTimeout(() => {
-      setStoryStep(4);
-      setNotice({
-        type: 'info',
-        message: '4/5 · Grouping points with K-Means…',
-      });
-      setColorMode('cluster');
-      handleApplyClustering({ method: 'K-Means', k: 3, epsilon: 3.5, minPts: 5 });
-    }, 10200);
-
-    // Step 5: Spotlight Outliers
-    const t4 = setTimeout(() => {
-      setStoryStep(5);
-      setNotice({
-        type: 'info',
-        message: '5/5 · Highlighting outliers…',
-      });
-      setSpotlightOutliers(true);
-    }, 15600);
-
-    // Step 6: Complete
-    const t5 = setTimeout(() => {
-      setIsStoryPlaying(false);
-      setStoryStep(0);
-      setNotice({
-        type: 'success',
-        message: 'Data Story complete. Select any point to inspect it.',
-      });
-    }, 20500);
-
-    storyTimersRef.current = [t1, t2, t3, t4, t5];
-  }, [dataset, runPipeline]);
-
-  useEffect(() => {
-    return () => {
-      storyTimersRef.current.forEach((t) => clearTimeout(t));
-    };
-  }, []);
-
   // 4. LIVE OPTIMIZATION ANIMATION LOOP FOR t-SNE / UMAP
   const handleToggleLiveAnimation = () => {
     if (isLiveAnimating) {
@@ -746,10 +579,23 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
 
     liveStateRef.current = null;
-    setLiveCurrentIter(0);
     setLivePreview(null);
     setSelectedPoint(null);
   };
+
+  // Keep completed results when leaving Model; stop previews and pending work.
+  useEffect(() => {
+    if (active) return;
+    operationRef.current++;
+    computeAbortRef.current?.abort();
+    computingRef.current = false;
+    setIsComputing(false); setAnalyzingRun(null);
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    liveStateRef.current = null;
+    setIsLiveAnimating(false); setLivePreview(null);
+    setIsExportModalOpen(false); setIsElbowModalOpen(false); setIsSecurityModalOpen(false); setIsRawDataModalOpen(false);
+  }, [active]);
+  useEffect(() => { if (active) document.title = 'Dimension Lab — ' + tr('Model'); }, [active, tr]);
 
   const runLiveLoop = (source: ParsedDataset) => {
     const state = liveStateRef.current;
@@ -759,7 +605,6 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     }
 
     const newCoords = stepLiveTSNE(state, 4);
-    setLiveCurrentIter(state.currentIter);
 
     setLivePreview(makePoints(source, newCoords));
 
@@ -770,43 +615,30 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     }
   };
 
-  // 5. Throttled Dual Viewport Camera Synchronization
-  const handlePrimaryCameraChange = useCallback((camPos: THREE.Vector3, targetPos: THREE.Vector3) => {
-    if (isDualView) {
-      if (syncRafRef.current) return;
-      syncRafRef.current = requestAnimationFrame(() => {
-        setSyncedCamPos(camPos.clone());
-        setSyncedTargetPos(targetPos.clone());
-        syncRafRef.current = null;
-      });
-    }
-  }, [isDualView]);
-
-
-  const updatePointSet = (points: DataPoint[], dual: DataPoint[]) => {
-    setDataPoints(points); setDualDataPoints(dual); setSelectedPoint(null); setFocusedCluster(null);
+  const updatePointSet = (points: DataPoint[]) => {
+    setDataPoints(points); setSelectedPoint(null); setFocusedCluster(null);
     setMetrics(previous => ({ ...previous, ...evaluatePointSet(points, hasClustering, Boolean(dataset?.labelColumn)) }));
   };
   const handlePruneOutliers = () => {
     if (isComputing || isLiveAnimating || dataPoints.length === 0) return;
     const filtered = dataPoints.filter(point => !point.isOutlier && point.cluster !== -1);
     if (filtered.length === dataPoints.length) return;
-    backupPointsRef.current ??= { primary: [...dataPoints], dual: [...dualDataPoints] };
-    setIsPruned(true); setPrunedCount(backupPointsRef.current.primary.length - filtered.length);
-    updatePointSet(filtered, dualDataPoints.filter(point => !point.isOutlier && point.cluster !== -1));
+    backupPointsRef.current ??= [...dataPoints];
+    setIsPruned(true); setPrunedCount(backupPointsRef.current.length - filtered.length);
+    updatePointSet(filtered);
   };
   const handleRestorePoints = () => {
     if (!backupPointsRef.current || isComputing || isLiveAnimating) return;
-    updatePointSet(backupPointsRef.current.primary, backupPointsRef.current.dual);
+    updatePointSet(backupPointsRef.current);
     backupPointsRef.current = null; setIsPruned(false); setPrunedCount(0);
   };
   const handleDeleteSinglePoint = (pointId: string | number | boolean, rowIndex?: number) => {
     if (dataPoints.length === 0 || isComputing || isLiveAnimating) return;
-    backupPointsRef.current ??= { primary: [...dataPoints], dual: [...dualDataPoints] };
+    backupPointsRef.current ??= [...dataPoints];
     const keep = (point: DataPoint) => rowIndex === undefined ? point.id !== pointId : point.rowIndex !== rowIndex;
     const filtered = dataPoints.filter(keep);
-    setIsPruned(true); setPrunedCount(backupPointsRef.current.primary.length - filtered.length);
-    updatePointSet(filtered, dualDataPoints.filter(keep));
+    setIsPruned(true); setPrunedCount(backupPointsRef.current.length - filtered.length);
+    updatePointSet(filtered);
   };
 
   // 6. Save Experiment to MongoDB
@@ -887,12 +719,18 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
   };
   const handleExportCSV = () => setIsExportModalOpen(true);
 
+  const overlayPoints = useMemo(() => {
+    if (!analysisOverlay || livePreview) return visiblePoints;
+    const rows = new Set(analysisOverlay.rows);
+    return visiblePoints.map(p => ({ ...p, cluster: 0, isOutlier: Boolean(analysisOverlay.scores) && rows.has(p.rowIndex ?? -1),
+      anomalyScore: analysisOverlay.scores?.[p.rowIndex ?? -1], analysisMatch: analysisOverlay.scores ? undefined : rows.has(p.rowIndex ?? -1),
+      originalFeatures: { ...p.originalFeatures, __anomaly_score: analysisOverlay.scores?.[p.rowIndex ?? -1] ?? 0, __rule_match: rows.has(p.rowIndex ?? -1) ? 1 : 0 } }));
+  }, [analysisOverlay, livePreview, visiblePoints]);
   const renderSetup = (methodsOnly = false) => (
       <ControlSidebar embedded methodsOnly={methodsOnly}
-        datasetName={dataset ? dataset.name : 'Loading…'}
+        additionalMethods={dataset && <UnsupervisedPanel active={active} key={activeDatasetId + dataset.name} dataset={dataset} projection={completedRun ? completedRun.reduction.method + ' projection' : rawPreviewPoints.length ? 'Raw first three selected numeric features' : 'Unavailable until at least three numeric features are selected'} onRestoreSettings={(features, normalization) => { setSelectedFeatures(features); setReductionConfig(previous => ({ ...previous, normalization })); }} features={selectedFeatures} normalization={reductionConfig.normalization} points={dataPoints.length ? dataPoints : rawPreviewPoints} onSelect={handleSelectPoint} onOverlay={overlay => { if (overlay) { handleResetLiveAnimation(); setFocusedCluster(null); } setAnalysisOverlay(overlay); }} />}
+        datasetName={datasetTitle ?? tr('Loading…')}
         totalRows={dataset ? dataset.totalRows : 0}
-        rawRows={dataset?.rawRows ?? []}
-        headers={dataset?.headers ?? []}
         featureColumns={dataset ? dataset.featureColumns : []}
         selectedFeatures={selectedFeatures}
         onToggleFeature={handleToggleFeature}
@@ -907,62 +745,46 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
         selectedColorFeature={selectedColorFeature}
         onChangeSelectedColorFeature={setSelectedColorFeature}
         onFileUpload={handleFileUpload}
-        onLoadPreloadedDataset={handleLoadPreloaded}
         isComputing={isComputing}
         hasResults={dataPoints.length > 0}
-        onActiveTabChange={setActiveArea}
         onRunComputation={runPipeline}
         onApplyClustering={handleApplyClustering}
-        isDualView={isDualView}
-        onToggleDualView={() => setIsDualView(!isDualView)}
-        dualSecondaryMethod={dualSecondaryMethod}
-        onChangeDualSecondaryMethod={setDualSecondaryMethod}
         isLiveAnimating={isLiveAnimating}
         onToggleLiveAnimation={handleToggleLiveAnimation}
         onResetLiveAnimation={handleResetLiveAnimation}
-        liveCurrentIter={liveCurrentIter}
-        liveMaxIter={reductionConfig.iterations}
         onExportCSV={handleExportCSV}
         dbStatus={dbStatus}
         onOpenElbowModal={() => setIsElbowModalOpen(true)}
         onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
-        pcaComponents={pcaComponents}
-        explainedVariance={metrics.explainedVariance}
-        totalVarianceExplained={metrics.totalVarianceExplained}
         biplotVisible={biplotVisible}
         onToggleBiplot={() => setBiplotVisible(!biplotVisible)}
         biplotTopK={biplotTopK}
         onChangeBiplotTopK={setBiplotTopK}
-        biplotScale={biplotScale}
-        onChangeBiplotScale={setBiplotScale}
         datasetList={datasetList}
         activeDatasetId={activeDatasetId}
         onSelectDataset={handleSelectDataset}
-        onRenameDataset={handleRenameDataset}
-        onDeleteDataset={handleDeleteDataset}
         onOpenRawDataModal={() => setIsRawDataModalOpen(true)}
         onOpenDatasetManager={() => openWorkspacePage('datasets')}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
       />
+
   );
 
   const pageContent = page === 'datasets' ? (
     <DatasetsPage datasets={datasetList} activeDatasetId={dataset ? activeDatasetId : ''} busy={isComputing}
-      activity={loadingMessage} notice={notice} onDismissNotice={() => setNotice(null)} onUpload={handleFileUpload}
+      activity={tr(loadingMessage)} notice={notice && { ...notice, message: tr(notice.message) }} onDismissNotice={() => setNotice(null)} onUpload={handleFileUpload}
       onRename={handleRenameDataset} onDelete={handleDeleteDataset} onSelect={async id => {
         const opened = (dataset && id === activeDatasetId) || await handleSelectDataset(id);
         if (opened && readWorkspacePage() === 'datasets') openWorkspacePage('explore');
       }} />
   ) : page === 'methods' ? (
-    <WorkspacePage title="Methods" description={dataset ? 'Configure the next analysis for ' + dataset.name + '.' : 'Choose methods for your next analysis.'}
-      actions={<a className="lab-action lab-action-primary" href="#/explore">Review in Explore</a>}>
-      {isComputing && <p className="lab-page-state" role="status">{loadingMessage || 'Working…'}</p>}
+    <WorkspacePage title={tr("Methods")} description={datasetTitle ? tr("Configure the next analysis for ") + datasetTitle + '.' : tr("Choose methods for your next analysis.")}
+      actions={<a className="lab-action lab-action-primary" href="#/explore">{tr("Review in Explore")}</a>}>
+      {isComputing && <p className="lab-page-state" role="status">{tr(loadingMessage || 'Working…')}</p>}
       {renderSetup(true)}
     </WorkspacePage>
   ) : page === 'experiments' ? (
-    <Suspense fallback={<WorkspacePage title="Experiments" description="Find saved runs and reuse their settings."><p className="lab-page-state" role="status">Loading experiments…</p></WorkspacePage>}>
-      <ExperimentsPage experiments={experiments} onRefresh={fetchExperiments} isLoading={historyLoading} error={historyError}
+    <Suspense fallback={<WorkspacePage title={tr("Experiments")} description={tr("Find saved runs and reuse their settings.")}><p className="lab-page-state" role="status">{tr("Loading experiments…")}</p></WorkspacePage>}>
+      <ExperimentsPage experiments={experiments} onRefresh={fetchExperiments} isLoading={historyLoading} error={historyError && tr(historyError)}
         storageLabel={dbStatus} activeDatasetId={dataset ? activeDatasetId : ''} availableFeatures={dataset?.featureColumns ?? []}
         isBusy={isComputing || isLiveAnimating}
         onApply={handleApplyExperiment} />
@@ -983,18 +805,18 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
                 : 'border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-main)]'
           }`}
         >
-          <span className="flex-1">{notice.message}</span>
+          <span className="flex-1">{tr(notice.message)}</span>
           <button
             type="button"
             onClick={() => setNotice(null)}
             className="shrink-0 font-bold px-1 text-current/70 hover:text-current"
-            aria-label="Dismiss notification"
+            aria-label={tr("Dismiss notification")}
           >
             ×
           </button>
         </div>
       )}
-      <WorkspaceLayout onSignOut={onSignOut} page={page} pageContent={pageContent}
+      <WorkspaceLayout active={active} page={page} pageContent={pageContent}
         activity={loadingMessage}
         analyzingConfiguration={analyzingRun ? describeRun(analyzingRun) : undefined}
         pendingChanges={pendingChanges}
@@ -1002,7 +824,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
         analysisError={analysisError}
         onDismissError={() => setAnalysisError(null)}
         onRetry={() => executeAnalysis(clusteringConfig)}
-        datasetName={dataset?.name ?? 'No dataset selected'}
+        datasetName={datasetTitle ?? tr('No dataset selected')}
         pointCount={dataset?.totalRows ?? 0}
         featureCount={dataset?.featureColumns.length ?? 0}
         selectedPoint={selectedPoint}
@@ -1018,8 +840,9 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
         controls={renderSetup()}
         visualization={({ isFullscreen, onToggleFullscreen, toolbarHost }) => (
           <div className="workspace-visualization">
-        {livePreview && <button className="workspace-exit-preview" onClick={handleResetLiveAnimation}>Exit t-SNE preview</button>}
-        {completedRun && !livePreview && <div className="workspace-viewing"><span>Viewing · {describeRun(completedRun)}</span>{previousResult && <strong className="result-stale">Previous result</strong>}</div>}
+        {analysisOverlay && <button className="workspace-exit-preview" onClick={() => { setAnalysisOverlay(null); setSelectedPoint(null); }}>{tr("Clear analysis overlay")}</button>}
+        {livePreview && <button className="workspace-exit-preview" onClick={handleResetLiveAnimation}>{tr("Exit t-SNE preview")}</button>}
+        {completedRun && !livePreview && <div className="workspace-viewing"><span>{tr("Viewing ·")} {analysisOverlay ? analysisOverlay.title + ' · ' + completedRun.reduction.method + tr(" projection") : describeRun(completedRun)}</span>{previousResult && <strong className="result-stale">{tr("Previous result")}</strong>}</div>}
         {/* Single vs Dual Viewport Rendering */}
         <div className="min-h-0 flex-1 w-full flex">
           {/* Viewport 1 (Primary) */}
@@ -1028,86 +851,54 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
               <Suspense
                 fallback={
                   <div className="absolute inset-0 flex items-center justify-center text-xs text-[var(--text-muted)]" role="status">
-                    Loading the 3D view…
+                    {tr("Loading the 3D view…")}
                   </div>
                 }
               >
                 <ThreeCanvas
                   active={exploring}
-                  dataPoints={visiblePoints}
+                  dataPoints={overlayPoints}
                   viewKey={String(focusedCluster)}
                   snapshotRef={primarySnapshotRef}
                   isFullscreen={isFullscreen}
                   toolbarHost={toolbarHost}
                   onToggleFullscreen={onToggleFullscreen}
-                  hasClustering={!livePreview && hasClustering}
-                  colorMode={!livePreview && (hasClustering || colorMode !== 'cluster') ? colorMode : 'ground-truth'}
-                  selectedFeature={selectedColorFeature}
+                  hasClustering={!livePreview && !analysisOverlay && hasClustering}
+                  colorMode={analysisOverlay && !livePreview ? 'feature' : !livePreview && (hasClustering || colorMode !== 'cluster') ? colorMode : 'ground-truth'}
+                  selectedFeature={analysisOverlay && !livePreview ? (analysisOverlay.scores ? '__anomaly_score' : '__rule_match') : selectedColorFeature}
                   onSelectPoint={handleSelectPoint}
                   selectedPoint={selectedPoint}
                   reductionMethod={livePreview ? 't-SNE' : isRawDataArea ? 'RAW' : resultMethod}
-                  onCameraChange={handlePrimaryCameraChange}
-                  titleBadge={livePreview ? 't-SNE preview' : isRawDataArea ? 'Viewing · Raw data' : undefined}
-                  showProjectionBadge={isRawDataArea || Boolean(livePreview)}
+                  titleBadge={analysisOverlay && !livePreview ? analysisOverlay.title : livePreview ? tr("t-SNE preview") : isRawDataArea ? tr("Viewing · Raw data") : undefined}
+                  showProjectionBadge={Boolean(analysisOverlay) || isRawDataArea || Boolean(livePreview)}
                   axisFeatures={isRawDataArea && !livePreview ? selectedFeatures.slice(0, 3) : undefined}
                   pcaComponents={isRawDataArea || livePreview ? undefined : pcaComponents}
                   featureNames={completedRun?.features ?? selectedFeatures}
                   showBiplot={biplotVisible}
-                  onToggleBiplot={handleToggleBiplot}
                   biplotTopK={biplotTopK}
-                  biplotScale={biplotScale}
                   theme={theme}
-                  onToggleTheme={handleToggleTheme}
+                  gmm={showGmm && !analysisOverlay && !livePreview && !isRawDataArea && !isPruned && completedRun?.clustering.method === 'GMM' ? gmmResult ?? undefined : undefined}
                   showOutliersSpotlight={spotlightOutliers}
                   onToggleOutliersSpotlight={() => setSpotlightOutliers((prev) => !prev)}
-                  isComputing={isComputing}
                 />
               </Suspense>
             ) : (
               <div className="absolute inset-0 flex flex-col gap-3 items-center justify-center px-6 text-center text-xs text-[var(--text-muted)]">
-                {completedRun ? 'No points remain. Restore points or rerun analysis.' : dataset
-                  ? 'Select at least three numeric features to view the data in 3D.'
-                  : 'Choose a dataset to get started.'}
-                {isFullscreen && <button type="button" className="workspace-exit-preview" onClick={onToggleFullscreen}>Exit fullscreen</button>}
+                {completedRun ? tr("No points remain. Restore points or rerun analysis.") : dataset
+                  ? tr("Select at least three numeric features to view the data in 3D.")
+                  : tr("Choose a dataset to get started.")}
+                {isFullscreen && <button type="button" className="workspace-exit-preview" onClick={onToggleFullscreen}>{tr("Exit fullscreen")}</button>}
               </div>
             )}
           </div>
 
-          {/* Viewport 2 (Dual Secondary with Camera Synchronization) */}
-          {isDualView && !isRawDataArea && focusedCluster === null && (
-            <div className="flex-1 h-full relative border-l border-[var(--border-subtle)]">
-              <Suspense
-                fallback={
-                  <div className="absolute inset-0 flex items-center justify-center text-xs text-[var(--text-muted)]" role="status">
-                    Loading the 3D view…
-                  </div>
-                }
-              >
-                <ThreeCanvas
-                  active={exploring}
-                  dataPoints={dualDataPoints.length > 0 ? dualDataPoints : dataPoints}
-                  isFullscreen={isFullscreen}
-                  toolbarHost={toolbarHost}
-                  toolbarLabel="Comparison 3D view controls"
-                  colorMode={colorMode}
-                  selectedFeature={selectedColorFeature}
-                  onSelectPoint={handleSelectPoint}
-                  selectedPoint={selectedPoint}
-                  reductionMethod={dualSecondaryMethod}
-                  syncCameraPos={syncedCamPos}
-                  syncTargetPos={syncedTargetPos}
-                  titleBadge={`VIEW B: ${dualSecondaryMethod} 3D (Synced)`}
-                  theme={theme}
-                  onToggleTheme={handleToggleTheme}
-                />
-              </Suspense>
-            </div>
-          )}
         </div>
 
           </div>
         )}
         insights={(
+          <>
+          {gmmResult && completedRun?.clustering.method === 'GMM' && <section className="unsupervised-panel"><div className="unsupervised-body"><strong>{tr("GMM · diagonal covariance")}</strong><p>{gmmResult.converged ? tr("Converged") : tr("Iteration limit reached")} · {gmmResult.iterations} {tr("EM updates")}</p><p>{tr("Log likelihood:")} {gmmResult.logLikelihood.toFixed(2)} · AIC: {gmmResult.aic.toFixed(2)} · BIC: {gmmResult.bic.toFixed(2)}</p><label><input type="checkbox" checked={showGmm} onChange={e => setShowGmm(e.target.checked)} />{tr("Show Gaussian ellipsoids")}</label><p>{tr("Ellipsoid axes = 2 marginal standard deviations; this is not a 95% joint confidence region. Model fitted to the completed 3D projection.")}</p><button onClick={() => downloadText(JSON.stringify({ configuration: completedRun, model: gmmResult }, null, 2), 'gmm-model.json', 'application/json')}>{tr("Export GMM model")}</button></div></section>}
           <MetricsPanel layout="sidebar"
             metrics={metrics}
             reductionMethod={resultMethod}
@@ -1115,22 +906,22 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
             resultsDirty={resultsDirty || Boolean(livePreview)}
             previousResult={previousResult || Boolean(completedRun && livePreview)}
             runConfiguration={completedRun && <details className="insights-more">
-              <summary>Run configuration</summary>
+              <summary>{tr("Run configuration")}</summary>
               <p className="insights-hint">{describeRun(completedRun)}</p>
-              <p className="insights-hint">Features ({completedRun.features.length}): {completedRun.features.join(', ')}</p>
-              {completedRun.reduction.method === 'UMAP' && <p className="insights-hint">Neighbors: {completedRun.reduction.nNeighbors} · Min distance: {completedRun.reduction.minDist}</p>}
-              {completedRun.reduction.method === 't-SNE' && <p className="insights-hint">Perplexity: {completedRun.reduction.perplexity} · Learning rate: {completedRun.reduction.learningRate} · Iterations: {completedRun.reduction.iterations}</p>}
-              {completedRun.clustering.method === 'K-Means' && <p className="insights-hint">Clusters: {completedRun.clustering.k}</p>}
-              {completedRun.clustering.method === 'DBSCAN' && <p className="insights-hint">Radius (ε): {completedRun.clustering.epsilon} · Minimum points: {completedRun.clustering.minPts}</p>}
+              <p className="insights-hint">{tr("Features (")}{completedRun.features.length}): {completedRun.features.join(', ')}</p>
+              {completedRun.reduction.method === 'UMAP' && <p className="insights-hint">{tr("Neighbors:")} {completedRun.reduction.nNeighbors} {tr("· Min distance:")} {completedRun.reduction.minDist}</p>}
+              {completedRun.reduction.method === 't-SNE' && <p className="insights-hint">Perplexity: {completedRun.reduction.perplexity} {tr("· Learning rate:")} {completedRun.reduction.learningRate} {tr("· Iterations:")} {completedRun.reduction.iterations}</p>}
+              {completedRun.clustering.method === 'K-Means' && <p className="insights-hint">{tr("Clusters:")} {completedRun.clustering.k}</p>}
+              {completedRun.clustering.method === 'DBSCAN' && <p className="insights-hint">{tr("Radius (ε):")} {completedRun.clustering.epsilon} {tr("· Minimum points:")} {completedRun.clustering.minPts}</p>}
             </details>}
             focusedCluster={focusedCluster}
             onFocusCluster={livePreview ? undefined : handleFocusCluster}
-            datasetName={dataset ? dataset.name : 'No dataset'}
+            datasetName={datasetTitle ?? tr('No dataset')}
             totalRows={dataset ? dataset.totalRows : 0}
             hasGroundTruth={Boolean(dataset?.labelColumn)}
             hasResults={completedRun !== null}
             isComputing={isComputing || isLiveAnimating}
-            normalization={completedRun ? normalizationLabels[completedRun.reduction.normalization] : '—'}
+            normalization={completedRun ? tr(normalizationLabels[completedRun.reduction.normalization]) : '—'}
             onPruneOutliers={livePreview ? undefined : handlePruneOutliers}
             onRestorePoints={livePreview ? undefined : handleRestorePoints}
             isPruned={isPruned}
@@ -1143,28 +934,29 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
             isSaving={isSavingExperiment}
             theme={theme}
           />
+          </>
         )}
         selection={(
           <>
             {focusedCluster !== null && !livePreview && <ClusterFocus cluster={focusedCluster} points={dataPoints} onChange={handleFocusCluster} />}
-            <section className="workspace-inspector"><p className="workspace-eyebrow">POINT INSPECTOR</p>
+            <section className="workspace-inspector"><p className="workspace-eyebrow">{tr("POINT INSPECTOR")}</p>
         <DataInspector embedded
-          point={selectedPoint}
-          hasClustering={!livePreview && hasClustering}
+          point={analysisOverlay && selectedPoint ? overlayPoints.find(p => p.rowIndex === selectedPoint.rowIndex) ?? selectedPoint : selectedPoint}
+          hasClustering={!livePreview && !analysisOverlay && hasClustering}
           onClose={() => setSelectedPoint(null)}
           onDeletePoint={completedRun && !livePreview && !isComputing ? handleDeleteSinglePoint : undefined}
           theme={theme}
         />
-              {!selectedPoint && <div className="workspace-inspector-empty"><p>Select a point to look closer.</p></div>}
+              {!selectedPoint && <div className="workspace-inspector-empty"><p>{tr("Select a point to look closer.")}</p></div>}
             </section>
           </>
         )}
       />
 
-      {isExportModalOpen && <ExportModal onClose={() => setIsExportModalOpen(false)} onDownload={handleExport} onSnapshot={() => primarySnapshotRef.current?.()} hasImage={visiblePoints.length > 0} hasResults={Boolean(completedRun && dataPoints.length > 0)} previousResult={previousResult} configuration={completedRun ? describeRun(completedRun) : undefined} focused={focusedCluster !== null} />}
+      {active && isExportModalOpen && <ExportModal onClose={() => setIsExportModalOpen(false)} onDownload={handleExport} onSnapshot={() => primarySnapshotRef.current?.()} hasImage={visiblePoints.length > 0} hasResults={Boolean(completedRun && dataPoints.length > 0)} previousResult={previousResult} configuration={completedRun ? describeRun(completedRun) : undefined} focused={focusedCluster !== null} />}
 
       {/* Elbow Method & Silhouette Analysis Modal */}
-      {isElbowModalOpen && (
+      {active && isElbowModalOpen && (
         <Suspense fallback={null}>
           <ElbowModal
             isOpen={isElbowModalOpen}
@@ -1182,7 +974,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
       )}
 
       {/* Security Center & LAN Sharing Modal */}
-      {isSecurityModalOpen && (
+      {active && isSecurityModalOpen && (
         <Suspense fallback={null}>
           <SecurityModal
             isOpen={isSecurityModalOpen}
@@ -1204,11 +996,11 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
       )}
 
       {/* Full-Screen Raw Data Preview Modal */}
-      {isRawDataModalOpen && dataset && (
+      {active && isRawDataModalOpen && dataset && (
         <RawDataModal
           isOpen={isRawDataModalOpen}
           onClose={() => setIsRawDataModalOpen(false)}
-          datasetName={dataset.name}
+          datasetName={datasetTitle ?? dataset.name}
           headers={dataset.headers}
           rawRows={dataset.rawRows}
           totalRows={dataset.totalRows}

@@ -9,7 +9,7 @@ Module máy chủ Express cung cấp API tính toán hiệu năng cao, lưu tr�
 | Tệp | Chức năng chính |
 |---|---|
 | `index.ts` | Khởi tạo máy chủ Express, thiết lập middleware bảo mật (CORS, Gzip Compression, JSON Body Parser), và định tuyến các endpoint RESTful. |
-| `db.ts` | Tầng truy cập dữ liệu (Data Access Layer - DAL) hỗ trợ linh hoạt giữa **MongoDB** (Cloud / Docker) và **SQLite3** (File cục bộ dự phòng), tự động seed dữ liệu mẫu khi khởi động. |
+| `db.ts` | Tầng truy cập dữ liệu kết nối **MongoDB** và lưu tạm trong **RAM** nếu kết nối thất bại. Máy chủ nạp dữ liệu mẫu khi khởi động. |
 
 ---
 

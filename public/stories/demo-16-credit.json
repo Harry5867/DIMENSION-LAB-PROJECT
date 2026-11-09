@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-16.webp",
+  "imageAlt": "Photograph of Wellington, New Zealand; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "russellstreet",
+    "title": "Seddon_Statue_in_Parliament_Grounds.jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Seddon_Statue_in_Parliament_Grounds.jpg",
+    "license": "CC BY-SA 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

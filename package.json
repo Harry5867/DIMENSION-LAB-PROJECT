@@ -10,10 +10,9 @@
     "dev:host": "concurrently -k -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"tsx server/index.ts\" \"vite --host 0.0.0.0 --port 3000\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --import tsx --test tests/exploration.test.ts tests/ux.test.ts tests/terrain.test.ts tests/stories.test.ts"
+    "test": "node --import tsx --test tests/exploration.test.ts tests/ux.test.ts tests/terrain.test.ts tests/stories.test.ts tests/unsupervised.test.ts tests/portal.test.ts tests/dataMorph.test.ts"
   },
   "dependencies": {
-    "clsx": "^2.1.1",
     "compression": "^1.8.2",
     "cors": "^2.8.5",
     "dotenv": "^18.0.9",
@@ -24,7 +23,6 @@
     "papaparse": "^5.4.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sqlite3": "^5.1.7",
     "three": "^0.169.0"
   },
   "devDependencies": {
@@ -39,9 +37,7 @@
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.169.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
-    "postcss": "^8.4.47",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",
     "typescript": "^6.0.3",

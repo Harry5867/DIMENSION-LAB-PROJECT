@@ -1,0 +1,16 @@
+.data-atmosphere { position:absolute; inset:0; z-index:0; overflow:hidden; pointer-events:none; user-select:none; contain:strict; animation:atmosphere-reveal 650ms ease-out both; }
+.data-atmosphere::before { content:''; position:absolute; inset:0; }
+.data-atmosphere canvas { position:absolute; inset:0; display:block; width:100%; height:100%; pointer-events:none; }
+.welcome-page > .data-atmosphere--welcome { position:fixed; }
+.welcome-page > .data-atmosphere--welcome::before { background:radial-gradient(ellipse 66% 85% at 85% 55%, #adc5b8bd 0%, #c4d7cb91 42%, #e1ebe359 68%, transparent 95%); mask-image:linear-gradient(to right, transparent 23%, #000 58%); }
+.welcome-page .globe-renderer::before { background:radial-gradient(circle at 37% 32%, #fafbfaa3 0%, #edf3ee99 56%, #d4e1d6b3 100%); }
+.welcome-page > .welcome-main { z-index:1; }
+.portal-page--workspace { position:relative; isolation:isolate; }
+.portal-page--workspace > .data-atmosphere--workspace canvas { opacity:.58; }
+.portal-page--workspace > .data-atmosphere--workspace::before { background:radial-gradient(ellipse 61% 81% at 83% 50%, #a9c0b5d1 0%, #c1d2c39c 40%, #dbe3d94d 65%, transparent 90%), radial-gradient(ellipse 43% 47% at 100% 100%, #b5c9b980, transparent); }
+.portal-page--workspace > .data-atmosphere--workspace::after { content:''; position:absolute; inset:0; background-image:radial-gradient(circle, #526f5f33 .65px, transparent .9px); background-size:38px 38px; mask-image:radial-gradient(ellipse 44% 65% at 81% 54%, #0008, transparent); }
+.portal-page--workspace > .portal-header, .portal-page--workspace > .portal-overview { position:relative; z-index:1; }
+@keyframes atmosphere-reveal { from { opacity:0; } to { opacity:1; } }
+@media(max-width:899px) { .portal-page--workspace > .data-atmosphere--workspace::before { background:radial-gradient(ellipse 100% 66% at 67% 70%, #aec5b9c7 0%, #c6d7c994 45%, #dbe3d940 68%, transparent 95%); } .portal-page--workspace > .data-atmosphere--workspace::after { mask-image:radial-gradient(ellipse 70% 49% at 60% 73%, #0007, transparent); } }
+@media(max-width:599px) { .welcome-page > .data-atmosphere--welcome::before { background:radial-gradient(ellipse 99% 59% at 67% 76%, #b1cbbcba, #cfdfd370 48%, transparent 94%); } }
+@media(prefers-reduced-motion:reduce) { .data-atmosphere { animation:none; } }

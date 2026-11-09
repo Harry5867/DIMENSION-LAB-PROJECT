@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-11.webp",
+  "imageAlt": "Photograph of Mexico City, Mexico; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Gobierno CDMX",
+    "title": "Sobrevuelos_CDMX_HJ2A4913_(25514321687)_(cropped).jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Sobrevuelos_CDMX_HJ2A4913_(25514321687)_(cropped).jpg",
+    "license": "CC0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/deed.en",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-20.webp",
+  "imageAlt": "Photograph of Helsinki, Finland; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "Michal Pise, Michal.Pise",
+    "title": "Suomenlinna_(cropped).jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Suomenlinna_(cropped).jpg",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

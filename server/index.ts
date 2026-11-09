@@ -1,3 +1,5 @@
+import { computeGMM } from '../src/algorithms/gmm';
+import { parseAnalysisTask, runAnalysisTask, AnalysisTaskResult } from '../src/algorithms/analysisTasks';
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
@@ -37,12 +39,9 @@ import {
   AppError,
   BadRequestError,
   NotFoundError,
-  UnauthorizedError,
-  ForbiddenError,
 } from './errors';
 import {
   authenticate,
-  requireAuth,
   requireRole,
   AuthenticatedRequest,
   DEMO_USERS,
@@ -106,7 +105,7 @@ function isReductionConfig(value: unknown): value is ReductionConfig {
 
 function isClusteringConfig(value: unknown): value is ClusteringConfig {
   if (!isRecord(value)) return false;
-  return (value.method === 'K-Means' || value.method === 'DBSCAN' || value.method === 'None')
+  return (value.method === 'K-Means' || value.method === 'DBSCAN' || value.method === 'GMM' || value.method === 'None')
     && typeof value.k === 'number'
     && typeof value.epsilon === 'number'
     && typeof value.minPts === 'number';
@@ -287,6 +286,21 @@ app.delete('/api/datasets/:id', requireRole(['admin']), async (req, res, next) =
   }
 });
 
+// Separate task result schema; never store rule sets as cluster assignments.
+const taskCache = new Map<string, AnalysisTaskResult>();
+app.post('/api/unsupervised', (req, res, next) => {
+  try {
+    const task = parseAnalysisTask(req.body);
+    const key = crypto.createHash('sha256').update(JSON.stringify(task)).digest('hex');
+    const cached = taskCache.get(key);
+    if (cached) { sendSuccess(res, { ...cached, fromCache: true }); return; }
+    const result = runAnalysisTask(task);
+    if (taskCache.size >= 3) taskCache.delete(taskCache.keys().next().value!);
+    taskCache.set(key, result);
+    sendSuccess(res, { ...result, fromCache: false });
+  } catch (error) { next(new BadRequestError(error instanceof Error ? error.message : 'Invalid unsupervised task.')); }
+});
+
 // 12. High-Performance Compute API with SHA-256 Multi-Tier Caching
 app.post('/api/compute', async (req, res, next) => {
   try {
@@ -366,6 +380,8 @@ app.post('/api/compute', async (req, res, next) => {
     if (clusteringConfig.method === 'K-Means') {
       const kmeansRes = computeKMeans(coordinates, clusteringConfig.k || 2);
       clusterAssignments = kmeansRes.clusters;
+    } else if (clusteringConfig.method === 'GMM') {
+      clusterAssignments = computeGMM(coordinates, { k: clusteringConfig.k, maxIterations: clusteringConfig.gmmIterations, tolerance: clusteringConfig.gmmTolerance, seed: clusteringConfig.seed }).clusters;
     } else if (clusteringConfig.method === 'DBSCAN') {
       const dbscanRes = computeDBSCAN(
         coordinates,

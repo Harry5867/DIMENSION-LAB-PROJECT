@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-03.webp",
+  "imageAlt": "Photograph of Ottawa, Canada; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "No machine-readable author provided. Arctic.gnome assumed (based on copyright claims).",
+    "title": "Parliament-Ottawa.jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Parliament-Ottawa.jpg",
+    "license": "CC BY 2.5",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.5",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

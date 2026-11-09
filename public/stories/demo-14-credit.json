@@ -1,0 +1,12 @@
+{
+  "imageUrl": "stories/demo-14.webp",
+  "imageAlt": "Photograph of Canberra, Australia; location imagery for a conceptual data story.",
+  "photo": {
+    "author": "The 3B's",
+    "title": "Canberra_panorama_from_Mount_Ainslie.jpg",
+    "url": "https://commons.wikimedia.org/wiki/File:Canberra_panorama_from_Mount_Ainslie.jpg",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "changes": "Resized and converted to WebP; thumbnails cropped by the interface."
+  }
+}

@@ -1,3 +1,4 @@
+import { useAppLanguage } from "./WelcomeLanguage";
 import { csvText, downloadText, safeFilename } from '../utils/exportData';
 import { useDialogFocus } from '../utils/useDialogFocus';
 import React, { useState, useMemo, useEffect } from 'react';
@@ -23,6 +24,7 @@ export const RawDataModal: React.FC<RawDataModalProps> = ({
   totalRows,
   labelColumn,
 }) => {
+  const { tr } = useAppLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -67,28 +69,28 @@ export const RawDataModal: React.FC<RawDataModalProps> = ({
       <div className="lab-modal raw-data-dialog">
         <header className="lab-modal-header">
           <div>
-            <h2 id="raw-data-modal-title">Raw data · {datasetName}</h2>
-            <p>{totalRows.toLocaleString('en-US')} rows · {headers.length} columns</p>
+            <h2 id="raw-data-modal-title">{tr("Raw data ·")} {datasetName}</h2>
+            <p>{totalRows.toLocaleString('en-US')} {tr("rows ·")} {headers.length} {tr('columns')}</p>
           </div>
-          <button type="button" className="workspace-icon" onClick={onClose} aria-label="Close raw data"><X size={18} /></button>
+          <button type="button" className="workspace-icon" onClick={onClose} aria-label={tr("Close raw data")}><X size={18} /></button>
         </header>
         <div className="raw-data-toolbar">
-          <label className="lab-search"><Search size={15} /><input aria-label="Search raw values" value={searchTerm}
-            onChange={event => setSearchTerm(event.target.value)} placeholder="Search values…" /></label>
-          <label>Rows per page <select value={pageSize} onChange={event => {
+          <label className="lab-search"><Search size={15} /><input aria-label={tr("Search raw values")} value={searchTerm}
+            onChange={event => setSearchTerm(event.target.value)} placeholder={tr("Search values…")} /></label>
+          <label>{tr("Rows per page")} <select value={pageSize} onChange={event => {
             setPageSize(Number(event.target.value));
             setCurrentPage(1);
           }}>
             {[25, 50, 100, 200].map(size => <option key={size}>{size}</option>)}
           </select></label>
         </div>
-        <div className="raw-data-table custom-scrollbar" tabIndex={0} role="region" aria-label="Raw data table">
+        <div className="raw-data-table custom-scrollbar" tabIndex={0} role="region" aria-label={tr("Raw data table")}>
           <table>
             <thead><tr><th scope="col">#</th>{headers.map(header => <th key={header} scope="col">
-              {header}{header === labelColumn && <span className="lab-tag">Label</span>}
+              {header}{header === labelColumn && <span className="lab-tag">{tr("Label")}</span>}
             </th>)}</tr></thead>
             <tbody>
-              {currentRows.length === 0 && <tr><td colSpan={headers.length + 1}>No matching rows.</td></tr>}
+              {currentRows.length === 0 && <tr><td colSpan={headers.length + 1}>{tr("No matching rows.")}</td></tr>}
               {currentRows.map((row, index) => <tr key={startIndex + index}>
                 <td>{startIndex + index + 1}</td>
                 {headers.map(header => <td key={header} title={row[header] == null ? undefined : String(row[header])}>{row[header] == null ? '—' : String(row[header])}</td>)}
@@ -97,15 +99,15 @@ export const RawDataModal: React.FC<RawDataModalProps> = ({
           </table>
         </div>
         <footer className="lab-modal-footer raw-data-footer">
-          <span>{filteredRows.length > 0 ? startIndex + 1 : 0}–{endIndex} of {filteredRows.length.toLocaleString('en-US')} rows</span>
+          <span>{filteredRows.length > 0 ? startIndex + 1 : 0}–{endIndex} {tr('of')} {filteredRows.length.toLocaleString('en-US')} {tr("rows")}</span>
           <div className="lab-row-actions">
-            <button onClick={() => setCurrentPage(1)} disabled={validCurrentPage <= 1} aria-label="First page"><ChevronsLeft size={15} /></button>
-            <button onClick={() => setCurrentPage(validCurrentPage - 1)} disabled={validCurrentPage <= 1} aria-label="Previous page"><ChevronLeft size={15} /></button>
+            <button onClick={() => setCurrentPage(1)} disabled={validCurrentPage <= 1} aria-label={tr("First page")}><ChevronsLeft size={15} /></button>
+            <button onClick={() => setCurrentPage(validCurrentPage - 1)} disabled={validCurrentPage <= 1} aria-label={tr("Previous page")}><ChevronLeft size={15} /></button>
             <span>{validCurrentPage} / {totalPages}</span>
-            <button onClick={() => setCurrentPage(validCurrentPage + 1)} disabled={validCurrentPage >= totalPages} aria-label="Next page"><ChevronRight size={15} /></button>
-            <button onClick={() => setCurrentPage(totalPages)} disabled={validCurrentPage >= totalPages} aria-label="Last page"><ChevronsRight size={15} /></button>
+            <button onClick={() => setCurrentPage(validCurrentPage + 1)} disabled={validCurrentPage >= totalPages} aria-label={tr("Next page")}><ChevronRight size={15} /></button>
+            <button onClick={() => setCurrentPage(totalPages)} disabled={validCurrentPage >= totalPages} aria-label={tr("Last page")}><ChevronsRight size={15} /></button>
           </div>
-          <button onClick={handleExportCSV} disabled={filteredRows.length === 0} title="Export all filtered rows"><Download size={14} /> Export CSV</button>
+          <button onClick={handleExportCSV} disabled={filteredRows.length === 0} title={tr("Export all filtered rows")}><Download size={14} /> {tr("Export CSV")}</button>
         </footer>
       </div>
     </div>

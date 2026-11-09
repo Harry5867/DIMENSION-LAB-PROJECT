@@ -39,7 +39,7 @@ export interface AuthenticatedRequest extends Request {
 /**
  * Middleware trích xuất Token từ Authorization Header (Bearer Token)
  */
-export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+export function authenticate(req: AuthenticatedRequest, _res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     // Nếu không truyền token, mặc định cấp quyền viewer công khai
@@ -61,7 +61,7 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
 /**
  * Middleware bắt buộc phải đăng nhập
  */
-export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+export function requireAuth(req: AuthenticatedRequest, _res: Response, next: NextFunction): void {
   if (!req.user) {
     return next(new UnauthorizedError('Sign in to do this.'));
   }
@@ -73,7 +73,7 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
  * Ném ngoại lệ ForbiddenError (HTTP 403) nếu quyền không thỏa mãn
  */
 export function requireRole(allowedRoles: UserRole[]) {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
     if (!req.user) {
       return next(new UnauthorizedError('Sign in to verify access.'));
     }

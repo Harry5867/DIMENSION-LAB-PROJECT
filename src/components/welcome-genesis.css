@@ -1,0 +1,97 @@
+#root .welcome-page .genesis-start {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  scale: 1;
+  transition: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root .welcome-page .genesis-start::after { content: none; }
+#root .welcome-page .genesis-start:focus-visible { outline-offset: -4px; }
+
+.welcome-page .welcome-genesis {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.genesis-pointer-guard {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  touch-action: none;
+}
+
+#root .welcome-page .genesis-skip {
+  position: fixed;
+  z-index: 6;
+  inset: auto max(24px, 4.5vw) max(60px, env(safe-area-inset-bottom)) auto;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 10px var(--font-mono);
+  letter-spacing: .085em;
+  text-transform: uppercase;
+  cursor: pointer;
+  animation: genesis-skip-in 180ms ease .72s both;
+}
+
+@keyframes genesis-skip-in { from { opacity: 0; } to { opacity: 1; } }
+
+.welcome-page:has(> .welcome-genesis[data-phase=empty]) .genesis-skip:not(:focus-visible) { visibility: hidden; }
+
+#root .welcome-page .genesis-skip:is(:hover, :focus-visible) {
+  color: var(--text-main);
+  border-color: var(--border-subtle);
+  outline-offset: 3px;
+}
+
+#root .welcome-page .genesis-skip:focus-visible { animation: none; }
+
+.welcome-page[data-genesis] .globe-loading { opacity: 0; }
+.welcome-page[data-genesis-visited] > .data-atmosphere--welcome { animation: none; }
+.welcome-page[data-genesis] > .data-atmosphere--welcome { opacity: var(--genesis-atmosphere, 0); }
+.welcome-page[data-genesis] .globe-renderer { opacity: var(--genesis-silhouette, 0); }
+.welcome-page[data-genesis] .globe-renderer::before { opacity: var(--genesis-disk, .34); }
+.welcome-page[data-genesis] .welcome-header { opacity: var(--genesis-navigation, 0); }
+.welcome-page[data-genesis] :is(.welcome-footer, .globe-controls) { opacity: var(--genesis-controls, 0); }
+.welcome-page[data-genesis] .atlas-coordinate { opacity: var(--genesis-grid, 0); transition: none; }
+.welcome-page[data-genesis] .globe-capital-marker { opacity: var(--genesis-marker, 0); transition: none; }
+.welcome-page[data-genesis-visited] .atlas-origin-marker::after { animation-delay: 1.25s; opacity: 0; }
+.welcome-page[data-genesis] .atlas-origin-marker::after {
+  animation: none;
+  opacity: var(--genesis-pulse-alpha, 0);
+  transform: scale(calc(1 + 2.4 * var(--genesis-pulse, 0)));
+}
+.welcome-page[data-genesis] .welcome-copy .welcome-eyebrow { --reveal: var(--genesis-eyebrow, 0); }
+.welcome-page[data-genesis] .welcome-copy h1 { --reveal: var(--genesis-headline, 0); }
+.welcome-page[data-genesis] .welcome-description { --reveal: var(--genesis-description, 0); }
+.welcome-page[data-genesis] .welcome-actions { --reveal: var(--genesis-action, 0); }
+.welcome-page[data-genesis] .welcome-copy :is(.welcome-eyebrow, h1, .welcome-description, .welcome-actions) {
+  opacity: var(--reveal);
+  transform: translateY(calc(14px * (1 - var(--reveal))));
+}
+
+.welcome-page[data-genesis-visited][data-globe-mode=atlas] .welcome-title-line > span { animation: none !important; }
+.welcome-page[data-genesis-visited] .globe-viewport { animation: none; }
+
+@media (max-width: 599px) {
+  .welcome-page[data-genesis] .welcome-copy :is(.welcome-eyebrow, h1, .welcome-description, .welcome-actions) {
+    transform: translateY(calc(8px * (1 - var(--reveal))));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-page[data-genesis] .welcome-copy :is(.welcome-eyebrow, h1, .welcome-description, .welcome-actions) { transform: none; }
+}
