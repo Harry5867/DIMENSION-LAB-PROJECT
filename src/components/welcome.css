@@ -131,6 +131,7 @@
 #root .welcome-page .login-demo-action:active { scale:1; color:#005e55; }
 #root .welcome-page[data-motion=gentle] .login-demo-action, #root .welcome-page[data-motion=gentle] .login-demo-action > span::after { transition:none; }
 .login-error { color:#a12c27; font-size:12px; line-height:1.6; margin-top:12px; }
+.login-google { display:flex; justify-content:center; margin-top:16px; }
 .login-step { --login-step:0; animation:login-content-in 360ms calc(100ms + var(--login-step) * 60ms) cubic-bezier(.16,1,.3,1) both; }
 .login-step--logo { --login-step:1; }.login-step--title { --login-step:2; }.login-step--email { --login-step:3; }.login-step--password { --login-step:4; }.login-step--submit { --login-step:5; }.login-step--demo { --login-step:6; }
 .login-backdrop.is-closing::before { animation:login-backdrop-out 280ms ease both; }

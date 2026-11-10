@@ -135,7 +135,8 @@ export function SectionTransition({ navigation, onCovered, onComplete }: {
         firstLayout = requestAnimationFrame(() => { secondLayout = requestAnimationFrame(reveal); });
       };
       const destinationReady = () => navigation.kind === 'back' || !!document.querySelector(model
-        ? '.model-session:not([hidden]) .workspace-header' : '.portal-content-heading');
+        ? '.model-session:not([hidden]) :is(.workspace-header, .workspace-explore:not([hidden]) .workspace-stage)'
+        : '.portal-content-heading');
       if (destinationReady()) scheduleReveal();
       else {
         // Let the cold Model chunk mount under the paper, without adding a WebGL snapshot.

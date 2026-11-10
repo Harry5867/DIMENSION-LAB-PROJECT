@@ -17,7 +17,10 @@ const glassControlSelector = 'button:not(.workspace-scrim, .globe-capital-marker
 
 export function Entry() {
   const { tr, t } = useAppLanguage();
-  const [signedIn, setSignedIn] = useState(hasDemoSession);
+  const [signedIn, setSignedIn] = useState(false);
+  const [authOptions, setAuthOptions] = useState<{ mode: 'demo' | 'atlas'; google: boolean } | null>(null);
+  const [signOutError, setSignOutError] = useState(false);
+  const signingOut = useRef(false);
   const [atWelcome, setAtWelcome] = useState(() => isWelcomeRoute(window.location.hash));
   const [route, setRoute] = useState(() => portalRoute(window.location.hash));
   const [entrancePhase, setEntrancePhase] = useState<EntrancePhase>('idle');
@@ -60,12 +63,34 @@ export function Entry() {
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
   }, []);
   useEffect(() => {
-    if (!signedIn || !getAccessToken()) return;
     const controller = new AbortController();
-    void fetchWithTimeout('/api/auth/me', { signal: controller.signal })
-      .catch(() => { /* Local tools remain available offline. */ });
+    const signal = controller.signal;
+    void (async () => {
+      const response = await fetchWithTimeout('/api/auth/options', { signal }, 5000);
+      if (!response.ok) throw new Error('Could not read sign-in options.');
+      const { data } = await response.json();
+      if (signal.aborted) return;
+      if (data?.mode === 'atlas') {
+        clearDemoSession();
+        setSignedIn(false);
+      }
+      setAuthOptions({ mode: data?.mode === 'atlas' ? 'atlas' : 'demo', google: data?.google === true });
+      if (data?.mode !== 'atlas' && !getAccessToken()) {
+        setSignedIn(hasDemoSession());
+        return;
+      }
+      const session = await fetchWithTimeout('/api/auth/me', { signal });
+      if (!session.ok) return;
+      const { data: current } = await session.json();
+      if (!signal.aborted) setSignedIn(current?.authenticated === true);
+    })().catch(() => {
+      if (!signal.aborted) {
+        setAuthOptions(options => options ?? { mode: 'demo', google: false });
+        setSignedIn(hasDemoSession());
+      }
+    });
     return () => controller.abort();
-  }, [signedIn]);
+  }, []);
   const coverSection = useCallback((id: number) => {
     const pending = navigationRef.current;
     if (!pending || pending.id !== id || pending.phase !== 'covering') return;
@@ -134,9 +159,19 @@ export function Entry() {
     entranceDirectionRef.current = 'in'; setEntranceDirection('in');
     entrancePhaseRef.current = 'covering'; setEntrancePhase('covering');
   };
-  const signOut = () => {
-    if (!signedIn || entrancePhaseRef.current !== 'idle') return;
-    if (getAccessToken()) void fetchWithTimeout('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  const signOut = async () => {
+    if (!signedIn || signingOut.current || entrancePhaseRef.current !== 'idle') return;
+    setSignOutError(false);
+    if (authOptions?.mode === 'atlas' || getAccessToken()) {
+      signingOut.current = true;
+      try {
+        const response = await fetchWithTimeout('/api/auth/logout', { method: 'POST' });
+        if (!response.ok && response.status !== 401) throw new Error('Sign-out failed.');
+      } catch {
+        setSignOutError(true);
+        return;
+      } finally { signingOut.current = false; }
+    }
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const bounds = document.querySelector('.workspace-directory')?.getBoundingClientRect();
     if (bounds?.width && bounds.height) setExitCenter({
@@ -202,11 +237,12 @@ export function Entry() {
           onOpenSection={openSection} openingId={sectionNavigation?.phase === 'covering' ? sectionNavigation.section?.id : undefined}
           sectionEntering={arrivingRoute === route && route !== 'overview'} returning={arrivingRoute === 'overview'}
           titleInTransit={Boolean(sectionNavigation?.source?.title && sectionNavigation.phase === 'revealing')} />}
-      </> : <Welcome onSignIn={signIn} signedIn={signedIn} arrival={homeArrival} />}
+      </> : <Welcome onSignIn={signIn} signedIn={signedIn} arrival={homeArrival} authOptions={authOptions} />}
       {signedIn && (modelVisited || modelActive) && <div className={'model-session' + (modelActive && arrivingRoute === route ? ' model-session--arriving' : '')} hidden={!modelActive}>
-        <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} /></Suspense>
+        <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} persistent={authOptions?.mode === 'atlas'} /></Suspense>
       </div>}
     </div>
+    {signOutError && <div className="workspace-notice fixed bottom-4 right-4 z-[70] rounded border bg-[var(--bg-panel)] p-3" role="alert">{t('Could not sign out. Please try again.', 'Chưa thể đăng xuất. Hãy thử lại.')}</div>}
     {entrancePhase !== 'idle' && <>
       <WorkspaceEntrance phase={entrancePhase} onComplete={advanceEntrance} direction={entranceDirection}
         center={entranceDirection === 'out' ? exitCenter : undefined} reducedMotion={entranceDirection === 'out' && exitReducedMotion} />

@@ -1,9 +1,12 @@
 import { useAppLanguage } from "./WelcomeLanguage";
 import { useId, useRef, useState } from 'react';
 import { ArrowRight, MoreHorizontal, Search, Upload } from 'lucide-react';
-import type { DatasetSummary } from '../types';
+import type { DatasetRow, DatasetSummary } from '../types';
 import { useDialogFocus } from '../utils/useDialogFocus';
+import { fetchWithTimeout } from '../utils/network';
+import { getErrorMessage, isRecord } from '../utils/typeGuards';
 import { WorkspacePage } from './WorkspacePage';
+import { RawDataModal } from './RawDataModal';
 
 interface Props {
   datasets: DatasetSummary[];
@@ -16,6 +19,7 @@ interface Props {
   activity: string;
   notice: { type: 'success' | 'error' | 'info'; message: string } | null;
   onDismissNotice: () => void;
+  onLoadMore?: () => Promise<void>;
 }
 
 export function DatasetsPage(props: Props) {
@@ -23,12 +27,38 @@ export function DatasetsPage(props: Props) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<DatasetSummary | null>(null);
+  const [preview, setPreview] = useState<{ dataset: DatasetSummary; rows: DatasetRow[] } | null>(null);
+  const [requestError, setRequestError] = useState('');
+  const [requesting, setRequesting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const deleteDialog = useDialogFocus(Boolean(deleting), () => setDeleting(null), '[data-cancel-delete]');
   const rowMenuName = useId();
   const query = search.trim().toLowerCase();
   const displayName = (dataset: DatasetSummary) => dataset.is_preloaded ? tr(dataset.name) : dataset.name;
   const datasets = props.datasets.filter(dataset => [dataset.name, displayName(dataset), dataset.filename].some(value => value.toLowerCase().includes(query)));
+  const requestDataset = async (dataset: DatasetSummary, action: 'preview' | 'download') => {
+    setRequesting(true); setRequestError('');
+    try {
+      const response = await fetchWithTimeout('/api/datasets/' + encodeURIComponent(dataset.id) + '/' + action);
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error?.message ?? 'Could not open the dataset (HTTP ' + response.status + ').');
+      }
+      if (action === 'preview') {
+        const { data } = await response.json();
+        if (!Array.isArray(data?.rows) || !data.rows.every(isRecord)) throw new Error('Invalid dataset preview.');
+        setPreview({ dataset, rows: data.rows });
+      } else {
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = dataset.filename;
+        document.body.append(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+    } catch (error) { setRequestError(getErrorMessage(error)); }
+    finally { setRequesting(false); }
+  };
 
   return <WorkspacePage title={tr("Datasets")} description={tr("Choose a sample dataset or import your own CSV.")}
     actions={<>
@@ -45,6 +75,7 @@ export function DatasetsPage(props: Props) {
     {props.notice && <div className="lab-page-state lab-page-notice" data-type={props.notice.type} role={props.notice.type === 'error' ? 'alert' : 'status'}>
       <span>{props.notice.message}</span><button type="button" onClick={props.onDismissNotice} aria-label={tr("Dismiss notification")}>×</button>
     </div>}
+    {requestError && <p className="lab-page-state" role="alert">{tr(requestError)}</p>}
     <label className="lab-search"><Search size={16} /><input aria-label={tr("Search datasets")} placeholder={tr("Search datasets…")} value={search} onChange={event => setSearch(event.target.value)} /></label>
     {([true, false] as const).map(sample => {
       const rows = datasets.filter(dataset => Boolean(dataset.is_preloaded) === sample);
@@ -73,11 +104,15 @@ export function DatasetsPage(props: Props) {
                 <details className="lab-row-menu" name={rowMenuName}>
                   <summary aria-label={t(`Actions for ${displayName(dataset)}`, `Thao tác với ${displayName(dataset)}`)}><MoreHorizontal size={18} /></summary>
                   <div>
-                    <button type="button" disabled={props.busy} onClick={event => {
+                    {!dataset.is_local && <>
+                      <button type="button" disabled={requesting} onClick={() => void requestDataset(dataset, 'preview')}>{t('Preview first 20 rows', 'Xem trước 20 hàng đầu')}</button>
+                      <button type="button" disabled={requesting} onClick={() => void requestDataset(dataset, 'download')}>{t('Download original CSV', 'Tải CSV gốc')}</button>
+                    </>}
+                    {!sample && <button type="button" disabled={props.busy} onClick={event => {
                       const menu = event.currentTarget.closest('details');
                       if (menu) menu.open = false;
                       setEditing({ id: dataset.id, name: dataset.name });
-                    }}>{tr("Rename")}</button>
+                    }}>{tr("Rename")}</button>}
                     {!sample && <button type="button" disabled={props.busy} onClick={() => setDeleting(dataset)}>{tr("Delete")}</button>}
                   </div>
                 </details>
@@ -86,6 +121,12 @@ export function DatasetsPage(props: Props) {
           })}</ul>}
       </section>;
     })}
+    {props.onLoadMore && <button className="lab-action" disabled={props.busy || requesting} onClick={() => {
+      setRequesting(true); void props.onLoadMore?.().finally(() => setRequesting(false));
+    }}>{t('Load more datasets', 'Tải thêm bộ dữ liệu')}</button>}
+    {preview && <RawDataModal isOpen onClose={() => setPreview(null)} datasetName={displayName(preview.dataset)}
+      headers={Object.keys(preview.rows[0] ?? {})} rawRows={preview.rows} totalRows={preview.dataset.total_rows}
+      labelColumn={preview.dataset.label_column} previewOnly />}
     {deleting && <div ref={deleteDialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="dataset-delete-title" className="lab-modal-backdrop">
       <div className="lab-modal lab-confirm-dialog">
         <header className="lab-modal-header"><h2 id="dataset-delete-title">{tr("Delete dataset?")}</h2></header>

@@ -15,7 +15,8 @@ export async function fetchWithTimeout(url: string, options: RequestInit = {}, t
     const headers = new Headers(options.headers);
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const response = await fetch(url, { ...options, headers, signal: controller.signal });
-    if (response.status === 401 && token && token === getAccessToken() && typeof window !== 'undefined') {
+    if (response.status === 401 && url.startsWith('/api/') && url !== '/api/auth/login'
+      && url !== '/api/auth/logout' && token === getAccessToken() && typeof window !== 'undefined') {
       clearDemoSession();
       window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     }

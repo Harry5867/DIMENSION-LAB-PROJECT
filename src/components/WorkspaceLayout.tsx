@@ -20,9 +20,6 @@ interface WorkspaceLayoutProps {
   pendingChanges: string[];
   previousResult: boolean;
   analyzingConfiguration?: string;
-  datasetName: string;
-  pointCount: number;
-  featureCount: number;
   isComputing: boolean;
   canRun: boolean;
   canExport: boolean;
@@ -41,7 +38,7 @@ interface WorkspaceLayoutProps {
 
 /** Presentation shell; analysis state stays owned by App. Panels remain mounted. */
 export function WorkspaceLayout(props: WorkspaceLayoutProps) {
-  const { language, tr } = useAppLanguage();
+  const { tr } = useAppLanguage();
   const exploring = props.active !== false && props.page === 'explore';
   const pageRef = useRef<HTMLDivElement>(null);
   const previousPage = useRef(props.page);
@@ -118,12 +115,13 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   }, [exploring]);
   const toggleLeft = () => { setLeftOpen(!leftOpen); if (compact) setRightOpen(false); };
   const toggleRight = () => { setRightOpen(!rightOpen); if (compact) setLeftOpen(false); };
+  const selectedRow = props.selectedPoint?.rowIndex ?? props.selectedPoint?.id;
   useEffect(() => {
-    if (!props.selectedPoint && props.focusedCluster == null) return;
+    if (selectedRow == null && props.focusedCluster == null) return;
     setInsightsTab('selection');
     setRightOpen(true);
     if (compact) setLeftOpen(false);
-  }, [props.selectedPoint, props.focusedCluster, compact]);
+  }, [selectedRow, props.focusedCluster, compact]);
 
   const focusPanelsRef = useRef<{ left: boolean; right: boolean } | null>(null);
   useEffect(() => {
@@ -157,7 +155,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         event.preventDefault();
         pageRef.current?.focus();
       }}>{tr("Skip to content")}</a>
-      <header className="workspace-header">
+      {props.page !== 'explore' && <header className="workspace-header">
         <nav aria-label={tr("Main navigation")}>
           {workspacePages.map(page => <a key={page} href={'#/' + page} aria-current={props.page === page ? 'page' : undefined}>{tr(page.toUpperCase())}</a>)}
         </nav>
@@ -165,7 +163,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           <button className="workspace-icon" onClick={props.onHelp} aria-label={tr("Workspace help")}><HelpCircle size={18} /></button>
           <a className="workspace-return" href="#/overview" aria-label={tr("Go back")}><ArrowLeft size={15} /><span>{tr("Go back")}</span></a>
         </div>
-      </header>
+      </header>}
 
       <div id="workspace" ref={pageRef} tabIndex={-1} className="workspace-content">
       <div className="workspace-explore" hidden={!exploring}>
@@ -184,10 +182,6 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 title={leftOpen ? tr("Collapse Setup") : tr("Open Setup")}>
                 <span>{tr("Setup")}</span><PanelLeft size={15} aria-hidden="true" />
               </button>
-              {leftOpen && <div className="explore-context">
-                <h1>{props.datasetName}</h1>
-                <p>{props.pointCount.toLocaleString(language)} {tr("points ·")} {props.featureCount} {tr("features")}</p>
-              </div>}
             </header>
             <div id="workspace-setup" className="workspace-setup-controls" hidden={!leftOpen}>{props.controls}</div>
           </div>
@@ -238,9 +232,16 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         </aside>
       </div>
       <footer className="workspace-footer">
-        <p className="explore-pending" role="status">
-          {props.pendingChanges.length > 0 && <><strong>{tr("Pending ·")} </strong>{props.pendingChanges.map(tr).join(' · ')}</>}
-        </p>
+        <div className="explore-footer-start">
+          <div className="explore-utilities">
+            <a className="workspace-return" href="#/overview" aria-label={tr("Go back")} title={tr("Go back")}><ArrowLeft size={15} aria-hidden="true" /></a>
+            <ThemeToggle />
+            <button type="button" className="workspace-icon" onClick={props.onHelp} aria-label={tr("Workspace help")} title={tr("Workspace help")}><HelpCircle size={18} aria-hidden="true" /></button>
+          </div>
+          <p className="explore-pending" role="status">
+            {props.pendingChanges.length > 0 && <><strong>{tr("Pending ·")} </strong>{props.pendingChanges.map(tr).join(' · ')}</>}
+          </p>
+        </div>
         <div className="workspace-view-tools" ref={setToolbarHost} />
         <div className="workspace-actions">
           <button aria-keyshortcuts="Control+Enter Meta+Enter" title={tr("Run analysis (Ctrl or Command + Enter)")} className="workspace-run" onClick={props.onRun} disabled={!props.canRun || props.isComputing || props.isLiveAnimating}>

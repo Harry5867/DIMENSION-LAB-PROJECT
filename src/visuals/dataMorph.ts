@@ -19,7 +19,7 @@ export const morphSettings = {
   desktopPoints: 4800, mobilePoints: 2400, lowPowerPoints: 1600, fallbackPoints: 1000,
   maxDpr: 1.5, pixelBudget: 1_100_000,
   pointSize: 3.7, breathe: .05, bob: .075,
-  idleYaw: .2, idlePitch: .035, pointerYaw: .12, pointerPitch: .08, pointerFollow: 4.6,
+  idleYaw: .2, idlePitch: .035,
 };
 
 export function morphDisplayColor(hex: string, theme: 'light' | 'dark') {

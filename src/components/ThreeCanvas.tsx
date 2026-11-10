@@ -9,6 +9,7 @@ import { getErrorMessage } from '../utils/typeGuards';
 import { Orbit, ScanEye, Crosshair, CircleDot, Palette, Maximize, Minimize } from 'lucide-react';
 import { createPlotGrid } from './plotGrid';
 import { createPlotCloud, makePlotColors, normalizePlotPoints, type PlotTransition } from './plotCloud';
+import { createPlotViewCamera } from './plotViewCamera';
 
 interface ThreeCanvasProps {
   gmm?: GMMResult;
@@ -71,7 +72,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   activeRef.current = active;
   const [isAutoRotating, setIsAutoRotating] = useState(false);
   const viewMenuName = useId();
-  const [pointScale, setPointScale] = useState(0.48);
+  const [pointScale, setPointScale] = useState(0.4);
   const [centroidsVisible, setCentroidsVisible] = useState(showCentroids);
   const [biplotVisible, setBiplotVisible] = useState(showBiplot);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
@@ -197,8 +198,19 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     controls.minDistance = 15;
     controls.autoRotate = false;
     controls.autoRotateSpeed = 1.2;
-    const beginInteraction = () => { interactingRef.current = true; controls.autoRotate = false; };
-    const endInteraction = () => { interactingRef.current = false; };
+    const view = createPlotViewCamera(camera, controls.target);
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const dom = renderer.domElement;
+    const beginInteraction = () => {
+      interactingRef.current = true;
+      controls.autoRotate = false;
+      view.setPointer(0, 0);
+      dom.style.cursor = 'grabbing';
+    };
+    const endInteraction = () => {
+      interactingRef.current = false;
+      dom.style.cursor = 'grab';
+    };
     controls.addEventListener('start', beginInteraction);
     controls.addEventListener('end', endInteraction);
 
@@ -207,13 +219,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       TWO: THREE.TOUCH.DOLLY_PAN,
     };
     controlsRef.current = controls;
-
-    controls.addEventListener('start', () => {
-      renderer.domElement.style.cursor = 'grabbing';
-    });
-    controls.addEventListener('end', () => {
-      renderer.domElement.style.cursor = 'grab';
-    });
 
     const cloud = createPlotCloud(scene);
     cloudRef.current = cloud;
@@ -236,52 +241,60 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const pointer = new THREE.Vector2();
 
     const updatePointer = (clientX: number, clientY: number) => {
-      const rect = renderer.domElement.getBoundingClientRect();
+      const rect = dom.getBoundingClientRect();
       pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     };
 
-    let pointerDownPos = { x: 0, y: 0 };
+    let press: { id: number; x: number; y: number } | undefined;
     let lastHoverCheck = -Infinity;
     const handlePointerDown = (e: PointerEvent) => {
-      pointerDownPos = { x: e.clientX, y: e.clientY };
+      if (e.isPrimary && e.button === 0) press = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      else press = undefined;
     };
 
     const handlePointerUp = (e: PointerEvent) => {
-      const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
-      if (dist < 5) {
-        updatePointer(e.clientX, e.clientY);
-        const mesh = cloud.mesh;
-        if (!mesh) return;
-
-        raycaster.setFromCamera(pointer, camera);
-        const intersects = raycaster.intersectObject(mesh);
-
-        if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-          const idx = intersects[0].instanceId;
-          const pt = pointsRef.current[idx];
-          if (pt) onSelectPointRef.current?.(pt);
-        }
+      const start = press;
+      press = undefined;
+      if (!start || e.pointerId !== start.id || Math.hypot(e.clientX - start.x, e.clientY - start.y) >= 5) return;
+      const mesh = cloud.pickMesh;
+      if (!mesh) return;
+      updatePointer(e.clientX, e.clientY);
+      raycaster.setFromCamera(pointer, view.camera);
+      const index = raycaster.intersectObject(mesh)[0]?.instanceId;
+      const point = index === undefined ? undefined : pointsRef.current[index];
+      if (point) onSelectPointRef.current?.(point);
+      else if (e.pointerType === 'mouse' && Math.abs(pointer.x) <= 1 && Math.abs(pointer.y) <= 1) {
+        view.setPointer(pointer.x, -pointer.y);
       }
     };
 
     const handlePointerMove = (e: PointerEvent) => {
-      if (interactingRef.current || e.timeStamp - lastHoverCheck < 40) return;
-      lastHoverCheck = e.timeStamp;
+      if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 5) press = undefined;
+      if (e.pointerType !== 'mouse' || interactingRef.current || e.buttons) return;
       updatePointer(e.clientX, e.clientY);
-      const mesh = cloud.mesh;
+      view.setPointer(pointer.x, -pointer.y);
+      if (e.timeStamp - lastHoverCheck < 40) return;
+      lastHoverCheck = e.timeStamp;
+      const mesh = cloud.pickMesh;
       if (!mesh) return;
-
-      raycaster.setFromCamera(pointer, camera);
-      const intersects = raycaster.intersectObject(mesh);
-
-      renderer.domElement.style.cursor = intersects[0]?.instanceId !== undefined ? 'pointer' : 'grab';
+      raycaster.setFromCamera(pointer, view.camera);
+      dom.style.cursor = raycaster.intersectObject(mesh)[0]?.instanceId !== undefined ? 'pointer' : 'grab';
+    };
+    const handlePointerLeave = () => {
+      view.setPointer(0, 0);
+      if (!interactingRef.current) dom.style.cursor = 'grab';
+    };
+    const handlePointerCancel = () => {
+      press = undefined;
+      handlePointerLeave();
     };
 
-    const dom = renderer.domElement;
     dom.addEventListener('pointerdown', handlePointerDown);
     dom.addEventListener('pointerup', handlePointerUp);
     dom.addEventListener('pointermove', handlePointerMove);
+    dom.addEventListener('pointerleave', handlePointerLeave);
+    dom.addEventListener('pointercancel', handlePointerCancel);
 
     // Keyboard Navigation
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -312,18 +325,19 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       controls.autoRotate = autoRotateRef.current && !selectedPointRef.current && !interactingRef.current && !cloud.transitioning;
       controls.update(delta);
       const wasTransitioning = cloud.transitioning;
-      cloud.tick(now);
+      cloud.tick(reducedMotion.matches ? Infinity : now);
       if (wasTransitioning && !cloud.transitioning) return;
+      view.update(delta, reducedMotion.matches, interactingRef.current || cloud.transitioning || Boolean(selectedPointRef.current));
       outlierGroup.visible = !cloud.transitioning && isSpotlightActiveRef.current;
       centroidGroup.visible = biplotGroup.visible = !cloud.transitioning;
       if (gmmGroupRef.current) gmmGroupRef.current.visible = !cloud.transitioning;
       if (outlierGroup.visible) {
-        for (const ring of outlierGroup.children) ring.quaternion.copy(camera.quaternion);
+        for (const ring of outlierGroup.children) ring.quaternion.copy(view.camera.quaternion);
       }
 
-      grid.position.x = camera.position.x;
-      grid.position.z = camera.position.z;
-      renderer.render(scene, camera);
+      grid.position.x = view.camera.position.x;
+      grid.position.z = view.camera.position.z;
+      renderer.render(scene, view.camera);
     };
     animate();
     setSceneReady(true);
@@ -350,6 +364,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       dom.removeEventListener('pointerdown', handlePointerDown);
       dom.removeEventListener('pointerup', handlePointerUp);
       dom.removeEventListener('pointermove', handlePointerMove);
+      dom.removeEventListener('pointerleave', handlePointerLeave);
+      dom.removeEventListener('pointercancel', handlePointerCancel);
       cancelAnimationFrame(animId);
       if (axesGroupRef.current) {
         disposePlotMarkers(axesGroupRef.current);
@@ -409,7 +425,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       const cloud = cloudRef.current;
       if (!cloud) return;
       const targetColors = makePlotColors(points, mode, feature, theme === 'dark');
-      await cloud.stage(normalizePlotPoints(points).points, points.map(targetColors.forPoint), sameDataset, signal, () => selectedPointRef.current);
+      const nextPlot = normalizePlotPoints(points);
+      const grid = gridRef.current, axes = axesGroupRef.current;
+      const startY = grid?.position.y ?? nextPlot.groundY;
+      await cloud.stage(nextPlot.points, points.map(targetColors.forPoint), sameDataset, signal, () => selectedPointRef.current, eased => {
+        const y = THREE.MathUtils.lerp(startY, nextPlot.groundY, eased);
+        if (grid) grid.position.y = y;
+        if (axes) axes.position.y = y;
+      });
     };
     return () => { transitionRef.current = null; };
   }, [sceneReady, theme, transitionRef]);
@@ -629,7 +652,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       <button type="button" title={canShowCentroids ? tr("Show cluster centroids") : tr("Run clustering to show centroids")} aria-label={tr("Show centroids")} disabled={!canShowCentroids} aria-pressed={canShowCentroids && centroidsVisible} onClick={() => setCentroidsVisible(value => !value)}><Crosshair size={17} /><span>{tr("Show centroids")}</span></button>
       <details className="view-point-size" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); event.stopPropagation(); } }}>
         <summary aria-label={tr("Point size")} title={tr("Point size")}><CircleDot size={17} /><span>{tr("Point size")}</span></summary>
-        <div className="view-point-size-panel"><label htmlFor={`${viewMenuName}-size`}>{tr("Point size")} <output>{pointScale.toFixed(1)}×</output></label><input id={`${viewMenuName}-size`} aria-label={tr("Point size scale")} type="range" min="0.3" max="2.9" step="0.2" value={pointScale} onChange={event => setPointScale(Number(event.target.value))} /></div>
+        <div className="view-point-size-panel"><label htmlFor={`${viewMenuName}-size`}>{tr("Point size")} <output>{pointScale.toFixed(1)}×</output></label><input id={`${viewMenuName}-size`} aria-label={tr("Point size scale")} type="range" min="0.3" max="2.9" step="0.1" value={pointScale} onChange={event => setPointScale(Number(event.target.value))} /></div>
       </details>
       {onToggleFullscreen && (
         <button type="button" data-fullscreen-toggle

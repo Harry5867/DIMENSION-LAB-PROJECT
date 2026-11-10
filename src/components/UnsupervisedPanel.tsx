@@ -5,7 +5,8 @@ import { RuleStrengthChart } from './RuleStrengthChart';
 import { AnalysisDashboard } from './AnalysisDashboard';
 import { Activity, GitBranch, ChevronDown, ChevronRight, Play } from 'lucide-react';
 import { RangeNumber } from './RangeNumber';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import type { SetupAccordion } from './ControlSidebar';
 import { DataPoint, NormalizationMethod, ParsedDataset } from '../types';
 import { AnalysisTask, AnalysisTaskResult, parseAnalysisTask } from '../algorithms/analysisTasks';
 import { AssociationRule } from '../algorithms/apriori';
@@ -14,14 +15,15 @@ import './unsupervised.css';
 
 export interface AnalysisOverlay { scores?: number[]; rows: number[]; title: string }
 interface SavedRun { dataset: string; createdAt: string; task: AnalysisTask; result: AnalysisTaskResult }
-interface Props { active?: boolean; projection: string; onRestoreSettings: (features: string[], normalization: NormalizationMethod) => void; dataset: ParsedDataset; features: string[]; normalization: NormalizationMethod; points: DataPoint[]; onSelect: (point: DataPoint) => void; onOverlay: (overlay: AnalysisOverlay | null) => void }
+interface Props { active?: boolean; accordion?: SetupAccordion; projection: string; onRestoreSettings: (features: string[], normalization: NormalizationMethod) => void; dataset: ParsedDataset; features: string[]; normalization: NormalizationMethod; points: DataPoint[]; onSelect: (point: DataPoint) => void; onOverlay: (overlay: AnalysisOverlay | null) => void }
 
 
-export function UnsupervisedPanel({ active = true, dataset, features, normalization, points, onSelect, onOverlay, projection, onRestoreSettings }: Props) {
+export function UnsupervisedPanel({ active = true, accordion, dataset, features, normalization, points, onSelect, onOverlay, projection, onRestoreSettings }: Props) {
   const { language, tr, t } = useAppLanguage();
+  const panelId = useId();
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [kind, setKind] = useState<'anomaly' | 'association'>('anomaly');
+  const [kind, setKind] = useState<'anomaly' | 'association'>(() => accordion?.open === 'association' ? 'association' : 'anomaly');
   const [trees, setTrees] = useState(100), [sampleSize, setSampleSize] = useState(256), [contamination, setContamination] = useState(0.05), [seed, setSeed] = useState(42);
   const [support, setSupport] = useState(0.15), [confidence, setConfidence] = useState(0.7), [lift, setLift] = useState(1), [bins, setBins] = useState(3), [maxSize, setMaxSize] = useState(3);
   const [columns, setColumns] = useState<string[]>(() => dataset.headers.filter(f => f !== dataset.idColumn && f !== dataset.labelColumn).slice(0, 10));
@@ -81,6 +83,7 @@ export function UnsupervisedPanel({ active = true, dataset, features, normalizat
   const restore = (r: SavedRun) => {
     if (JSON.stringify(r.task.rows) !== JSON.stringify(dataset.rawRows)) { setError('Select the original dataset before restoring this run.'); return; }
     setKind(r.task.kind); setExpanded(true); setRun(r); setDashboardOpen(true); setInspectedRow(null); setQuery(''); onOverlay(r.result.kind === 'anomaly' ? { scores: r.result.scores, rows: r.result.anomalies.flatMap((v, i) => v ? [i] : []), title: 'Isolation Forest · anomaly score' } : null); setSelectedRule(null); setError('');
+    accordion?.setOpen(r.task.kind);
     if (r.task.kind === 'anomaly') { onRestoreSettings(r.task.features, r.task.normalization); const o = r.task.options; setTrees(o.trees); setSampleSize(o.sampleSize); setContamination(o.contamination); setSeed(o.seed); }
     else { const o = r.task.options; setColumns(r.task.features); setSupport(o.support); setConfidence(o.confidence); setLift(o.lift); setBins(o.bins); setMaxSize(o.maxSize); }
     setStatus('Restored saved result and its settings.');
@@ -100,10 +103,28 @@ export function UnsupervisedPanel({ active = true, dataset, features, normalizat
   const networkItems = [...new Set(networkRules.flatMap(r => [...r.antecedent, ...r.consequent]))].slice(0, 24);
   const position = (item: string) => { const angle = networkItems.indexOf(item) * Math.PI * 2 / Math.max(1, networkItems.length); return { x: 180 + 115 * Math.cos(angle), y: 140 + 100 * Math.sin(angle) }; };
   const matchRows = result?.kind === 'association' && selectedRule ? ruleRows(result.transactions, selectedRule, memberScope) : [];
+  const advanced = (settings: ReactNode) => accordion
+    ? <details className="setup-detail"><summary>{tr("Advanced settings")}</summary><div className="unsupervised-fields">{settings}</div></details>
+    : settings;
   const body = <div className="unsupervised-body">
-      <div className="grid grid-cols-1 gap-1.5"><button type="button" className="unsupervised-method" aria-pressed="true">{kind === 'anomaly' ? 'Isolation Forest' : 'Apriori'}</button></div>
-      {kind === 'anomaly' ? <><p>{tr("Isolation Forest runs on")} {features.length} {tr("selected numeric features with")} {normalization === 'none' ? tr('No normalization') : normalization} {tr("preprocessing. Higher scores indicate easier isolation. DBSCAN noise is a separate result.")}</p><div className="unsupervised-fields">{number('Trees', trees, setTrees, 1, 500)}{number('Sample size', sampleSize, setSampleSize, 2, 4096)}{number('Expected anomaly fraction', contamination, setContamination, 0.001, 0.5, 0.01)}{number('Random seed', seed, setSeed, 0, 4294967295)}</div></>
-      : <><p>{tr("Apriori uses original rows. Numeric values use equal-width bins; missing values create no item. ID is excluded; the label is opt-in.")}</p><details><summary>{tr("Columns (")}{columns.length})</summary><div className="unsupervised-columns">{dataset.headers.filter(f => f !== dataset.idColumn).map(f => <label key={f}><input type="checkbox" checked={columns.includes(f)} disabled={busy} onChange={() => setColumns(columns.includes(f) ? columns.filter(c => c !== f) : [...columns, f])} />{f}{f === dataset.labelColumn ? tr(" (label)") : ''}</label>)}</div></details><div className="unsupervised-fields">{number('Minimum support (0–1)', support, setSupport, 0.001, 1, 0.05)}{number('Minimum confidence (0–1)', confidence, setConfidence, 0.001, 1, 0.05)}{number('Minimum lift', lift, setLift, 0, 100, 0.1)}{number('Bins', bins, setBins, 2, 10)}{number('Maximum itemset size', maxSize, setMaxSize, 2, 4)}</div></>}
+      {kind === 'anomaly' ? <>
+        {!accordion && <p>{tr("Isolation Forest runs on")} {features.length} {tr("selected numeric features with")} {normalization === 'none' ? tr('No normalization') : normalization} {tr("preprocessing. Higher scores indicate easier isolation. DBSCAN noise is a separate result.")}</p>}
+        <div className="unsupervised-fields">
+          {number('Trees', trees, setTrees, 1, 500)}
+          {number('Sample size', sampleSize, setSampleSize, 2, 4096)}
+          {number('Expected anomaly fraction', contamination, setContamination, 0.001, 0.5, 0.01)}
+          {advanced(number('Random seed', seed, setSeed, 0, 4294967295))}
+        </div>
+      </> : <>
+        {!accordion && <p>{tr("Apriori uses original rows. Numeric values use equal-width bins; missing values create no item. ID is excluded; the label is opt-in.")}</p>}
+        <details><summary>{tr("Columns (")}{columns.length})</summary><div className="unsupervised-columns">{dataset.headers.filter(f => f !== dataset.idColumn).map(f => <label key={f}><input type="checkbox" checked={columns.includes(f)} disabled={busy} onChange={() => setColumns(columns.includes(f) ? columns.filter(c => c !== f) : [...columns, f])} />{f}{f === dataset.labelColumn ? tr(" (label)") : ''}</label>)}</div></details>
+        <div className="unsupervised-fields">
+          {number('Minimum support (0–1)', support, setSupport, 0.001, 1, 0.05)}
+          {number('Minimum confidence (0–1)', confidence, setConfidence, 0.001, 1, 0.05)}
+          {number('Bins', bins, setBins, 2, 10)}
+          {advanced(<>{number('Minimum lift', lift, setLift, 0, 100, 0.1)}{number('Maximum itemset size', maxSize, setMaxSize, 2, 4)}</>)}
+        </div>
+      </>}
       <button className="unsupervised-run" disabled={busy || !(kind === 'anomaly' ? features.length : columns.length)} onClick={execute}><Play size={12} />{busy ? tr("Computing in background…") : `${tr('Run')} ${kind === 'anomaly' ? 'Isolation Forest' : 'Apriori'}`}</button>
       {busy && <button onClick={() => { generation.current++; worker.current?.terminate(); worker.current = null; setBusy(false); setStatus('Cancelled.'); }}>{tr("Cancel")}</button>}
       {error && <p role="alert">{tr(error)}</p>}{status && <p role="status">{tr(status)}</p>}
@@ -160,16 +181,21 @@ export function UnsupervisedPanel({ active = true, dataset, features, normalizat
       {status && <p role="status">{tr(status)}</p>}{error && <p role="alert">{tr(error)}</p>}
     </AnalysisDashboard>;
   return <>{(['anomaly', 'association'] as const).map(taskKind => {
-    const open = expanded && kind === taskKind;
+    const open = accordion ? accordion.open === taskKind : expanded && kind === taskKind;
     const title = taskKind === 'anomaly' ? 'Anomaly Detection' : 'Association Rules';
     const Icon = taskKind === 'anomaly' ? Activity : GitBranch;
     return <div key={taskKind} className="unsupervised-accordion rounded border border-[var(--border-subtle)] bg-[var(--bg-panel)] overflow-hidden">
-      <button type="button" aria-expanded={open} aria-controls={`setup-${taskKind}`} onClick={() => { setKind(taskKind); setStatus(''); setError(''); setExpanded(!open); }}
-        className="w-full flex items-center justify-between px-3 py-2 bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] transition-colors text-left">
+      <button type="button" aria-expanded={open} aria-controls={`${panelId}-${taskKind}`} disabled={busy && kind !== taskKind}
+        onClick={() => {
+          if (kind !== taskKind) { setKind(taskKind); setStatus(''); setError(''); }
+          if (accordion) accordion.setOpen(open ? null : taskKind);
+          else setExpanded(!open);
+        }}
+        className="setup-method-heading w-full flex items-center justify-between px-3 py-2 bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] transition-colors text-left">
         <span className="font-semibold text-[11px] uppercase tracking-wide text-[var(--text-main)] flex items-center gap-1.5"><Icon size={13} className="text-[var(--accent-primary)]" />{tr(title)}</span>
         <div className="flex items-center gap-1.5"><span className="text-[10px] font-mono text-[var(--accent-primary)] font-bold">{taskKind === 'anomaly' ? 'Isolation Forest' : 'Apriori'}</span>{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</div>
       </button>
-      <div id={`setup-${taskKind}`} hidden={!open}>{open && body}</div>
+      <div id={`${panelId}-${taskKind}`} hidden={!open}>{open && body}</div>
     </div>;
   })}{dashboard}</>;
 }

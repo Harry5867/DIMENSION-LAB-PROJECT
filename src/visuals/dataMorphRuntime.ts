@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { particleStyle } from './particleStyle';
 import {
   associationCenters, associationEdges, createMorphDirector, createMorphPlayback, prepareMorphShapes,
   morphBudget, morphScenes, morphSettings, morphDisplayColor, poseWeight,
@@ -43,8 +44,8 @@ function associationOpacity({ from, to, blend }: MorphBlend) {
 export function morphCameraDistance(shapes: MorphShape[], aspect: number) {
   const matrix = new THREE.Matrix4(), point = new THREE.Vector3(), rotation = new THREE.Euler();
   const tan = Math.tan(Math.PI / 10), ratio = Math.max(.1, aspect);
-  const pitch = morphSettings.idlePitch + morphSettings.pointerPitch;
-  const yaw = morphSettings.idleYaw + morphSettings.pointerYaw;
+  const pitch = morphSettings.idlePitch + particleStyle.pointerPitch;
+  const yaw = morphSettings.idleYaw + particleStyle.pointerYaw;
   let distance = 3.8;
   for (const x of [-.1 - pitch, -.1 + pitch]) for (const y of [-yaw, 0, yaw]) for (const z of [-.04, 0, .04]) {
     matrix.makeRotationFromEuler(rotation.set(x, y, z));
@@ -84,8 +85,8 @@ const fragmentShader = `
   void main() {
     float r = length(gl_PointCoord - vec2(.5)) * 2.0;
     if (r > 1.0) discard;
-    float alpha = (1.0 - smoothstep(.66, 1.0, r)) * vAlpha;
-    gl_FragColor = vec4(vColor * (1.0 + (1.0-r) * .12), alpha);
+    float alpha = (1.0 - smoothstep(${particleStyle.edgeStart}, 1.0, r)) * vAlpha;
+    gl_FragColor = vec4(vColor * (1.0 + (1.0-r) * ${particleStyle.coreLift}), alpha);
     #include <colorspace_fragment>
   }
 `;
@@ -168,9 +169,9 @@ function createWebGLSurface(host: HTMLElement): Surface {
     },
     draw(seconds, dt, frame, pointer) {
       bind(frame); if (!count) return;
-      const ease = 1 - Math.exp(-dt * morphSettings.pointerFollow);
-      yaw += (pointer.x * morphSettings.pointerYaw - yaw) * ease;
-      pitch += (pointer.y * morphSettings.pointerPitch - pitch) * ease;
+      const ease = 1 - Math.exp(-dt * particleStyle.pointerFollow);
+      yaw += (pointer.x * particleStyle.pointerYaw - yaw) * ease;
+      pitch += (pointer.y * particleStyle.pointerPitch - pitch) * ease;
       group.rotation.set(-.1 + Math.sin(seconds * .17) * morphSettings.idlePitch + pitch,
         Math.sin(seconds * .14) * morphSettings.idleYaw + yaw, Math.sin(seconds * .1) * .035);
       group.position.y = .1 + Math.sin(seconds * .85) * morphSettings.bob;
@@ -231,9 +232,9 @@ function createCanvasSurface(host: HTMLElement): Surface {
       const source = lookup(frame.from), target = lookup(frame.to), scale = Math.min(width / 4.55, height / 3.7);
       const bob = Math.sin(seconds * .85) * morphSettings.bob;
       const t = frame.blend, breathe = 1 + Math.sin(seconds * 1.06) * morphSettings.breathe;
-      const ease = 1 - Math.exp(-dt * morphSettings.pointerFollow);
-      yaw += (pointer.x * morphSettings.pointerYaw - yaw) * ease;
-      pitch += (pointer.y * morphSettings.pointerPitch - pitch) * ease;
+      const ease = 1 - Math.exp(-dt * particleStyle.pointerFollow);
+      yaw += (pointer.x * particleStyle.pointerYaw - yaw) * ease;
+      pitch += (pointer.y * particleStyle.pointerPitch - pitch) * ease;
       const angle = Math.sin(seconds * .14) * morphSettings.idleYaw + yaw;
       const cos = Math.cos(angle), sin = Math.sin(angle);
       const lineAlpha = associationOpacity(frame) * .3;

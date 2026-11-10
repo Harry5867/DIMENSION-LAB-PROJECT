@@ -70,7 +70,7 @@ Hệ thống được xây dựng theo kiến trúc **Fullstack 100% TypeScript/
 | **Trực quan hóa** | Three.js (WebGL), OrbitControls, Canvas 2D, SVG |
 | **Giao diện** | Tailwind CSS 4, CSS riêng, Lucide React |
 | **Backend** | Node.js, Express 4, REST API, Multer, tsx |
-| **Lưu trữ** | MongoDB. Nếu kết nối thất bại, máy chủ lưu tạm trong RAM và dữ liệu lưu tạm sẽ mất khi khởi động lại. |
+| **Lưu trữ** | Demo dùng RAM. Chế độ Atlas lưu theo tài khoản Google và báo lỗi khi không truy cập được dữ liệu. |
 | **Xử lý dữ liệu** | Papa Parse đọc CSV. Giảm chiều và phân cụm gọi API. Anomaly Detection và Association Rules chạy bằng Web Workers trong trình duyệt. |
 
 ---
@@ -92,7 +92,7 @@ Tạo file `.env` từ file mẫu `.env.example`:
 ```bash
 copy .env.example .env
 ```
-*(Điền chuỗi kết nối MongoDB Atlas của bạn vào biến `MONGODB_URI` trong file `.env`).*
+Mặc định ứng dụng chạy ở chế độ demo. Để bật đăng nhập Google và lưu CSV bền vững, xem [hướng dẫn Google và Atlas](docs/google-atlas.md).
 
 ### 4. Khởi động hệ thống
 Chạy đồng thời cả Backend API và Frontend 3D:

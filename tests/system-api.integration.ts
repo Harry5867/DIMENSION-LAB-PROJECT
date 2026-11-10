@@ -13,7 +13,7 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
   const port = process.env.LAB_TEST_PORT || '5318';
   const api = 'http://127.0.0.1:' + port + '/api';
   const server = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
-    env: { ...process.env, NODE_ENV: 'test', PORT: port, LAB_BIND_HOST: '127.0.0.1',
+    env: { ...process.env, NODE_ENV: 'test', LAB_STORAGE_MODE: 'demo', PORT: port, LAB_BIND_HOST: '127.0.0.1',
       MONGODB_URI: 'mongodb://127.0.0.1:1/dimension_lab_test', LAB_AUTH_EMAIL: DEMO_EMAIL, LAB_AUTH_PASSWORD: DEMO_PASSWORD },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -86,6 +86,17 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
     const upload = await call('/datasets/upload', 'POST', csv(content), researcher);
     assert.equal(upload.status, 201);
     const path = '/datasets/' + upload.data.id;
+    const firstPage = await fetch(api + '/datasets?limit=1', { headers: { Authorization: 'Bearer ' + admin } });
+    assert.equal((await firstPage.json()).data.length, 1);
+    assert.equal(firstPage.headers.get('X-Next-Offset'), '1');
+    assert.equal((await call('/datasets?offset=-1', 'GET', undefined, admin)).status, 400);
+    const preview = await call(path + '/preview', 'GET', undefined, admin);
+    assert.equal(preview.data.rows.length, 3);
+    assert.equal(preview.data.rawRows, undefined);
+    const download = await fetch(api + path + '/download', { headers: { Authorization: 'Bearer ' + admin } });
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get('Content-Disposition')!, /attachment/);
+    assert.equal(await download.text(), content);
     const read = await call(path, 'GET', undefined, admin);
     assert.deepEqual(read.data.rawRows.map((row: { id: string; a: number | null }) => [row.id, row.a]),
       [['001', 0], ['002', null], ['003', 2]]);
@@ -120,6 +131,39 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
     assert.equal((await run()).cache, 'MISS');
     assert.equal((await call('/auth/logout', 'POST', undefined, admin)).status, 200);
     assert.equal((await call('/datasets', 'GET', undefined, admin)).status, 401);
+  } finally {
+    server.kill();
+    await closed;
+  }
+});
+
+test('Atlas startup failure returns 503 and cannot fall back to demo authentication', { timeout: 20_000 }, async () => {
+  const port = Number(process.env.LAB_TEST_PORT || 5318) + 1;
+  const api = 'http://127.0.0.1:' + port + '/api';
+  const server = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
+    env: { ...process.env, NODE_ENV: 'test', LAB_STORAGE_MODE: 'atlas', PORT: String(port),
+      LAB_BIND_HOST: '127.0.0.1', MONGODB_URI: 'mongodb://127.0.0.1:1', MONGODB_DB: 'dimension_lab_test',
+      GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', GOOGLE_REDIRECT_URI: 'http://localhost:3000/api/auth/google/callback' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const closed = once(server, 'close');
+  let ready = false;
+  server.stdout.on('data', chunk => { if (String(chunk).includes('Running on')) ready = true; });
+  try {
+    for (let i = 0; !ready; i++) {
+      assert.ok(i < 120 && server.exitCode === null, 'Atlas-mode server did not start.');
+      await delay(100);
+    }
+    const health = await fetch(api + '/health');
+    assert.equal(health.status, 503);
+    assert.equal((await health.json()).error.code, 'STORAGE_UNAVAILABLE');
+    const options = await fetch(api + '/auth/options');
+    assert.deepEqual((await options.json()).data, { mode: 'atlas', google: false });
+    assert.equal((await fetch(api + '/auth/google')).status, 503);
+    assert.equal((await fetch(api + '/auth/login', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD }) })).status, 401);
+    assert.equal((await fetch(api + '/datasets', { headers: { Cookie: 'lab_session=' + 'a'.repeat(43) } })).status, 503);
+    assert.equal((await fetch(api + '/auth/logout', { method: 'POST', headers: { Origin: 'http://localhost:4000' } })).status, 403);
   } finally {
     server.kill();
     await closed;

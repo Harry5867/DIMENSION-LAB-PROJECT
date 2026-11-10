@@ -19,7 +19,7 @@ import {
 } from './types';
 import { MAX_CSV_BYTES, parseCSVString, extractFeatureMatrix } from './utils/dataParser';
 import { initLiveTSNE, stepLiveTSNE, LiveTSNEState } from './algorithms/liveOptimization';
-import { ControlSidebar } from './components/ControlSidebar';
+import { ControlSidebar, type SetupMethod } from './components/ControlSidebar';
 import { AnalysisSnapshot, reductionKey, describeRun, normalizationLabels, pendingAnalysisChanges, projectionSettingsError, makePoints, focusPoints, evaluatePointSet } from './utils/exploration';
 import { clusterInBrowser, projectInBrowser } from './utils/projectionWorker';
 import type { PlotTransition } from './components/plotCloud';
@@ -78,7 +78,8 @@ function openWorkspacePage(page: WorkspaceRoute) {
   window.location.hash = '/' + page;
 }
 
-export function App({ active = true }: { active?: boolean }) {
+export function App({ active = true, persistent = false }: { active?: boolean; persistent?: boolean }) {
+  const [openSetupMethod, setOpenSetupMethod] = useState<SetupMethod | null>(null);
   const { tr } = useAppLanguage();
   const [page, setPage] = useState(readWorkspacePage);
   const exploring = active && page === 'explore';
@@ -243,23 +244,35 @@ export function App({ active = true }: { active?: boolean }) {
     { id: 'cancer_wdbc', name: 'Wisconsin Breast Cancer', filename: 'data.csv', total_rows: 569, features_count: 30, label_column: 'diagnosis', id_column: 'id', created_at: '2024-01-01', is_preloaded: true },
     { id: 'wholesale_customers', name: 'Wholesale Customers', filename: 'wholesale.csv', total_rows: 440, features_count: 7, label_column: 'Channel', id_column: null, created_at: '2024-01-02', is_preloaded: true },
   ];
-  const fetchDatasetList = useCallback(async () => {
+  const [nextDatasetOffset, setNextDatasetOffset] = useState<number | null>(null);
+  const datasetListRequest = useRef(0);
+  const fetchDatasetList = useCallback(async (offset = 0) => {
+    const request = ++datasetListRequest.current;
     let list: DatasetSummary[] = [];
     try {
-      const res = await fetchWithTimeout('/api/datasets');
+      const res = await fetchWithTimeout('/api/datasets?offset=' + offset);
       if (res.ok) {
         const response: unknown = await res.json();
+        if (request !== datasetListRequest.current) return;
         const body = isRecord(response) && 'data' in response ? response.data : response;
         if (Array.isArray(body)) list = body.filter(isDatasetSummary);
+        const next = res.headers.get('X-Next-Offset');
+        setNextDatasetOffset(next && Number(next) > offset ? Number(next) : null);
+      } else if (persistent) {
+        throw new Error('Could not load the dataset list (HTTP ' + res.status + ').');
       }
-    } catch { /* Use the built-in files and datasets held in this tab. */ }
+    } catch (error) {
+      if (request !== datasetListRequest.current) return;
+      if (persistent) setNotice({ type: 'error', message: getErrorMessage(error) });
+      if (offset > 0) return;
+    }
     const merged = new Map(builtinDatasets.map(item => [item.id, item]));
     list.forEach(item => merged.set(item.id, item));
     localDatasets.current.forEach((item, id) => merged.set(id, { id, name: item.name, filename: item.name,
       total_rows: item.totalRows, features_count: item.featureColumns.length, label_column: item.labelColumn,
       id_column: item.idColumn, created_at: new Date().toISOString(), is_local: true }));
-    setDatasetList([...merged.values()]);
-  }, []);
+    setDatasetList(previous => offset ? [...new Map([...previous, ...merged.values()].map(item => [item.id, item])).values()] : [...merged.values()]);
+  }, [persistent]);
 
   const datasetRequestRef = useRef(0);
   const datasetTransitionRef = useRef<AbortController | null>(null);
@@ -302,8 +315,12 @@ export function App({ active = true }: { active?: boolean }) {
             if (isDatasetDocument(data)) parsed = { id: data.id, name: data.name, totalRows: data.totalRows,
               headers: Object.keys(data.rawRows[0] ?? {}), idColumn: data.idColumn, labelColumn: data.labelColumn,
               featureColumns: data.features, rawRows: data.rawRows };
+          } else if (!['cancer_wdbc', 'wholesale_customers'].includes(id)) {
+            throw new Error('Could not load this dataset (HTTP ' + response.status + ').');
           }
-        } catch { /* Static sample fallback below. */ }
+        } catch (error) {
+          if (!['cancer_wdbc', 'wholesale_customers'].includes(id)) throw error;
+        }
       }
       if (!parsed && (id === 'cancer_wdbc' || id === 'wholesale_customers')) {
         const cancer = id === 'cancer_wdbc';
@@ -403,8 +420,9 @@ export function App({ active = true }: { active?: boolean }) {
       const form = new FormData(); form.append('file', file);
       let response: Response;
       try { response = await fetchWithTimeout('/api/datasets/upload', { method: 'POST', body: form }); }
-      catch { await openLocally(); return; }
-      if ([502, 503, 504].includes(response.status) || (response.status === 500 && !response.headers.get('content-type')?.includes('application/json'))) { await openLocally(); return; }
+      catch (error) { if (persistent) throw error; await openLocally(); return; }
+      if (!persistent && ([502, 503, 504].includes(response.status)
+        || (response.status === 500 && !response.headers.get('content-type')?.includes('application/json')))) { await openLocally(); return; }
       const body: unknown = await response.json();
       if (!response.ok) {
         const error = isRecord(body) ? body.error : undefined;
@@ -745,9 +763,10 @@ export function App({ active = true }: { active?: boolean }) {
       anomalyScore: analysisOverlay.scores?.[p.rowIndex ?? -1], analysisMatch: analysisOverlay.scores ? undefined : rows.has(p.rowIndex ?? -1),
       originalFeatures: { ...p.originalFeatures, __anomaly_score: analysisOverlay.scores?.[p.rowIndex ?? -1] ?? 0, __rule_match: rows.has(p.rowIndex ?? -1) ? 1 : 0 } }));
   }, [analysisOverlay, livePreview, visiblePoints]);
-  const renderSetup = (methodsOnly = false) => (
-      <ControlSidebar embedded methodsOnly={methodsOnly}
-        additionalMethods={dataset && <UnsupervisedPanel active={active} key={activeDatasetId + dataset.name} dataset={dataset} projection={completedRun ? completedRun.reduction.method + ' projection' : rawPreviewPoints.length ? 'Raw first three selected numeric features' : 'Unavailable until at least three numeric features are selected'} onRestoreSettings={(features, normalization) => { setSelectedFeatures(features); setReductionConfig(previous => ({ ...previous, normalization })); }} features={selectedFeatures} normalization={reductionConfig.normalization} points={dataPoints.length ? dataPoints : rawPreviewPoints} onSelect={handleSelectPoint} onOverlay={overlay => { if (overlay) { handleResetLiveAnimation(); setFocusedCluster(null); } setAnalysisOverlay(overlay); }} />}
+  const renderSetup = (methodsOnly = false) => {
+    const accordion = methodsOnly ? undefined : { open: openSetupMethod, setOpen: setOpenSetupMethod };
+    return <ControlSidebar embedded methodsOnly={methodsOnly} accordion={accordion}
+        additionalMethods={dataset && <UnsupervisedPanel active={active} accordion={accordion} key={activeDatasetId + dataset.name} dataset={dataset} projection={completedRun ? completedRun.reduction.method + ' projection' : rawPreviewPoints.length ? 'Raw first three selected numeric features' : 'Unavailable until at least three numeric features are selected'} onRestoreSettings={(features, normalization) => { setSelectedFeatures(features); setReductionConfig(previous => ({ ...previous, normalization })); }} features={selectedFeatures} normalization={reductionConfig.normalization} points={dataPoints.length ? dataPoints : rawPreviewPoints} onSelect={handleSelectPoint} onOverlay={overlay => { if (overlay) { handleResetLiveAnimation(); setFocusedCluster(null); } setAnalysisOverlay(overlay); }} />}
         datasetName={datasetTitle ?? tr('Loading…')}
         totalRows={dataset ? dataset.totalRows : 0}
         featureColumns={dataset ? dataset.featureColumns : []}
@@ -784,12 +803,12 @@ export function App({ active = true }: { active?: boolean }) {
         onSelectDataset={handleSelectDataset}
         onOpenRawDataModal={() => setIsRawDataModalOpen(true)}
         onOpenDatasetManager={() => openWorkspacePage('datasets')}
-      />
-
-  );
+      />;
+  };
 
   const pageContent = page === 'datasets' ? (
     <DatasetsPage datasets={datasetList} activeDatasetId={dataset ? activeDatasetId : ''} busy={isComputing}
+      onLoadMore={nextDatasetOffset === null ? undefined : () => fetchDatasetList(nextDatasetOffset)}
       activity={tr(loadingMessage)} notice={notice && { ...notice, message: tr(notice.message) }} onDismissNotice={() => setNotice(null)} onUpload={handleFileUpload}
       onRename={handleRenameDataset} onDelete={handleDeleteDataset} onSelect={async id => {
         const opened = (dataset && id === activeDatasetId) || await handleSelectDataset(id);
@@ -843,9 +862,6 @@ export function App({ active = true }: { active?: boolean }) {
         analysisError={analysisError}
         onDismissError={() => setAnalysisError(null)}
         onRetry={() => executeAnalysis(clusteringConfig)}
-        datasetName={datasetTitle ?? tr('No dataset selected')}
-        pointCount={dataset?.totalRows ?? 0}
-        featureCount={dataset?.featureColumns.length ?? 0}
         selectedPoint={selectedPoint}
         focusedCluster={focusedCluster}
         resultsDirty={resultsDirty}

@@ -56,5 +56,5 @@ npm run dev:all
 npm run test:api
 ```
 
-API mặc định nghe tại `127.0.0.1:5000`. Vite proxy các request `/api` đến địa chỉ này. Chế độ phát triển dùng tài khoản mẫu với dữ liệu trong RAM. Để dùng MongoDB, cấu hình `MONGODB_URI` và đặt `LAB_AUTH_PASSWORD` riêng, khác mật khẩu demo. `LAB_AUTH_EMAIL` cho phép đổi email đăng nhập. Chế độ lưu trữ được chọn khi khởi động. Nếu MongoDB lỗi lúc khởi động, API báo chế độ RAM cho đến lần khởi động kế tiếp. Lỗi ghi sau khi chọn MongoDB trả lỗi cho client. Với frontend khác origin, khai báo `LAB_ALLOWED_ORIGIN` cụ thể.
+API mặc định nghe tại `127.0.0.1:5000` và Vite proxy các request `/api` đến địa chỉ này. Chọn `LAB_STORAGE_MODE=demo` để dùng tài khoản mẫu với dữ liệu trong RAM, hoặc `LAB_STORAGE_MODE=atlas` để dùng Google và lưu dataset theo chủ sở hữu. Xem [hướng dẫn Google và Atlas](../docs/google-atlas.md) để cấu hình và kiểm tra.
 

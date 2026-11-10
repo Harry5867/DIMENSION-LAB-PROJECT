@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { ColorMode, DataPoint } from '../types';
+import { particleStyle } from '../visuals/particleStyle';
 
 export const clusterColors = ['#547da5', '#b77542', '#bd6269', '#3e8e87', '#598551', '#a48743', '#906e9e', '#ae7188', '#906c59', '#817d80'];
 export const ruleColors = ['#557294', '#b96d43'] as const;
@@ -92,22 +93,34 @@ type Cloud = { mesh: THREE.InstancedMesh<THREE.SphereGeometry, THREE.MeshBasicMa
 
 export function createPlotCloud(scene: THREE.Scene) {
   const geometry = new THREE.SphereGeometry(1, 8, 6);
-  const transform = new THREE.Object3D(), color = new THREE.Color();
+  const matrix = new THREE.Matrix4(), color = new THREE.Color();
   let primary: Cloud | undefined;
+  let pickingCloud: Cloud | undefined;
   let settled: { points: DataPoint[]; colors: Float32Array; scale: number } | undefined;
   let motion: { advance: (time: number) => void; stop: () => void } | undefined;
   const make = (count: number): Cloud => {
     const capacity = 2 ** Math.ceil(Math.log2(Math.max(1, count)));
-    const material = new THREE.MeshBasicMaterial({ toneMapped: false });
+    const material = new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, depthWrite: false });
     material.onBeforeCompile = shader => {
-      shader.vertexShader = 'varying vec3 particleNormal;\n' + shader.vertexShader.replace('#include <begin_vertex>',
-        '#include <begin_vertex>\nparticleNormal = normalize(normalMatrix * normal);');
-      shader.fragmentShader = 'varying vec3 particleNormal;\n' + shader.fragmentShader.replace('#include <opaque_fragment>',
-        'outgoingLight *= 0.87 + 0.13 * max(0.0, normalize(particleNormal).z);\n#include <opaque_fragment>');
+      const varyings = 'varying vec3 particleNormal;\nvarying vec3 particleView;\n';
+      shader.vertexShader = varyings + shader.vertexShader.replace('#include <project_vertex>', `
+        #include <project_vertex>
+        particleNormal = normalMatrix * normal;
+        particleView = -mvPosition.xyz;
+      `);
+      shader.fragmentShader = varyings + shader.fragmentShader.replace('#include <opaque_fragment>', `
+        float facing = clamp(dot(normalize(particleNormal), normalize(particleView)), 0.0, 1.0);
+        float radius = sqrt(1.0 - facing * facing);
+        diffuseColor.a *= 0.92 * (1.0 - smoothstep(${particleStyle.edgeStart}, 1.0, radius));
+        outgoingLight *= 1.0 + (1.0 - radius) * ${particleStyle.coreLift};
+        #include <opaque_fragment>
+      `);
     };
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.frustumCulled = false;
+    // Blend the particle edge over the grid and marker layers.
+    mesh.renderOrder = 1;
     scene.add(mesh);
     return { mesh, capacity };
   };
@@ -129,10 +142,9 @@ export function createPlotCloud(scene: THREE.Scene) {
       const point = points[i], next = destination?.[i] ?? point;
       const isSelected = selected && (selected.rowIndex ?? selected.id) === (point.rowIndex ?? point.id);
       const r = scale * (isSelected ? 1.65 : 1);
-      transform.position.set(THREE.MathUtils.lerp(point.x, next.x, t), THREE.MathUtils.lerp(point.y, next.y, t), THREE.MathUtils.lerp(point.z, next.z, t));
-      transform.scale.setScalar(r);
-      transform.updateMatrix();
-      mesh.setMatrixAt(i, transform.matrix);
+      matrix.makeScale(r, r, r).setPosition(THREE.MathUtils.lerp(point.x, next.x, t),
+        THREE.MathUtils.lerp(point.y, next.y, t), THREE.MathUtils.lerp(point.z, next.z, t));
+      mesh.setMatrixAt(i, matrix);
       const k = i * 3;
       color.setRGB(THREE.MathUtils.lerp(colors[k], destinationColors[k], t),
         THREE.MathUtils.lerp(colors[k + 1], destinationColors[k + 1], t),
@@ -151,19 +163,20 @@ export function createPlotCloud(scene: THREE.Scene) {
       primary = make(points.length);
     }
     write(primary, points, settled.colors, scale, selected);
+    pickingCloud = primary;
   }
   const fade = (cloud: Cloud, opacity: number) => {
-    cloud.mesh.material.transparent = opacity < 1;
-    cloud.mesh.material.depthWrite = opacity === 1;
     cloud.mesh.material.opacity = opacity;
   };
   return {
     sync,
     get mesh() { return primary?.mesh; },
+    get pickMesh() { return pickingCloud && pickingCloud.mesh.material.opacity >= .3 ? pickingCloud.mesh : undefined; },
     get transitioning() { return Boolean(motion); },
     tick(time: number) { motion?.advance(time); },
     cancel() { motion?.stop(); },
-    stage(points: DataPoint[], colors: string[], sameDataset: boolean, signal: AbortSignal, getSelection: () => DataPoint | null) {
+    stage(points: DataPoint[], colors: string[], sameDataset: boolean, signal: AbortSignal,
+      getSelection: () => DataPoint | null, onProgress?: (eased: number) => void) {
       motion?.stop();
       const current = settled, source = primary;
       if (!source || !current?.points.length || signal.aborted) return Promise.resolve();
@@ -186,7 +199,9 @@ export function createPlotCloud(scene: THREE.Scene) {
             if (next) remove(next);
             fade(source!, 1);
             write(source!, current!.points, current!.colors, current!.scale, getSelection());
+            onProgress?.(0);
           } else if (next) {
+            pickingCloud = undefined;
             remove(source!);
             primary = next;
             fade(next, 1);
@@ -199,6 +214,7 @@ export function createPlotCloud(scene: THREE.Scene) {
           advance(time) {
             const progress = THREE.MathUtils.clamp((time - start) / duration, 0, 1);
             const t = progress * progress * (3 - 2 * progress);
+            onProgress?.(t);
             if (next) {
               fade(source, 1 - t);
               fade(next, t);

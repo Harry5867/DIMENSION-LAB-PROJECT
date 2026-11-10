@@ -5,6 +5,12 @@ import cors from 'cors';
 import compression from 'compression';
 import multer from 'multer';
 import crypto from 'crypto';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { MongoError } from 'mongodb';
+import { atlasMode, storageUnavailable } from './atlas';
+import { beginGoogleSignIn, finishGoogleSignIn, googleEnabled, googleSessionUser, protectCookieWrite, revokeGoogleSession } from './googleAuth';
+import { deleteOwnedDataset, listOwnedDatasets, loadOwnedDataset, openOwnedFile, ownsDataset, publishDataset, renameOwnedDataset, summarizeDataset } from './atlasDatasets';
 import { MAX_CSV_BYTES, MAX_CSV_COLUMNS, MAX_CSV_ROWS, parseCSVString } from '../src/utils/dataParser';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '../src/utils/demoSession';
 import {
@@ -15,11 +21,13 @@ import {
 } from '../src/types';
 import {
   initDatabase,
-  getAllDatasets,
-  getDatasetById,
-  saveDataset,
-  updateDataset,
-  deleteDataset,
+  listDemoDatasets,
+  getDemoDataset,
+  getDemoFile,
+  saveDemoDataset,
+  renameDemoDataset,
+  deleteDemoDataset,
+  isSampleDataset,
   getAllExperiments,
   saveExperiment,
   isMongoConnected,
@@ -66,11 +74,21 @@ app.use(cors({
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
-app.use('/api', authenticate, (req, res, next) => {
-  if (req.method === 'GET' && (req.path === '/health' || req.path === '/auth/me')) return next();
-  if (req.method === 'POST' && req.path === '/auth/login') return next();
+app.use('/api', (req: AuthenticatedRequest, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
-  requireAuth(req, res, next);
+  if (req.method === 'GET' && ['/health', '/auth/options', '/auth/google', '/auth/google/callback'].includes(req.path)) return next();
+  if (req.method === 'POST' && req.path === '/auth/login') return next();
+  const authorize = () => {
+    if (req.method === 'GET' && req.path === '/auth/me') return next();
+    requireAuth(req, res, next);
+  };
+  if (!atlasMode) return authenticate(req, res, error => error ? next(error) : authorize());
+  void Promise.resolve().then(async () => {
+    protectCookieWrite(req);
+    req.user = await googleSessionUser(req) ?? undefined;
+    if (req.method === 'POST' && req.path === '/auth/logout') return next();
+    authorize();
+  }).catch(next);
 });
 app.use('/api/auth/login', express.json({ limit: '2kb' }));
 app.use(express.json({ limit: '32mb' }));
@@ -139,6 +157,7 @@ function isJsonValue(value: unknown): value is JsonValue {
 // Đăng nhập giả lập hoặc chuyển đổi vai trò (admin, researcher, viewer)
 app.post('/api/auth/login', (req, res, next) => {
   try {
+    if (atlasMode) throw new UnauthorizedError('Sign in with Google to access persistent storage.');
     const { email, password, role = 'admin' } = isRecord(req.body) ? req.body : {};
     const expectedEmail = process.env.LAB_AUTH_EMAIL || DEMO_EMAIL;
     const expectedPassword = process.env.LAB_AUTH_PASSWORD || (process.env.NODE_ENV === 'production' ? undefined : DEMO_PASSWORD);
@@ -162,6 +181,16 @@ app.post('/api/auth/login', (req, res, next) => {
   }
 });
 
+app.get('/api/auth/options', (_req, res) => sendSuccess(res, { mode: atlasMode ? 'atlas' : 'demo', google: googleEnabled() }));
+app.get('/api/auth/google', (req, res, next) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  void beginGoogleSignIn(req, res).catch(next);
+});
+app.get('/api/auth/google/callback', (req, res, next) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  void finishGoogleSignIn(req, res).catch(next);
+});
+
 // Lấy thông tin phiên đăng nhập hiện tại
 app.get('/api/auth/me', (req: AuthenticatedRequest, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -171,9 +200,12 @@ app.get('/api/auth/me', (req: AuthenticatedRequest, res) => {
   });
 });
 
-app.post('/api/auth/logout', (req, res) => {
-  revokeSession(req);
-  sendSuccess(res, { authenticated: false });
+app.post('/api/auth/logout', async (req, res, next) => {
+  try {
+    if (atlasMode) await revokeGoogleSession(req, res);
+    else revokeSession(req);
+    sendSuccess(res, { authenticated: false });
+  } catch (error) { next(error); }
 });
 
 // -------------------------------------------------------------
@@ -181,7 +213,8 @@ app.post('/api/auth/logout', (req, res) => {
 // -------------------------------------------------------------
 
 // 3. Health check & DB status
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res, next) => {
+  if (atlasMode && !(await testDbConnection()).connected) return next(storageUnavailable());
   sendSuccess(res, {
     status: 'ok',
     database: isMongoConnected ? 'MongoDB Atlas (Cloud)' : 'In-Memory (Ready for MongoDB)',
@@ -222,20 +255,54 @@ app.delete('/api/cache', requireRole(['admin']), async (_req, res, next) => {
 });
 
 // 7. Get list of datasets
-app.get('/api/datasets', async (_req, res, next) => {
+app.get('/api/datasets', async (req: AuthenticatedRequest, res, next) => {
   try {
-    const list = await getAllDatasets();
-    sendSuccess(res, list);
+    const offset = Number(req.query.offset ?? 0), limit = Number(req.query.limit ?? 50);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100_000
+      || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new BadRequestError('Invalid dataset page.');
+    const samples = listDemoDatasets();
+    const items = samples.slice(offset, offset + limit + 1);
+    if (atlasMode && items.length <= limit) {
+      items.push(...await listOwnedDatasets(req.user!.id, Math.max(0, offset - samples.length), limit + 1 - items.length));
+    }
+    if (items.length > limit) res.setHeader('X-Next-Offset', String(offset + limit));
+    sendSuccess(res, items.slice(0, limit));
   } catch (err) {
     next(err);
   }
 });
 
 // 8. Get single dataset detail
-app.get('/api/datasets/:id', async (req, res, next) => {
+const readDataset = (id: string, ownerId: string) => atlasMode && !isSampleDataset(id)
+  ? loadOwnedDataset(id, ownerId) : getDemoDataset(id);
+
+app.get('/api/datasets/:id/preview', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const data = await readDataset(String(req.params.id), req.user!.id);
+    if (!data) throw new NotFoundError('Dataset');
+    const { rawRows, ...metadata } = data;
+    sendSuccess(res, { ...metadata, rows: rawRows.slice(0, 20) });
+  } catch (error) { next(error); }
+});
+
+app.get('/api/datasets/:id/download', async (req: AuthenticatedRequest, res, next) => {
   try {
     const id = String(req.params.id);
-    const data = await getDatasetById(id);
+    const file = atlasMode && !isSampleDataset(id) ? await openOwnedFile(id, req.user!.id) : null;
+    const demo = !atlasMode || isSampleDataset(id) ? getDemoDataset(id) : null;
+    const stream = file?.stream ?? (demo ? getDemoFile(id) : undefined);
+    if (!stream) throw new NotFoundError('Dataset');
+    res.attachment(file?.record.filename ?? demo!.filename);
+    res.type('text/csv; charset=utf-8');
+    await pipeline(Buffer.isBuffer(stream) ? Readable.from([stream]) : stream, res);
+  } catch (error) { if (!res.destroyed) next(error); }
+});
+
+// Explore needs every row for preprocessing and local analysis.
+app.get('/api/datasets/:id', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const data = await readDataset(id, req.user!.id);
     if (!data) {
       throw new NotFoundError(`Dataset [${id}]`);
     }
@@ -250,7 +317,7 @@ app.post(
   '/api/datasets/upload',
   requireRole(['admin', 'researcher']),
   upload.single('file'),
-  async (req, res, next) => {
+  async (req: AuthenticatedRequest, res, next) => {
     try {
       if (!req.file) {
         throw new BadRequestError('Attach a CSV file.');
@@ -269,7 +336,8 @@ app.post(
         createdAt: new Date().toISOString(),
       };
 
-      await saveDataset(newDataset);
+      if (atlasMode) await publishDataset(newDataset, req.file.buffer, req.user!.id, parsed.headers);
+      else saveDemoDataset(newDataset, req.file.buffer);
       sendSuccess(res, newDataset, 201);
     } catch (err) {
       next(err);
@@ -278,15 +346,16 @@ app.post(
 );
 
 // 10. Update dataset name / metadata (Yêu cầu quyền Admin hoặc Researcher)
-app.patch('/api/datasets/:id', requireRole(['admin', 'researcher']), async (req, res, next) => {
+app.patch('/api/datasets/:id', requireRole(['admin', 'researcher']), async (req: AuthenticatedRequest, res, next) => {
   try {
     const id = String(req.params.id);
     const { name } = req.body as { name?: string };
-    if (typeof name !== 'string' || !name.trim()) {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 200) {
       throw new BadRequestError('Invalid dataset name.');
     }
     if (id === 'cancer_wdbc' || id === 'wholesale_customers') throw new ForbiddenError('Sample datasets are read-only.');
-    const updated = await updateDataset(id, name.trim());
+    const demo = atlasMode ? null : renameDemoDataset(id, name.trim());
+    const updated = atlasMode ? await renameOwnedDataset(id, req.user!.id, name.trim()) : demo && summarizeDataset(demo);
     if (!updated) {
       throw new NotFoundError(`Dataset [${id}]`);
     }
@@ -297,11 +366,11 @@ app.patch('/api/datasets/:id', requireRole(['admin', 'researcher']), async (req,
 });
 
 // 11. Delete dataset (Yêu cầu quyền Admin)
-app.delete('/api/datasets/:id', requireRole(['admin']), async (req, res, next) => {
+app.delete('/api/datasets/:id', requireRole(atlasMode ? ['researcher', 'admin'] : ['admin']), async (req: AuthenticatedRequest, res, next) => {
   try {
     const id = String(req.params.id);
     if (id === 'cancer_wdbc' || id === 'wholesale_customers') throw new ForbiddenError('Sample datasets are read-only.');
-    const success = await deleteDataset(id);
+    const success = atlasMode ? await deleteOwnedDataset(id, req.user!.id) : deleteDemoDataset(id);
     if (!success) {
       throw new NotFoundError(`Dataset [${id}]`);
     }
@@ -327,7 +396,7 @@ app.post('/api/unsupervised', (req, res, next) => {
 });
 
 // 12. High-Performance Compute API with SHA-256 Multi-Tier Caching
-app.post('/api/compute', async (req, res, next) => {
+app.post('/api/compute', async (req: AuthenticatedRequest, res, next) => {
   try {
     const body: unknown = req.body;
     if (!isRecord(body)
@@ -370,6 +439,7 @@ app.post('/api/compute', async (req, res, next) => {
       .update(
         JSON.stringify({
           version: 4, // Invalidate results that used nonzero PCA null axes or the old ARI.
+          ...(atlasMode && { ownerId: req.user!.id }),
           matrix,
           groundTruth,
           reduction: reductionConfig,
@@ -427,7 +497,7 @@ app.post('/api/compute', async (req, res, next) => {
     };
 
     // Asynchronously write to Cache
-    saveComputeCache(cacheKey, resultPayload).catch(console.error);
+    saveComputeCache(cacheKey, resultPayload).catch(() => console.warn('Compute cache write failed.'));
 
     res.setHeader('X-Cache', 'MISS');
     res.setHeader('X-Cache-Key', cacheKey);
@@ -442,16 +512,16 @@ app.post('/api/compute', async (req, res, next) => {
 });
 
 // 13. Experiments History in MongoDB
-app.get('/api/experiments', async (_req, res, next) => {
+app.get('/api/experiments', async (req: AuthenticatedRequest, res, next) => {
   try {
-    const list = await getAllExperiments();
+    const list = await getAllExperiments(req.user!.id);
     sendSuccess(res, list);
   } catch (err) {
     next(err);
   }
 });
 
-app.post('/api/experiments', requireRole(['admin', 'researcher']), async (req, res, next) => {
+app.post('/api/experiments', requireRole(['admin', 'researcher']), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body: unknown = req.body;
     if (!isRecord(body)
@@ -466,6 +536,9 @@ app.post('/api/experiments', requireRole(['admin', 'researcher']), async (req, r
       throw new BadRequestError('Invalid experiment data.');
     }
 
+    if (atlasMode && !isSampleDataset(body.datasetId) && !await ownsDataset(body.datasetId, req.user!.id)) {
+      throw new NotFoundError('Dataset');
+    }
     const id = await saveExperiment({
       datasetId: body.datasetId,
       datasetName: body.datasetName,
@@ -475,7 +548,7 @@ app.post('/api/experiments', requireRole(['admin', 'researcher']), async (req, r
       silhouetteScore: body.silhouetteScore,
       ari: body.ari,
       params: isRecord(body.params) && isJsonValue(body.params) ? body.params : {},
-    });
+    }, req.user!.id);
 
     sendSuccess(res, { id, message: 'Experiment saved.' }, 201);
   } catch (err) {
@@ -488,6 +561,7 @@ app.post('/api/experiments', requireRole(['admin', 'researcher']), async (req, r
 // -------------------------------------------------------------
 app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (res.headersSent) return next(err);
+  if (err instanceof MongoError) return sendError(res, 503, 'STORAGE_UNAVAILABLE', storageUnavailable().message);
 
   // Bắt lỗi Custom AppError (400, 401, 403, 404, ...)
   if (err instanceof AppError) {
@@ -503,7 +577,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, next: expre
   }
 
   // Bắt lỗi không xác định (Unhandled 500)
-  console.error('💥 [Server Internal Error]:', err);
+  console.error('Server request failed.');
   sendError(res, 500, 'INTERNAL_SERVER_ERROR', 'Internal server error.');
 });
 

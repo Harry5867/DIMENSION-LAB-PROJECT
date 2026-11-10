@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createMorphDirector, createMorphPlayback, createMorphShapes, prepareMorphShapes, morphBudget, morphFrame, morphScenes, morphSettings, morphDisplayColor, poseWeight, type MorphBlend, type MorphMotion } from '../src/visuals/dataMorph';
 import { morphCameraDistance } from '../src/visuals/dataMorphRuntime';
+import { particleStyle } from '../src/visuals/particleStyle';
 import { Euler, PerspectiveCamera, Vector3 } from 'three';
 
 test('enlarged algorithm scenes stay inside the camera at full pointer tilt and responsive aspect ratios', () => {
   const { shapes } = prepareMorphShapes(morphSettings.desktopPoints);
   const point = new Vector3(), rotation = new Euler();
-  const maxPitch = morphSettings.idlePitch + morphSettings.pointerPitch;
-  const maxYaw = morphSettings.idleYaw + morphSettings.pointerYaw;
+  const maxPitch = morphSettings.idlePitch + particleStyle.pointerPitch;
+  const maxYaw = morphSettings.idleYaw + particleStyle.pointerYaw;
   for (const aspect of [.65, 1.2, 2.2]) {
     const camera = new PerspectiveCamera(36, aspect, .1, 100);
     camera.position.z = morphCameraDistance(shapes, aspect); camera.updateMatrixWorld();

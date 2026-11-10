@@ -13,6 +13,7 @@ interface RawDataModalProps {
   rawRows: DatasetRow[];
   totalRows: number;
   labelColumn?: string | null;
+  previewOnly?: boolean;
 }
 
 export const RawDataModal: React.FC<RawDataModalProps> = ({
@@ -23,8 +24,9 @@ export const RawDataModal: React.FC<RawDataModalProps> = ({
   rawRows,
   totalRows,
   labelColumn,
+  previewOnly = false,
 }) => {
-  const { tr } = useAppLanguage();
+  const { tr, t } = useAppLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -70,7 +72,8 @@ export const RawDataModal: React.FC<RawDataModalProps> = ({
         <header className="lab-modal-header">
           <div>
             <h2 id="raw-data-modal-title">{tr("Raw data ·")} {datasetName}</h2>
-            <p>{totalRows.toLocaleString('en-US')} {tr("rows ·")} {headers.length} {tr('columns')}</p>
+            <p>{previewOnly ? t(`First ${rawRows.length} of ${totalRows} rows`, `${rawRows.length} hàng đầu trong tổng số ${totalRows} hàng`)
+              : <>{totalRows.toLocaleString('en-US')} {tr("rows ·")} {headers.length} {tr('columns')}</>}</p>
           </div>
           <button type="button" className="workspace-icon" onClick={onClose} aria-label={tr("Close raw data")}><X size={18} /></button>
         </header>
@@ -107,7 +110,7 @@ export const RawDataModal: React.FC<RawDataModalProps> = ({
             <button onClick={() => setCurrentPage(validCurrentPage + 1)} disabled={validCurrentPage >= totalPages} aria-label={tr("Next page")}><ChevronRight size={15} /></button>
             <button onClick={() => setCurrentPage(totalPages)} disabled={validCurrentPage >= totalPages} aria-label={tr("Last page")}><ChevronsRight size={15} /></button>
           </div>
-          <button onClick={handleExportCSV} disabled={filteredRows.length === 0} title={tr("Export all filtered rows")}><Download size={14} /> {tr("Export CSV")}</button>
+          {!previewOnly && <button onClick={handleExportCSV} disabled={filteredRows.length === 0} title={tr("Export all filtered rows")}><Download size={14} /> {tr("Export CSV")}</button>}
         </footer>
       </div>
     </div>

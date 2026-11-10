@@ -40,11 +40,13 @@ const vietnameseConcepts = [
   { name: 'Khám phá', text: 'Xoay, xem xét và thử nghiệm. Để sự tò mò dẫn lối cho câu hỏi tiếp theo.' },
 ];
 
-function LoginPanel({ onClose, onSignIn }: { onClose: () => void; onSignIn: (token: string | null) => void }) {
+type AuthOptions = { mode: 'atlas' | 'demo'; google: boolean } | null;
+
+function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { onClose: () => void; onSignIn: (token: string | null) => void; authOptions: AuthOptions; googleError: boolean }) {
   const { t } = useWelcomeLanguage();
   const [closing, setClosing] = useState(false);
   const close = () => { loginRequest.current?.abort(); setClosing(true); };
-  const dialog = useDialogFocus(true, close, 'input[type=email]');
+  const dialog = useDialogFocus(true, close, authOptions?.mode === 'atlas' ? '.login-google' : 'input[type=email]');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
@@ -92,6 +94,11 @@ function LoginPanel({ onClose, onSignIn }: { onClose: () => void; onSignIn: (tok
       <header className="login-step login-step--header"><span>{t('DIMENSION / LAB — ACCESS', 'DIMENSION / LAB — ĐĂNG NHẬP')}</span><button className="login-close" aria-label={t('Close login panel', 'Đóng bảng đăng nhập')} onClick={close}><X size={18} /></button></header>
       <LabMark className="login-logo login-step login-step--logo" />
       <h2 id="login-title" className="login-step login-step--title">{t('Sign in', 'Đăng nhập')}</h2>
+      {authOptions?.mode === 'atlas' ? <>
+        {googleError && <p role="alert" className="login-error">{t('Google sign-in could not be completed. Please try again.', 'Không thể hoàn tất đăng nhập Google. Hãy thử lại.')}</p>}
+        {authOptions.google ? <a className="lab-action login-google" href="/api/auth/google">{t('Sign in with Google', 'Đăng nhập với Google')}</a>
+          : <p role="status">{t('Google sign-in is unavailable. Contact your workspace administrator.', 'Chưa thể đăng nhập bằng Google. Hãy liên hệ quản trị viên.')}</p>}
+      </> : authOptions?.mode === 'demo' ? <>
       <form onSubmit={event => { event.preventDefault(); void signIn(); }}>
         <div className="login-field login-step login-step--email">
         <label htmlFor="login-email">{t('Email address', 'Địa chỉ email')}</label>
@@ -107,17 +114,18 @@ function LoginPanel({ onClose, onSignIn }: { onClose: () => void; onSignIn: (tok
       <div className="login-demo">
         <button type="button" className="lab-action login-demo-action login-step login-step--demo" onClick={() => { setEmail(DEMO_EMAIL); setPassword(DEMO_PASSWORD); setError(false); }}><span>{t('Use demo account', 'Dùng tài khoản mẫu')}</span><ArrowUpRight size={14} aria-hidden="true" /></button>
       </div>
+      </> : <p role="status">{t('Checking sign-in options…', 'Đang kiểm tra phương thức đăng nhập…')}</p>}
     </div>
   </div>;
 }
 
-type WelcomeProps = { onSignIn: (token?: string | null) => void; signedIn?: boolean; arrival?: 'full' | 'gentle' | null };
+type WelcomeProps = { onSignIn: (token?: string | null) => void; signedIn?: boolean; arrival?: 'full' | 'gentle' | null; authOptions?: AuthOptions };
 export function Welcome(props: WelcomeProps) {
   const { theme, setMode } = useAppTheme();
   return <WelcomeScreen {...props} theme={theme} onTheme={setMode} />;
 }
 
-function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme }: WelcomeProps & {
+function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme, authOptions = null }: WelcomeProps & {
   theme: 'light' | 'dark'; onTheme: (theme: WelcomeTheme) => void;
 }) {
   const { language, t } = useWelcomeLanguage();
@@ -131,7 +139,11 @@ function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme }: W
     preference.addEventListener('change', sync);
     return () => preference.removeEventListener('change', sync);
   }, []);
-  const [login, setLogin] = useState(false);
+  const [googleError] = useState(() => new URLSearchParams(window.location.search).get('auth') === 'google-error');
+  const [login, setLogin] = useState(googleError);
+  useEffect(() => {
+    if (googleError) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
+  }, [googleError]);
   const [active, setActive] = useState<number | null>(null);
   const [globeControlsHost, setGlobeControlsHost] = useState<HTMLDivElement | null>(null);
   const [explorationControlsHost, setExplorationControlsHost] = useState<HTMLDivElement | null>(null);
@@ -270,7 +282,7 @@ function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme }: W
     </main>
     <footer className="welcome-footer"><WelcomeSettings theme={theme} onTheme={onTheme} /></footer>
     </div>
-    {login && <LoginPanel onClose={() => setLogin(false)} onSignIn={onSignIn} />}
+    {login && <LoginPanel onClose={() => setLogin(false)} onSignIn={onSignIn} authOptions={authOptions} googleError={googleError} />}
   </div>;
 }
 

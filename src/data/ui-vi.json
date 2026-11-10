@@ -324,6 +324,7 @@
   "Illustrative data transforming between unsupervised learning algorithms": "Minh họa dữ liệu biến đổi giữa các thuật toán học không giám sát",
   "implies": "suy ra",
   "Import CSV": "Nhập CSV",
+  "Change dataset": "Đổi bộ dữ liệu",
   "Import dataset": "Nhập tập dữ liệu",
   "Imported datasets": "Tập dữ liệu đã nhập",
   "In-Memory (Ready for MongoDB)": "Bộ nhớ tạm (chờ MongoDB)",

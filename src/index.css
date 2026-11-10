@@ -290,11 +290,7 @@ kbd { border: 1px solid var(--border-subtle); padding: 2px 4px; border-radius: 3
 .workspace-setup .analysis-sidebar > fieldset > div > button { padding: 13px 0; }
 .workspace-setup .analysis-sidebar > fieldset > div > div { padding-bottom: 12px; }
 .analysis-sidebar select { min-width: 0; }
-.dataset-summary { display: grid; grid-template-columns: 1fr 1fr; padding: 5px 0; }
-.dataset-summary > div { display: grid; gap: 3px; }
-.dataset-summary strong { font-size: 23px; font-weight: 400; letter-spacing: -.045em; line-height: 1; }
-.dataset-summary span, .dataset-filetype, .setup-output { font: 9px var(--font-mono); color: var(--text-muted); }
-.dataset-filetype { margin-left: auto; padding-inline-end: 5px; }
+.setup-output { font: 9px var(--font-mono); color: var(--text-muted); }
 .setup-output { display: flex; justify-content: space-between; gap: 8px; }
 .setup-detail { color: var(--text-muted); font-size: 11px; }
 .setup-detail > summary { cursor: pointer; padding: 5px 0; }
@@ -479,9 +475,21 @@ body:not(.light-theme) .explorer-app {
   #root .workspace-header nav > a::after { --glass-inset-x: 0px; --glass-inset-y: 3px; }
   .lab-config > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
-.explore-context { padding: 0 12px 10px; }
-.explore-context h1 { margin: 0; font-size: 16px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; }
-.explore-context p { margin: 3px 0 0; color: var(--text-muted); font-size: 12px; }
+.setup-dataset { border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px; }
+.setup-dataset-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 4px; list-style: none; cursor: pointer; border-radius: 6px; }
+.setup-dataset-heading::-webkit-details-marker { display: none; }
+.setup-dataset-heading:hover { background: var(--bg-interactive); }
+.setup-dataset-heading > svg { flex: none; color: var(--text-muted); }
+.setup-dataset[open] > .setup-dataset-heading > svg { rotate: 180deg; }
+.setup-dataset-heading strong { display: block; font-size: 16px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.setup-dataset-meta { display: block; margin-top: 3px; color: var(--text-muted); font-size: 12px; }
+.setup-dataset-options { display: grid; gap: 8px; padding-top: 8px; }
+.setup-dataset-select { display: flex; align-items: stretch; gap: 6px; }
+.setup-dataset-select select, .setup-data-action { min-height: 32px; padding: 4px 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-interactive); color: var(--text-main); }
+.setup-dataset-select select { flex: 1; min-width: 0; }
+.setup-data-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.setup-data-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.setup-data-action:hover:enabled { background: var(--bg-hover); }
 .explore-panelbar { display: flex; justify-content: space-between; gap: 8px; padding: 0 var(--explore-space); flex-shrink: 0; }
 .explore-panelbar button { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 8px; border-radius: 4px; color: var(--text-main); font-size: 12px; }
 .explore-panelbar button:hover { background: var(--bg-interactive); }
@@ -529,13 +537,17 @@ body:not(.light-theme) .explorer-app {
 .workspace-setup-controls, .workspace-insights-controls { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .workspace-setup-controls[hidden], .workspace-insights-controls[hidden] { display: none; }
 .workspace-setup-controls > .analysis-sidebar { flex: 1; width: 100%; height: auto; min-height: 0; border-right: 0; }
-.workspace-layout .workspace-setup .analysis-sidebar > div:first-child { padding: 14px 16px 4px; }
-.workspace-layout .workspace-setup .analysis-sidebar > fieldset { padding: 0 16px 16px; }
-.workspace-layout .workspace-setup .analysis-sidebar > fieldset > div + div { margin-top: 8px; }
-.workspace-layout .workspace-setup .analysis-sidebar > fieldset > div > button { padding-block: 10px; gap: 8px; }
-.workspace-layout .workspace-setup .analysis-sidebar > fieldset > div > button > div { min-width: 0; }
-.workspace-layout .workspace-setup .analysis-sidebar > fieldset > div > button > div > svg { flex-shrink: 0; }
-.setup-group-summary { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--text-muted); }
+.workspace-setup-controls .setup-scroll { padding: 8px 12px 12px; }
+.workspace-setup-controls .setup-method-heading { min-height: 40px; gap: 8px; background: var(--bg-panel); }
+.workspace-setup-controls .setup-method-heading:is(:hover, [aria-expanded="true"]) { background: var(--bg-interactive); }
+.workspace-setup-controls .setup-method-heading > div { min-width: 0; }
+.workspace-setup-controls .setup-method-heading svg { flex-shrink: 0; }
+.workspace-setup-controls .unsupervised-body { padding: 10px 12px; border-top: 1px solid var(--border-subtle); }
+.workspace-setup-controls .unsupervised-body summary { padding: 5px 0; }
+@media (pointer: coarse) {
+  .workspace-setup-controls .setup-method-heading,
+  .setup-dataset-select select, .setup-data-action { min-height: 44px; }
+}
 .setup-dbscan { display: grid; gap: 8px; }
 .setup-range-number { display: grid; gap: 4px; }
 .setup-range-number label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; }
@@ -548,8 +560,11 @@ body:not(.light-theme) .explorer-app {
 .explore-insights-content .workspace-inspector { margin: 0; padding: 0; border: 0; }
 .explore-insights-content .cluster-focus { padding: 0 0 16px; margin-bottom: 16px; }
 .workspace-layout .workspace-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr); min-height: 58px; padding: 8px var(--explore-space); gap: 12px; flex-shrink: 0; border-top: 1px solid var(--border-subtle); }
+.explore-footer-start { display: flex; align-items: center; min-width: 0; gap: 10px; }
+.explore-utilities { display: flex; align-items: center; flex: none; gap: 6px; }
+.explore-utilities :is(.workspace-return, .workspace-icon) { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--border-subtle); border-radius: 50%; }
 .workspace-view-tools { grid-column: 2; display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
-.explore-pending { flex: 1 1 auto; min-width: 0; max-height: 4.5em; overflow: auto; margin: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; color: var(--text-muted); }
+.explore-pending { flex: 1 1 auto; min-width: 0; max-height: 3em; overflow: auto; margin: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; color: var(--text-muted); }
 .explore-pending:empty { display: none; }
 .workspace-layout .workspace-actions { grid-column: 3; justify-self: end; margin-left: auto; width: auto; }
 .workspace-layout .workspace-actions button { border-radius: 8px; }
@@ -627,12 +642,24 @@ body:not(.light-theme) .explorer-app {
   .workspace-layout .workspace-insights { inset: 0 0 0 auto; }
 }
 @media (max-width: 760px) {
-  .workspace-layout .workspace-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 12px; }
+  .workspace-layout .workspace-footer { position: relative; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 12px; }
+  .explore-footer-start { margin-inline-end: auto; }
   .workspace-view-tools { margin-right: auto; }
   .workspace-view-tools:empty { display: none; }
-  .explore-pending { flex-basis: 100%; }
+  /* A wrapping status row would resize the 3D viewport when a run completes. */
+  .explore-pending {
+    position: absolute; z-index: 6; inset: auto var(--explore-space) calc(100% + 8px);
+    width: fit-content; max-width: calc(100% - 2 * var(--explore-space)); max-height: 4.5em;
+    margin-inline-start: auto; padding: 4px 8px; border: 1px solid var(--border-subtle);
+    border-radius: 6px; background: var(--bg-panel);
+  }
+  .workspace-explore:has(.workspace-activity) .explore-pending { bottom: calc(100% + 48px); }
 }
 @media (max-width: 599px) {
   .workspace-layout { --explore-space: 8px; }
+  .workspace-layout .workspace-view-tools { order: 0; flex: 0 1 auto; }
+  .workspace-layout .view-toolbar--analysis { width: max-content; gap: 3px; }
+  .workspace-layout .view-toolbar--analysis > button, .workspace-layout .view-toolbar--analysis .view-point-size > summary { width: 36px; min-height: 36px; }
+  .explore-utilities :is(.workspace-return, .workspace-icon) { width: 30px; height: 30px; }
   .workspace-layout .workspace-actions { flex-wrap: wrap; }
 }

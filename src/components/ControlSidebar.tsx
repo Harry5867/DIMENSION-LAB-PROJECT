@@ -14,7 +14,6 @@ import {
 } from '../types';
 import {
   Upload,
-  Database,
   Play,
   RotateCcw,
   Download,
@@ -50,8 +49,16 @@ const clusteringDescriptions: Record<ClusteringMethod, string> = {
   None: 'View the projection without assigning cluster labels.',
 };
 
+export type SetupMethod = 'preprocessing' | 'reduction' | 'clustering' | 'anomaly' | 'association';
+
+export interface SetupAccordion {
+  open: SetupMethod | null;
+  setOpen: (method: SetupMethod | null) => void;
+}
+
 interface ControlSidebarProps {
   additionalMethods?: React.ReactNode;
+  accordion?: SetupAccordion;
   embedded?: boolean;
   methodsOnly?: boolean;
   datasetName: string;
@@ -94,6 +101,7 @@ interface ControlSidebarProps {
 
 export const ControlSidebar: React.FC<ControlSidebarProps> = ({
   additionalMethods,
+  accordion,
   embedded = false,
   methodsOnly = false,
   datasetName,
@@ -133,24 +141,28 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
   onOpenRawDataModal,
   onOpenDatasetManager,
 }) => {
-  const { tr } = useAppLanguage();
+  const { tr, language } = useAppLanguage();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [featureSearch, setFeatureSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 4 Collapsible Accordion Groups
-  const [groupOpen, setGroupOpen] = useState({
-    dataset: !embedded,
+  const [localGroups, setLocalGroups] = useState({
     preprocessing: methodsOnly,
     reduction: true,
     clustering: methodsOnly,
   });
+  const groupOpen = accordion ? {
+    preprocessing: accordion.open === 'preprocessing',
+    reduction: accordion.open === 'reduction',
+    clustering: accordion.open === 'clustering',
+  } : localGroups;
 
   // Advanced parameters toggles
   const [showAdvancedReduction, setShowAdvancedReduction] = useState(false);
 
   const toggleGroup = (key: keyof typeof groupOpen) => {
-    setGroupOpen(previous => ({ ...previous, [key]: !previous[key] }));
+    if (accordion) accordion.setOpen(groupOpen[key] ? null : key);
+    else setLocalGroups(previous => ({ ...previous, [key]: !previous[key] }));
 
   };
 
@@ -160,6 +172,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
 
   const isAtlas = dbStatus.includes('Connected') || dbStatus.includes('Atlas') || dbStatus.includes('Online');
   const canRun = selectedFeatures.length >= MIN_NUMERIC_FEATURES && !isComputing;
+  const otherDatasets = datasetList.filter(item => item.id !== activeDatasetId);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -190,7 +203,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
   return (
     <aside className={`analysis-sidebar flex h-full w-80 shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-main)] select-none text-xs${methodsOnly ? ' methods-controls' : ''}`} aria-label={methodsOnly ? tr("Analysis methods") : undefined}>
       {/* 1. Scientific Header */}
-      {!methodsOnly && <div className="px-3.5 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
+      {!methodsOnly && !embedded && <div className="px-3.5 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="p-1.5 rounded bg-[var(--bg-interactive)] text-[var(--accent-primary)] border border-[var(--border-subtle)]">
             <Sparkles size={15} />
@@ -204,7 +217,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
-          {!embedded && onOpenSecurityModal && (
+          {onOpenSecurityModal && (
             <button
               type="button"
               onClick={onOpenSecurityModal}
@@ -216,7 +229,6 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
           )}
           <button
             type="button"
-            hidden={embedded}
             onClick={() => setIsCollapsed(true)}
             title={tr("Collapse setup")}
             className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-interactive)] transition-colors"
@@ -227,102 +239,39 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
       </div>}
 
       {/* 2. Scrollable Accordion Container */}
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 space-y-2.5">
-        {/* ========================================================================= */}
-        {/* NHÓM 1: DATASET VÀ THÔNG TIN DỮ LIỆU                                     */}
-        {/* ========================================================================= */}
-        {!methodsOnly && <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-panel)] overflow-hidden">
-          <button
-            type="button"
-            aria-expanded={groupOpen.dataset}
-            onClick={() => toggleGroup('dataset')}
-            className="w-full flex items-center justify-between px-3 py-2 bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] transition-colors text-left"
-          >
-            <span className="font-semibold text-[11px] uppercase tracking-wide text-[var(--text-main)] flex items-center gap-1.5">
-              <Database size={13} className="text-[var(--accent-primary)]" />
-              {tr("Dataset")}
+      <div className="setup-scroll flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 space-y-2.5">
+        {!methodsOnly && <details className="setup-dataset">
+          <summary className="setup-dataset-heading">
+            <span>
+              <strong>{datasetName}</strong>
+              <span className="setup-dataset-meta">{totalRows.toLocaleString(language)} {tr("points ·")} {featureColumns.length.toLocaleString(language)} {tr("features")}</span>
             </span>
-            <div className="flex items-center gap-1.5">
-              <span className="setup-group-summary" title={datasetName}>{datasetName}</span>
-              {groupOpen.dataset ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <ChevronDown size={15} aria-hidden="true" />
+          </summary>
+          <div className="setup-dataset-options">
+            <div className="setup-dataset-select">
+              <select aria-label={tr("Change dataset")} value="" disabled={!otherDatasets.length}
+                onChange={event => { if (event.target.value) onSelectDataset?.(event.target.value); }}>
+                <option value="" disabled>{tr("Change dataset")}</option>
+                {otherDatasets.map(item => <option key={item.id} value={item.id}>{item.is_preloaded ? tr(item.name) : item.name}</option>)}
+              </select>
+              {onOpenDatasetManager && <button type="button" className="setup-data-action"
+                onClick={onOpenDatasetManager} aria-label={tr("Manage datasets")} title={tr("Manage datasets")}>
+                <FolderOpen size={14} aria-hidden="true" />
+              </button>}
             </div>
-          </button>
-
-          {groupOpen.dataset && (
-            <div className="p-3 space-y-2.5 border-t border-[var(--border-subtle)]">
-              {/* Dataset Selector */}
-              <div>
-                <label className="text-[10px] uppercase font-semibold text-[var(--text-muted)] block mb-1">
-                  {tr("Active dataset")}
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <select
-                    aria-label={tr("Active dataset")}
-                    value={activeDatasetId}
-                    onChange={(e) => onSelectDataset && onSelectDataset(e.target.value)}
-                    className="flex-1 rounded bg-[var(--bg-interactive)] border border-[var(--border-subtle)] text-[var(--text-main)] px-2 py-1 text-xs outline-none focus:border-[var(--accent-primary)]"
-                  >
-                    {datasetList.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.is_preloaded ? tr(d.name) : d.name} ({d.total_rows} {tr("points)")}
-                      </option>
-                    ))}
-                    {!datasetList.some(item => item.id === activeDatasetId) && activeDatasetId !== '' && <option value={activeDatasetId}>{datasetName}</option>}
-                    {datasetList.length === 0 && activeDatasetId === '' && (
-                      <option value="cancer_wdbc">{tr("Wisconsin Breast Cancer (569 points)")}</option>
-                    )}
-                  </select>
-
-                  {onOpenDatasetManager && (
-                    <button
-                      type="button"
-                      onClick={onOpenDatasetManager}
-                      title={tr("Manage datasets")}
-                      className="p-1.5 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
-                    >
-                      <FolderOpen size={13} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <fieldset disabled={isComputing} className="min-w-0 space-y-2.5">
-              <div className="dataset-summary">
-                <div><strong>{totalRows.toLocaleString('en-US')}</strong><span>{tr("Data points")}</span></div>
-                <div><strong>{selectedFeatures.length.toLocaleString('en-US')}</strong><span>{tr("Features")}</span></div>
-              </div>
-              {/* Import and feature settings */}
-              <div className="flex items-center gap-1.5">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-main)] transition-colors"
-                >
-                  <Upload size={12} className="text-[var(--accent-primary)]" />
-                  <span>{tr("Import dataset")}</span><span className="dataset-filetype">.csv</span>
+            <fieldset disabled={isComputing} className="min-w-0 space-y-2">
+              <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFileChange} hidden />
+              <div className="setup-data-actions">
+                <button type="button" className="setup-data-action" onClick={() => fileInputRef.current?.click()}>
+                  <Upload size={13} aria-hidden="true" /> {tr("Import CSV")}
                 </button>
-
+                {onOpenRawDataModal && <button type="button" className="setup-data-action" onClick={onOpenRawDataModal}>
+                  <FileSpreadsheet size={13} aria-hidden="true" /> {tr("View data")}
+                </button>}
               </div>
               <details className="setup-detail">
-                <summary>{tr("Data options")}</summary>
-                {onOpenRawDataModal && (
-                  <button
-                    type="button"
-                    onClick={onOpenRawDataModal}
-                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-main)] transition-colors"
-                  >
-                    <FileSpreadsheet size={12} className="text-[var(--text-muted)]" />
-                    <span>{tr("View data")}</span>
-                  </button>
-                )}
-
+                <summary>{tr("Features")}{selectedFeatures.length !== featureColumns.length && <span> · {selectedFeatures.length}/{featureColumns.length}</span>}</summary>
               {/* Feature Selection with Quick Actions */}
               <div className="pt-2 border-t border-[var(--border-subtle)]">
                 <div className="flex items-center justify-between mb-1.5">
@@ -354,6 +303,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                     <Search size={11} className="absolute left-2 top-2 text-[var(--text-muted)]" />
                     <input
                       type="text"
+                      aria-label={tr("Search features…")}
                       placeholder={tr("Search features…")}
                       value={featureSearch}
                       onChange={(e) => setFeatureSearch(e.target.value)}
@@ -388,10 +338,9 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                 </div>
               </div>
               </details>
-              </fieldset>
-            </div>
-          )}
-        </div>}
+            </fieldset>
+          </div>
+        </details>}
 
         <fieldset disabled={isComputing} className="min-w-0 space-y-2.5">
         {/* ========================================================================= */}
@@ -402,7 +351,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
             type="button"
             aria-expanded={groupOpen.preprocessing}
             onClick={() => toggleGroup('preprocessing')}
-            className="w-full flex items-center justify-between px-3 py-2 bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] transition-colors text-left"
+            className="setup-method-heading w-full flex items-center justify-between px-3 py-2 bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] transition-colors text-left"
           >
             <span className="font-semibold text-[11px] uppercase tracking-wide text-[var(--text-main)] flex items-center gap-1.5">
               <Sliders size={13} className="text-[var(--accent-primary)]" />
@@ -439,13 +388,6 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
                 ))}
               </div>
               {methodsOnly && <p className="method-description">{tr(normalizationDescriptions[reductionConfig.normalization])}</p>}
-              <p className="text-[10px] text-[var(--text-muted)] leading-relaxed pt-1">
-                {reductionConfig.normalization === 'z-score'
-                  ? tr("Center features and scale to unit variance.")
-                  : reductionConfig.normalization === 'min-max'
-                  ? tr("Scale features to the range 0–1.")
-                  : tr("Keep the original feature scales.")}
-              </p>
             </div>
           )}
         </div>
@@ -458,7 +400,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
             type="button"
             aria-expanded={groupOpen.reduction}
             onClick={() => toggleGroup('reduction')}
-            className="w-full flex items-center justify-between px-3 py-2 bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] transition-colors text-left"
+            className="setup-method-heading w-full flex items-center justify-between px-3 py-2 bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] transition-colors text-left"
           >
             <span className="font-semibold text-[11px] uppercase tracking-wide text-[var(--text-main)] flex items-center gap-1.5">
               <Layers size={13} className="text-[var(--accent-primary)]" />
@@ -690,7 +632,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
             type="button"
             aria-expanded={groupOpen.clustering}
             onClick={() => toggleGroup('clustering')}
-            className="w-full flex items-center justify-between px-3 py-2 bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] transition-colors text-left"
+            className="setup-method-heading w-full flex items-center justify-between px-3 py-2 bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] transition-colors text-left"
           >
             <span className="font-semibold text-[11px] uppercase tracking-wide text-[var(--text-main)] flex items-center gap-1.5">
               <BarChart3 size={13} className="text-[var(--accent-primary)]" />
@@ -698,9 +640,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
             </span>
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-mono text-[var(--accent-primary)] font-bold">
-                {clusteringConfig.method === 'DBSCAN' && !groupOpen.clustering
-                  ? 'DBSCAN · ε ' + clusteringConfig.epsilon + tr(" · Min ") + clusteringConfig.minPts
-                  : clusteringConfig.method}
+                {clusteringConfig.method === 'None' ? tr("No clustering") : clusteringConfig.method}
               </span>
               {groupOpen.clustering ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </div>
@@ -762,7 +702,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
               )}
 
               {clusteringConfig.method === 'GMM' && <div className="space-y-2">
-                <p className="method-description">{tr("Diagonal covariance · fitted on projected 3D coordinates.")}</p>
+                {methodsOnly && <p className="method-description">{tr("Diagonal covariance · fitted on projected 3D coordinates.")}</p>}
                 <RangeNumber label={tr("Components")} value={clusteringConfig.k} min={1} max={10} step={1} onChange={k => onChangeClusteringConfig({ ...clusteringConfig, k })} />
                 <RangeNumber label={tr("EM iterations")} value={clusteringConfig.gmmIterations ?? 100} min={10} max={500} step={10} onChange={gmmIterations => onChangeClusteringConfig({ ...clusteringConfig, gmmIterations })} />
                 <RangeNumber label={tr("Tolerance")} value={clusteringConfig.gmmTolerance ?? 0.00001} min={0.000001} max={0.1} step={0.000001} onChange={gmmTolerance => onChangeClusteringConfig({ ...clusteringConfig, gmmTolerance })} />
