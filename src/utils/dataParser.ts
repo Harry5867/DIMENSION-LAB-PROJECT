@@ -54,6 +54,15 @@ export function parseCSVString(csvContent: string, fileName: string = 'Uploaded 
     throw new Error('The CSV contains duplicate column names. Give each column a unique name.');
   }
 
+  return describeDatasetRows(rawRows, headers, fileName);
+}
+
+export function isDatasetIdColumn(column: string): boolean {
+  const name = column.toLowerCase();
+  return name === 'id' || name.endsWith('_id') || name === 'index';
+}
+
+export function describeDatasetRows(rawRows: DatasetRow[], headers: string[], name: string): ParsedDataset {
   // Heuristic detection for ID, Label, and Numerical Features
   let idColumn: string | null = null;
   let labelColumn: string | null = null;
@@ -63,7 +72,7 @@ export function parseCSVString(csvContent: string, fileName: string = 'Uploaded 
     const lowerCol = col.toLowerCase();
     
     // Check if ID column
-    if (!idColumn && (lowerCol === 'id' || lowerCol.endsWith('_id') || lowerCol === 'index')) {
+    if (!idColumn && isDatasetIdColumn(col)) {
       idColumn = col;
       continue;
     }
@@ -132,7 +141,7 @@ export function parseCSVString(csvContent: string, fileName: string = 'Uploaded 
   }
 
   return {
-    name: fileName,
+    name,
     totalRows: rawRows.length,
     headers,
     idColumn,

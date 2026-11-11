@@ -30,6 +30,7 @@ export interface DatasetSummary {
   created_at: string;
   is_preloaded?: boolean;
   is_local?: boolean;
+  is_workbench?: boolean;
 }
 
 export interface ExperimentRecord {
@@ -43,6 +44,7 @@ export interface ExperimentRecord {
   ari: number | null;
   params: { [key: string]: JsonValue };
   created_at: string;
+  dataset_revision?: number;
 }
 
 export interface ComputeResult {
@@ -105,6 +107,7 @@ export interface ParsedDataset {
   labelColumn: string | null;
   featureColumns: string[];
   rawRows: DatasetRow[];
+  workbench?: { ownerId: string; datasetId: string; revision: number; recordIds: string[] };
 }
 
 export interface ReductionConfig {

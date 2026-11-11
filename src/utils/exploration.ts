@@ -9,6 +9,7 @@ import { computeARI, computeSilhouetteScore, detectKMeansOutliers, detectOutlier
 
 export interface AnalysisSnapshot {
   datasetId: string;
+  datasetRevision?: number;
   features: string[];
   reduction: ReductionConfig;
   clustering: ClusteringConfig;
@@ -80,7 +81,7 @@ export function makePoints(dataset: ParsedDataset, coordinates: [number, number,
     throw new Error('The projection coordinates do not match the source data.');
   }
   return dataset.rawRows.map((row, index) => ({
-    id: row[dataset.idColumn ?? ''] ?? index + 1,
+    id: (dataset.idColumn ? row[dataset.idColumn] : undefined) ?? dataset.workbench?.recordIds[index] ?? index + 1,
     rowIndex: index,
     label: dataset.labelColumn ? row[dataset.labelColumn] : undefined,
     originalFeatures: Object.fromEntries(dataset.featureColumns.map(name => [name, Number(row[name])])),

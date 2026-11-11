@@ -1,5 +1,5 @@
 import { useAppLanguage } from "./WelcomeLanguage";
-import { useId, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import { ArrowRight, MoreHorizontal, Search, Upload } from 'lucide-react';
 import type { DatasetSummary } from '../types';
 import { useDialogFocus } from '../utils/useDialogFocus';
@@ -11,7 +11,7 @@ interface Props {
   onSelect: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
-  onUpload: (file: File) => void;
+  onImportDataset: () => void;
   busy: boolean;
   activity: string;
   notice: { type: 'success' | 'error' | 'info'; message: string } | null;
@@ -23,7 +23,6 @@ export function DatasetsPage(props: Props) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<DatasetSummary | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   const deleteDialog = useDialogFocus(Boolean(deleting), () => setDeleting(null), '[data-cancel-delete]');
   const rowMenuName = useId();
   const query = search.trim().toLowerCase();
@@ -31,16 +30,11 @@ export function DatasetsPage(props: Props) {
   const datasets = props.datasets.filter(dataset => [dataset.name, displayName(dataset), dataset.filename].some(value => value.toLowerCase().includes(query)));
 
   return <WorkspacePage title={tr("Datasets")} description={tr("Choose a sample dataset or import your own CSV.")}
-    actions={<>
-      <button type="button" className="lab-action lab-action-primary" disabled={props.busy} onClick={() => fileInput.current?.click()}>
+    actions={
+      <button type="button" className="lab-action lab-action-primary" disabled={props.busy} onClick={props.onImportDataset}>
         <Upload size={16} /> {tr("Import CSV")}
       </button>
-      <input ref={fileInput} type="file" accept=".csv,text/csv" hidden onChange={event => {
-        const file = event.currentTarget.files?.[0];
-        event.currentTarget.value = '';
-        if (file) props.onUpload(file);
-      }} />
-    </>}>
+    }>
     {props.busy && <div className="lab-page-state" role="status"><progress aria-label={props.activity || tr("Working")} /> {props.activity || tr("Working…")}</div>}
     {props.notice && <div className="lab-page-state lab-page-notice" data-type={props.notice.type} role={props.notice.type === 'error' ? 'alert' : 'status'}>
       <span>{props.notice.message}</span><button type="button" onClick={props.onDismissNotice} aria-label={tr("Dismiss notification")}>×</button>
@@ -64,13 +58,13 @@ export function DatasetsPage(props: Props) {
                     onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setEditing(null); } }} />
                   <button className="lab-action" disabled={props.busy || !editing.name.trim()}>{tr("Save")}</button>
                   <button className="lab-action" type="button" onClick={() => setEditing(null)}>{tr("Cancel")}</button>
-                </form> : <h3>{displayName(dataset)}{active && <span className="lab-tag">{tr("Active")}</span>}{dataset.is_local && <span className="lab-tag">{tr("Session only")}</span>}</h3>}
-                <p>{dataset.total_rows.toLocaleString(language)} {tr("rows ·")} {dataset.features_count ?? '—'} {tr("numeric features")}</p>
+                </form> : <h3>{displayName(dataset)}{active && <span className="lab-tag">{tr("Active")}</span>}{dataset.is_local && <span className="lab-tag">{tr("Session only")}</span>}{dataset.is_workbench && <span className="lab-tag">{t('Private workbench', 'Workbench riêng tư')}</span>}</h3>}
+                <p>{dataset.total_rows.toLocaleString(language)} {dataset.is_workbench ? t('rows', 'dòng') : <>{tr("rows ·")} {dataset.features_count ?? '—'} {tr("numeric features")}</>}</p>
               </div>
               <div className="lab-row-actions">
                 <button type="button" className="lab-action" disabled={props.busy}
                   onClick={() => props.onSelect(dataset.id)}>{active ? tr("Open Explore") : tr("Use dataset")} <ArrowRight size={14} /></button>
-                <details className="lab-row-menu" name={rowMenuName}>
+                {!dataset.is_workbench && <details className="lab-row-menu" name={rowMenuName}>
                   <summary aria-label={t(`Actions for ${displayName(dataset)}`, `Thao tác với ${displayName(dataset)}`)}><MoreHorizontal size={18} /></summary>
                   <div>
                     <button type="button" disabled={props.busy} onClick={event => {
@@ -80,7 +74,7 @@ export function DatasetsPage(props: Props) {
                     }}>{tr("Rename")}</button>
                     {!sample && <button type="button" disabled={props.busy} onClick={() => setDeleting(dataset)}>{tr("Delete")}</button>}
                   </div>
-                </details>
+                </details>}
               </div>
             </li>;
           })}</ul>}

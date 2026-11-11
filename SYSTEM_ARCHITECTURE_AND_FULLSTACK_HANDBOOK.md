@@ -1,3 +1,4 @@
+> **Phạm vi cần đọc trước:** Đây là handbook kiến trúc tổng quát, không phải mô tả implementation hiện tại của Dimension Lab. Các ví dụ PostgreSQL/Redis/Kafka/Python trong tài liệu không khớp với ứng dụng hiện tại và xung đột với project working rules supplied for this task. Đối chiếu [System Flow](docs/SYSTEM_FLOW.md), [API Design](docs/API_DESIGN.md) và [Docker/MongoDB](docs/DOCKER_MONGODB_DATA_FLOW.md) trước khi áp dụng bất kỳ công nghệ nào.
 # CẨM NANG TOÀN DIỆN VỀ KIẾN TRÚC HỆ THỐNG & FULL-STACK
 > **Dành cho Kỹ sư Phần mềm, Technical Architect & AI System Engineer**
 >

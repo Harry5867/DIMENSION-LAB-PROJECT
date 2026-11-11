@@ -14,6 +14,7 @@ interface Props {
   error: string | null;
   storageLabel: string;
   activeDatasetId: string;
+  activeDatasetRevision?: number;
   availableFeatures: readonly string[];
   isBusy: boolean;
   onApply: (record: ExperimentRecord) => void;
@@ -38,6 +39,7 @@ export function ExperimentsPage(props: Props) {
           const configuration = experimentConfiguration(record);
           const restoreReason = !configuration ? 'Saved settings are incomplete.' :
             record.dataset_id !== props.activeDatasetId ? 'Open the original dataset to restore these settings.' :
+            record.dataset_revision !== undefined && record.dataset_revision !== props.activeDatasetRevision ? 'This experiment was saved for a different workbench dataset revision.' :
             configuration.features.some(feature => !props.availableFeatures.includes(feature)) ? 'The dataset is missing features required by this experiment.' :
             props.isBusy ? 'Wait until the current operation finishes.' : null;
           const reduction = configuration?.reduction;

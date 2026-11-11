@@ -6,7 +6,7 @@
 [![Three.js](https://img.shields.io/badge/Three.js-0.169-black.svg)](https://threejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-purple.svg)](https://vitejs.dev/)
 [![Express](https://img.shields.io/badge/Express-4.21-green.svg)](https://expressjs.com/)
-[![MongoDB Atlas](https://img.shields.io/badge/MongoDB-Atlas%20Cloud-forestgreen.svg)](https://www.mongodb.com/atlas)
+[![MongoDB](https://img.shields.io/badge/MongoDB-NoSQL-forestgreen.svg)](https://www.mongodb.com)
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-v4-cyan.svg)](https://tailwindcss.com/)
 
 ---
@@ -15,7 +15,7 @@
 
 **3D Interactive High-Dimensional Data Explorer** là hệ thống phân tích và trực quan hóa dữ liệu y tế đa chiều (dữ liệu chẩn đoán ung thư vú Wisconsin Breast Cancer Diagnostic Dataset - 30 đặc trưng sinh học) trong không gian WebGL 3 chiều thời gian thực.
 
-Hệ thống được xây dựng theo kiến trúc **Fullstack 100% TypeScript/JavaScript**, kết hợp khả năng tính toán thuật toán giảm chiều và phân cụm dữ liệu với giao diện 3D tương tác mượt mà, hỗ trợ bộ nhớ đệm đám mây **MongoDB Atlas Cloud Cache** đạt tốc độ phản hồi 1ms–3ms.
+Source phân tích hiện dùng React/TypeScript, Vite, Express và MongoDB. Dimension Lab dùng một form đăng nhập/đăng ký local ở trang gốc `/`. **Import CSV** trong Datasets hoặc Explore mở cùng kho nhập liệu với **Dữ liệu & MongoDB**. Kho lưu CSV vào IndexedDB rồi đồng bộ theo tài khoản khi phiên được MongoDB xác nhận. Sau khi đồng bộ, mở **Datasets** hoặc **Explore** để phân tích phiên bản đã lưu và lưu experiment riêng. Xem [luồng MongoDB native và offline](docs/MONGODB_NATIVE_DATA_FLOW.md), [System Flow](docs/SYSTEM_FLOW.md) và [API Design](docs/API_DESIGN.md).
 
 ---
 
@@ -48,11 +48,17 @@ Hệ thống được xây dựng theo kiến trúc **Fullstack 100% TypeScript/
 - **Dò tìm K tối ưu (Elbow Method & Silhouette Analysis)**: Tích hợp cửa sổ đồ thị trực quan tự động tính điểm gãy khuỷu tay (Inertia WCSS) và chỉ số Silhouette từ K=2 đến K=10.
 - **DBSCAN (Density-Based Spatial Clustering)**: Tự động phát hiện hình dạng cụm bất kỳ và tách riêng các điểm nhiễu ngoại lai (Noise points).
 
-### 4. ⚡ Kiến Trúc Backend Tối Ưu & MongoDB Atlas Cloud
-- **Multi-Tier SHA-256 Caching**: Băm chữ ký dữ liệu tính toán. Truy vấn lặp lại trả kết quả trong **1ms–3ms**.
-- **Nén Gzip HTTP Compression**: Giảm 70% dung lượng payload truyền tải qua mạng.
+### 4. ⚡ Backend API và MongoDB
+- **SHA-256 compute cache**: cache RAM/MongoDB được triển khai; chưa có benchmark trong repository để công bố độ trễ.
+- **Gzip compression** được bật trên API; chưa có số đo tỷ lệ giảm payload để công bố.
 - **Trung tâm Giám sát Hệ thống**: Theo dõi thời gian thực RAM Usage, Uptime, độ trễ MongoDB, trạng thái kết nối mạng LAN.
 - **Xuất dữ liệu CSV**: Tải về file kết quả gồm tọa độ 3D và nhãn cụm vừa phân tích.
+
+### 5. 🗃️ Local Data Workbench
+- Workbench mở ngay trong Dimension Lab. CSV được ghi vào IndexedDB trước rồi đồng bộ theo batch khi local API/MongoDB hoạt động. Đường dẫn `/database.html` chuyển về Dimension Lab khi ứng dụng truy cập được và phục vụ bản offline nếu máy chủ web đã dừng.
+- Dataset user được tách theo `ownerId`; mỗi bản ghi có `recordId` và `rowIndex` ổn định.
+- Khi bản offline dựa trên revision cũ, API lưu bản server trước khi công bố bản offline. Revision đi trước server trả `409` và bản chờ được giữ trong IndexedDB.
+- Đăng ký tạo tài khoản local ngay sau khi kiểm tra họ tên đầy đủ và mật khẩu mạnh. Email chỉ là tên đăng nhập, chưa được xác minh.
 
 ### 5. 🧭 Trải Nghiệm Sử Dụng & An Toàn Kiểu Dữ Liệu
 - Giao diện dữ liệu hướng dẫn chọn bộ dữ liệu, đặc trưng số và yêu cầu tối thiểu 3 đặc trưng trước khi tính toán 3D.
@@ -84,45 +90,53 @@ Hệ thống được xây dựng theo kiến trúc **Fullstack 100% TypeScript/
 ### 2. Cài đặt các thư viện phụ thuộc
 Mở terminal trong thư mục dự án và chạy:
 ```bash
-npm install
+npm ci
 ```
 
 ### 3. Cấu hình biến môi trường
 Tạo file `.env` từ file mẫu `.env.example`:
 ```bash
-copy .env.example .env
+Copy-Item .env.example .env
 ```
-*(Điền chuỗi kết nối MongoDB Atlas của bạn vào biến `MONGODB_URI` trong file `.env`).*
+Mẫu này kết nối MongoDB Community Server native trên máy tại `127.0.0.1:27017`, database `cancer_explorer`. File `.env` được Git ignore. Đăng ký tài khoản local không cần SMTP hoặc mã email; email chỉ được dùng làm tên đăng nhập và không chứng minh quyền sở hữu hộp thư.
 
-### 4. Khởi động hệ thống
-Chạy đồng thời cả Backend API và Frontend 3D:
-```bash
+### 4. Khởi động MongoDB và ứng dụng
+Cài MongoDB Community Server cho Windows theo [hướng dẫn chính thức](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-windows/), bật tùy chọn chạy dưới dạng Windows Service và chọn kiểu khởi động **Automatic**. Sau đó trong PowerShell tại thư mục dự án:
+```powershell
+Get-Service MongoDB
 npm run dev:all
 ```
+
+`dev:all` khởi động API phân tích cũ, local-data API JavaScript ở `127.0.0.1:5100`, và Vite ở `127.0.0.1:3000`. MongoDB chạy trực tiếp bằng Windows Service, không qua Docker. Nếu service chưa có, lệnh `Get-Service MongoDB` sẽ không tìm thấy; cài server trước khi kỳ vọng lưu bền vào Mongo.
 
 Sau khi terminal thông báo thành công, mở trình duyệt và truy cập:
 👉 **[http://localhost:3000](http://localhost:3000)**
 
+Mở **[http://127.0.0.1:3000/](http://127.0.0.1:3000/)**. Đăng nhập hoặc tạo tài khoản local, rồi chọn **Datasets → Import CSV**. Bạn cũng có thể mở **Dữ liệu & MongoDB** để nhập CSV ngay ở chế độ offline. Chọn **Liên kết tài khoản** để đồng bộ các tệp đã nhập ở chế độ này. Nếu MongoDB/API dừng, CSV tiếp tục được lưu trong IndexedDB và chờ đồng bộ khi dịch vụ sẵn sàng.
+
 ---
 
-## 📱 Chia sẻ trong mạng LAN / Wi-Fi
+## 📱 Phạm vi truy cập local
 
-Để mở và trải nghiệm ứng dụng trên điện thoại, máy tính bảng hoặc máy tính khác trong cùng mạng Wi-Fi:
-```bash
-npm run dev:host
-```
-Terminal sẽ hiển thị địa chỉ IP cục bộ (ví dụ: `http://192.168.1.15:3000`) để các thiết bị khác kết nối trực tiếp.
+Local-data API và MongoDB chỉ bind loopback; không truy cập từ LAN/Internet. Không dùng chế độ host `0.0.0.0` cho tính năng tài khoản/dữ liệu này. Việc dùng nhiều thiết bị cần thiết kế HTTPS/auth/networking riêng trước khi mở cổng.
 
 ---
 
 ## 📂 Cấu Trúc Thư Mục Dự Án
 
 ```
-Cancer.db/
+DIMENSION-LAB-PROJECT/
 ├── public/                 # File dữ liệu tĩnh (data.csv, wholesale.csv)
-├── server/                 # Mã nguồn Backend Express & MongoDB Atlas
-│   ├── db.ts               # Kết nối CSDL Cloud & Bộ nhớ đệm SHA-256
+│   ├── database.html       # Local-first database workbench
+│   ├── database.js         # UI, IndexedDB, CSV streaming và sync queue
+│   ├── database-sw.js      # Cache shell offline; không cache API data
+│   └── csv-parser.js       # Bộ đọc CSV streaming, được test riêng
+├── compose.yaml            # Cấu hình dev Docker cũ; workflow native không dùng
+├── server/                 # Mã nguồn Backend Express & MongoDB
+│   ├── db.ts               # MongoDB, RAM fallback, seed và compute cache
 │   └── index.ts            # API Server, Gzip Compression, Endpoint tính toán
+│   ├── local-data-server.js # API user/dataset native Mongo, chỉ bind loopback
+│   └── auth-policy.js      # Quy tắc họ tên và mật khẩu mạnh
 ├── src/                    # Mã nguồn Frontend React & Three.js
 │   ├── algorithms/         # Thuật toán PCA, t-SNE, UMAP, K-Means, DBSCAN
 │   ├── components/         # Giao diện, khung 3D và hộp thoại
@@ -140,5 +154,5 @@ Cancer.db/
 
 ## 👨‍💻 Tác giả
 - **Người phát triển**: Harry5867 / Anh Khoa
-- **Nhánh phát triển**: `cancer/db/khoa`
+- **Nhánh upstream**: `main`
 - **Kho lưu trữ (Repository)**: [Interactive-High-Dimensional-Data-Explorer](https://github.com/Harry5867/Interactive-High-Dimensional-Data-Explorer)

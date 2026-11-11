@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0A0A0A">
+  <meta name="description" content="Dimension Lab local-first dataset workspace">
+  <title>Dimension Lab — Local Data</title>
+  <link rel="manifest" href="/database.webmanifest">
+  <link rel="stylesheet" href="/database.css">
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Dimension Lab">
+      <span class="brand-mark">D</span>
+      <span>DIMENSION<span class="slash">/</span>LAB</span>
+      <span class="brand-sub">LOCAL DATA</span>
+    </a>
+    <div class="topbar-actions">
+      <span id="connection-pill" class="connection-pill is-checking"><span class="status-dot"></span><span id="connection-text">Kiểm tra kết nối</span></span>
+      <button id="theme-toggle" class="icon-button" type="button" aria-label="Đổi giao diện" title="Đổi giao diện">◐</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section id="auth-screen" class="auth-layout" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="eyebrow-line"></span> OFFLINE-FIRST DATA WORKSPACE</p>
+        <h1 id="hero-title">Dữ liệu của bạn.<br><span>Luôn trong tầm tay.</span></h1>
+        <p class="hero-text">Lưu bản làm việc ngay trên thiết bị. Khi MongoDB local kết nối lại, Dimension Lab đồng bộ dữ liệu và giữ bản server cũ trong nhật ký nếu có xung đột.</p>
+        <div class="principles">
+          <div><span class="principle-icon">01</span><div><strong>Local trước</strong><small>CSV được đọc theo luồng và lưu vào IndexedDB.</small></div></div>
+          <div><span class="principle-icon">02</span><div><strong>Đồng bộ có kiểm chứng</strong><small>Đếm từng dòng đã đọc, đã lưu, đang chờ và đã đẩy.</small></div></div>
+          <div><span class="principle-icon">03</span><div><strong>Bản offline được ưu tiên</strong><small>Phiên bản server xung đột được lưu trước khi thay thế.</small></div></div>
+        </div>
+      </div>
+      <div class="auth-card">
+        <div class="auth-heading">
+          <h2 id="auth-title">Bắt đầu làm việc</h2>
+          <p>Đăng nhập Dimension Lab để đồng bộ dataset vào tài khoản của bạn.</p>
+        </div>
+        <div class="workbench-account-actions">
+          <button id="workbench-sign-in" class="primary-button" type="button">Đăng nhập</button>
+          <button id="workbench-register" class="secondary-button" type="button">Tạo tài khoản</button>
+        </div>
+        <p id="auth-error" class="inline-message error-message" role="alert" hidden></p>
+        <div class="auth-divider"><span>hoặc</span></div>
+        <button id="offline-start" class="secondary-button" type="button">Mở workspace offline</button>
+        <p class="auth-footnote">Workspace offline lưu CSV trên thiết bị. Bạn có thể liên kết với tài khoản Dimension Lab khi kết nối lại.</p>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace hidden" aria-labelledby="workspace-title">
+      <div class="workspace-header">
+        <div>
+          <p class="eyebrow"><span class="eyebrow-line"></span> DATA WORKSPACE</p>
+          <h1 id="workspace-title">Kho dữ liệu <span class="heading-accent">của bạn</span></h1>
+          <p id="profile-line" class="subheading"></p>
+        </div>
+        <div class="workspace-actions">
+          <button id="sync-now" class="secondary-button compact" type="button"><span aria-hidden="true">↻</span> Đồng bộ ngay</button>
+          <button id="link-account" class="text-button hidden" type="button">Liên kết tài khoản</button>
+          <button id="sign-out" class="text-button" type="button">Đăng xuất</button>
+        </div>
+      </div>
+
+      <div class="metric-grid" aria-label="Trạng thái hệ thống">
+        <article class="metric-card">
+          <div class="metric-icon blue">◉</div>
+          <div><span class="metric-label">MONGODB LOCAL</span><strong id="mongo-metric">Đang kiểm tra</strong><small id="mongo-detail">127.0.0.1 · 27017</small></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-icon pink">▤</div>
+          <div><span class="metric-label">TRÊN THIẾT BỊ</span><strong id="local-count">0 dataset</strong><small>IndexedDB của trình duyệt này</small></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-icon amber">⇧</div>
+          <div><span class="metric-label">ĐANG CHỜ ĐỒNG BỘ</span><strong id="pending-count">0 dòng</strong><small id="pending-detail">Đang kiểm tra hàng đợi</small></div>
+        </article>
+      </div>
+
+      <div id="global-notice" class="global-notice" role="status" aria-live="polite" hidden></div>
+
+      <div class="workspace-grid">
+        <aside class="library-panel panel">
+          <div class="panel-heading">
+            <div><span class="section-label">YOUR LIBRARY</span><h2>Dataset</h2></div>
+            <span id="dataset-total" class="count-badge">0</span>
+          </div>
+          <label id="drop-zone" class="drop-zone" for="csv-input">
+            <input id="csv-input" type="file" accept=".csv,text/csv">
+            <span class="upload-icon">↑</span>
+            <strong>Thêm CSV vào workspace</strong>
+            <small>Chọn tệp · đọc theo luồng · lưu local trước</small>
+            <span class="drop-browse">Duyệt tệp CSV</span>
+          </label>
+          <div class="library-toolbar">
+            <span class="section-label">DATASETS TRÊN THIẾT BỊ</span>
+            <button id="refresh-list" class="subtle-button" type="button" title="Tải lại danh sách">↻</button>
+          </div>
+          <div id="dataset-list" class="dataset-list"></div>
+          <div id="empty-library" class="empty-state">
+            <span class="empty-symbol">∅</span>
+            <strong>Chưa có dataset</strong>
+            <span>Thêm CSV để bắt đầu lưu và đồng bộ.</span>
+          </div>
+        </aside>
+
+        <section class="detail-panel panel">
+          <div class="panel-heading detail-heading">
+            <div><span class="section-label">RECORD INSPECTOR</span><h2 id="active-dataset-title">Chọn một dataset</h2><p id="active-dataset-meta" class="detail-meta">Bản xem trước được đọc từ IndexedDB hoặc MongoDB.</p></div>
+            <div id="dataset-actions" class="dataset-actions hidden">
+              <button id="replace-dataset" class="subtle-button" type="button">Thay dữ liệu</button>
+              <button id="rename-dataset" class="subtle-button" type="button">Đổi tên</button>
+              <button id="delete-dataset" class="danger-button" type="button">Xóa</button>
+            </div>
+          </div>
+
+          <div id="pipeline-card" class="pipeline-card hidden" aria-live="polite">
+            <div class="pipeline-top"><div><span class="section-label">IMPORT / SYNC TRACE</span><strong id="pipeline-stage">Sẵn sàng</strong></div><span id="pipeline-state" class="state-chip">LOCAL</span></div>
+            <div class="pipeline-track" aria-hidden="true"><span id="pipeline-bar"></span></div>
+            <div class="pipeline-stats">
+              <div><small>Đã đọc</small><strong id="rows-read">0</strong></div>
+              <div><small>Đã lưu local</small><strong id="rows-local">0</strong></div>
+              <div><small>Đã gửi server</small><strong id="rows-sent">0</strong></div>
+              <div><small>Cảnh báo</small><strong id="warning-count">0</strong></div>
+            </div>
+            <p id="pipeline-note" class="pipeline-note">Số liệu cập nhật từ thao tác thực tế; không giả lập tiến độ.</p>
+          </div>
+
+          <div id="conflict-card" class="conflict-card hidden">
+            <div class="conflict-mark">!</div>
+            <div><strong>Đã phát hiện phiên bản server khác</strong><p id="conflict-text">Bản offline được áp dụng theo chính sách ưu tiên offline; bản server cũ được lưu trong nhật ký để tra cứu.</p></div>
+          </div>
+
+          <div class="table-toolbar">
+            <div class="table-title"><span class="section-label">SOURCE RECORDS</span><span id="table-range" class="table-range">0 dòng</span></div>
+            <label class="search-box"><span aria-hidden="true">⌕</span><input id="table-search" type="search" placeholder="Tìm trong 100 dòng xem trước" aria-label="Tìm dòng dữ liệu"></label>
+          </div>
+          <div id="table-wrap" class="table-wrap">
+            <div class="table-empty">Tải CSV hoặc chọn dataset để xem bản ghi nguồn.</div>
+          </div>
+          <div class="table-footer"><span id="table-caption">Mỗi record giữ recordId và rowIndex để truy ngược nguồn.</span><button id="load-more" class="text-button hidden" type="button">Nạp thêm 100 dòng</button></div>
+        </section>
+      </div>
+      <footer class="workspace-footer">
+        <span><i class="footer-dot"></i> Dữ liệu riêng theo userId trên MongoDB local</span>
+        <span>Browser local store: IndexedDB · Sync API: localhost:5100</span>
+      </footer>
+    </section>
+  </main>
+
+  <script type="module" src="/database.js"></script>
+</body>
+</html>

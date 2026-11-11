@@ -1,0 +1,9 @@
+{
+  "name": "Dimension Lab Local Data",
+  "short_name": "Dimension Lab",
+  "start_url": "/database.html",
+  "display": "standalone",
+  "background_color": "#0A0A0A",
+  "theme_color": "#0A0A0A",
+  "description": "Offline-first local dataset workspace"
+}

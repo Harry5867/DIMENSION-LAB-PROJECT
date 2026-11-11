@@ -6,11 +6,14 @@
   "scripts": {
     "dev": "vite",
     "server": "tsx watch server/index.ts",
-    "dev:all": "concurrently -k -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"tsx watch server/index.ts\" \"vite\"",
+    "local:data": "node server/local-data-server.js",
+    "dev:all": "concurrently -k -n \"SERVER,LOCALDB,CLIENT\" -c \"cyan,yellow,magenta\" \"tsx watch server/index.ts\" \"node server/local-data-server.js\" \"vite\"",
     "dev:host": "concurrently -k -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"tsx server/index.ts\" \"vite --host 0.0.0.0 --port 3000\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --import tsx --test tests/exploration.test.ts tests/ux.test.ts tests/terrain.test.ts tests/stories.test.ts tests/unsupervised.test.ts tests/portal.test.ts tests/dataMorph.test.ts"
+    "test": "node --import tsx --test tests/exploration.test.ts tests/ux.test.ts tests/terrain.test.ts tests/stories.test.ts tests/unsupervised.test.ts tests/portal.test.ts tests/dataMorph.test.ts tests/workbench-model.test.ts",
+    "test:local-db": "node --test tests/local-db-parser.test.js tests/local-auth-policy.test.js tests/local-account.test.js tests/local-auth-api.test.js tests/local-dataset-sync.test.js",
+    "inventory:local-db": "node scripts/inventory-local-mongo.mjs"
   },
   "dependencies": {
     "compression": "^1.8.2",
@@ -20,6 +23,7 @@
     "lucide-react": "^1.16.0",
     "mongodb": "^7.7.0",
     "multer": "^1.4.5-lts.1",
+    "nodemailer": "^10.4.0",
     "papaparse": "^5.4.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

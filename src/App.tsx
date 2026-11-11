@@ -5,6 +5,10 @@ import { useAppTheme } from './components/ThemeProvider';
 import { analysisReport, csvText, downloadText, resultRows, safeFilename } from './utils/exportData';
 import { experimentConfiguration } from './utils/history';
 import { fetchWithTimeout } from './utils/network';
+import {
+  getWorkbenchOwner, listWorkbenchDatasets, listWorkbenchExperiments, loadWorkbenchDataset,
+  saveWorkbenchExperiment, workbenchSummary, WORKBENCH_DATASETS_CHANGED, WORKBENCH_SESSION_ENDED, type WorkbenchDataset,
+} from './utils/workbench';
 import { ExportModal } from './components/ExportModal';
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
@@ -108,7 +112,7 @@ export function App({ active = true }: { active?: boolean }) {
       }
 
       return {
-        id: (dataset.idColumn ? row[dataset.idColumn] : null) ?? index + 1,
+        id: (dataset.idColumn ? row[dataset.idColumn] : null) ?? dataset.workbench?.recordIds[index] ?? index + 1,
         label: dataset.labelColumn ? row[dataset.labelColumn] : undefined,
         originalFeatures,
         x: getAxisValue(row, axes[0]),
@@ -126,7 +130,6 @@ export function App({ active = true }: { active?: boolean }) {
   const operationRef = useRef(0);
   const computingRef = useRef(false);
   const computeAbortRef = useRef<AbortController | null>(null);
-  const localDatasets = useRef(new Map<string, ParsedDataset>());
   const [selectedPoint, setSelectedPoint] = useState<DataPoint | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -140,6 +143,12 @@ export function App({ active = true }: { active?: boolean }) {
 
   // Dataset Management & Theme State
   const [datasetList, setDatasetList] = useState<DatasetSummary[]>([]);
+  const [workbenchOwner, setWorkbenchOwner] = useState<string | null>(null);
+  const [workbenchDatasets, setWorkbenchDatasets] = useState<WorkbenchDataset[]>([]);
+  const workbenchCatalogRef = useRef(new Map<string, WorkbenchDataset>());
+  const workbenchRequestRef = useRef(0);
+  const datasetsForModel = useMemo(() => [...datasetList, ...workbenchDatasets
+    .filter(item => item.ownerId === workbenchOwner).map(workbenchSummary)], [datasetList, workbenchDatasets, workbenchOwner]);
   const [activeDatasetId, setActiveDatasetId] = useState<string>('cancer_wdbc');
   const [isRawDataModalOpen, setIsRawDataModalOpen] = useState<boolean>(false);
 
@@ -169,6 +178,7 @@ export function App({ active = true }: { active?: boolean }) {
 
   // Experiments & MongoDB Database state
   const [experiments, setExperiments] = useState<ExperimentRecord[]>([]);
+  const [workbenchHistory, setWorkbenchHistory] = useState<{ ownerId: string; records: ExperimentRecord[] } | null>(null);
   const [isSavingExperiment, setIsSavingExperiment] = useState(false);
 
   const [reductionConfig, setReductionConfig] = useState<ReductionConfig>({
@@ -254,7 +264,7 @@ export function App({ active = true }: { active?: boolean }) {
     liveStateRef.current = null;
   }, []);
 
-  // Datasets kept in this tab remain selectable even when the server is unavailable.
+  // The bundled samples remain available when the analytics API is unavailable.
   const builtinDatasets: DatasetSummary[] = [
     { id: 'cancer_wdbc', name: 'Wisconsin Breast Cancer', filename: 'data.csv', total_rows: 569, features_count: 30, label_column: 'diagnosis', id_column: 'id', created_at: '2024-01-01', is_preloaded: true },
     { id: 'wholesale_customers', name: 'Wholesale Customers', filename: 'wholesale.csv', total_rows: 440, features_count: 7, label_column: 'Channel', id_column: null, created_at: '2024-01-02', is_preloaded: true },
@@ -268,14 +278,51 @@ export function App({ active = true }: { active?: boolean }) {
         const body = isRecord(response) && 'data' in response ? response.data : response;
         if (Array.isArray(body)) list = body.filter(isDatasetSummary);
       }
-    } catch { /* Use the built-in files and datasets held in this tab. */ }
+    } catch { /* Use the built-in datasets. */ }
     const merged = new Map(builtinDatasets.map(item => [item.id, item]));
     list.forEach(item => merged.set(item.id, item));
-    localDatasets.current.forEach((item, id) => merged.set(id, { id, name: item.name, filename: item.name,
-      total_rows: item.totalRows, features_count: item.featureColumns.length, label_column: item.labelColumn,
-      id_column: item.idColumn, created_at: new Date().toISOString(), is_local: true }));
     setDatasetList([...merged.values()]);
   }, []);
+
+  const refreshWorkbenchDatasets = useCallback(async () => {
+    const request = ++workbenchRequestRef.current;
+    try {
+      const ownerId = await getWorkbenchOwner();
+      if (request !== workbenchRequestRef.current) return;
+      setWorkbenchOwner(ownerId);
+      const datasets = ownerId ? await listWorkbenchDatasets(ownerId) : [];
+      if (request !== workbenchRequestRef.current) return;
+      workbenchCatalogRef.current = new Map(datasets.map(item => [workbenchSummary(item).id, item]));
+      setWorkbenchDatasets(datasets);
+    } catch { /* The public Model and previously loaded data stay available during a local API outage. */ }
+  }, []);
+
+  useEffect(() => {
+    const clearPrivateSession = () => {
+      workbenchRequestRef.current++;
+      workbenchCatalogRef.current.clear();
+      setWorkbenchOwner(null);
+      setWorkbenchDatasets([]);
+      setWorkbenchHistory(null);
+    };
+    window.addEventListener(WORKBENCH_SESSION_ENDED, clearPrivateSession);
+    return () => window.removeEventListener(WORKBENCH_SESSION_ENDED, clearPrivateSession);
+  }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    const refresh = () => { void refreshWorkbenchDatasets(); };
+    refresh();
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    window.addEventListener(WORKBENCH_DATASETS_CHANGED, refresh);
+    return () => {
+      workbenchRequestRef.current++;
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      window.removeEventListener(WORKBENCH_DATASETS_CHANGED, refresh);
+    };
+  }, [active, page, refreshWorkbenchDatasets]);
 
   const datasetRequestRef = useRef(0);
   const activateDataset = (parsed: ParsedDataset, id: string) => {
@@ -292,19 +339,25 @@ export function App({ active = true }: { active?: boolean }) {
     setIsExportModalOpen(false);
     setIsComputing(true); setLoadingMessage('Loading dataset…');
     try {
-      let parsed = localDatasets.current.get(id);
-      if (!parsed) {
-        try {
-          const response = await fetchWithTimeout('/api/datasets/' + encodeURIComponent(id));
-          if (response.ok) {
-            const body: unknown = await response.json();
-            const data = isRecord(body) && 'data' in body ? body.data : body;
-            if (isDatasetDocument(data)) parsed = { id: data.id, name: data.name, totalRows: data.totalRows,
-              headers: Object.keys(data.rawRows[0] ?? {}), idColumn: data.idColumn, labelColumn: data.labelColumn,
-              featureColumns: data.features, rawRows: data.rawRows };
-          }
-        } catch { /* Static sample fallback below. */ }
+      if (id.startsWith('workbench:')) {
+        const workbenchDataset = workbenchCatalogRef.current.get(id);
+        if (!workbenchDataset) throw new Error('Refresh the dataset list and sign in to the local account that owns this dataset.');
+        const parsed = await loadWorkbenchDataset(workbenchDataset);
+        if (request !== datasetRequestRef.current) return;
+        activateDataset(parsed, id);
+        return true;
       }
+      let parsed: ParsedDataset | undefined;
+      try {
+        const response = await fetchWithTimeout('/api/datasets/' + encodeURIComponent(id));
+        if (response.ok) {
+          const body: unknown = await response.json();
+          const data = isRecord(body) && 'data' in body ? body.data : body;
+          if (isDatasetDocument(data)) parsed = { id: data.id, name: data.name, totalRows: data.totalRows,
+            headers: Object.keys(data.rawRows[0] ?? {}), idColumn: data.idColumn, labelColumn: data.labelColumn,
+            featureColumns: data.features, rawRows: data.rawRows };
+        }
+      } catch { /* Static sample fallback below. */ }
       if (!parsed && (id === 'cancer_wdbc' || id === 'wholesale_customers')) {
         const cancer = id === 'cancer_wdbc';
         const response = await fetchWithTimeout(cancer ? '/data.csv' : '/wholesale.csv');
@@ -318,20 +371,24 @@ export function App({ active = true }: { active?: boolean }) {
 
     } catch (error) {
       if (request === datasetRequestRef.current) setNotice({ type: 'error', message: getErrorMessage(error) });
+      if (id.startsWith('workbench:')) void refreshWorkbenchDatasets();
     } finally {
       if (request === datasetRequestRef.current) { setIsComputing(false); setLoadingMessage(''); }
     }
-  }, [resetComputationState]);
+  }, [refreshWorkbenchDatasets, resetComputationState]);
+
+  useEffect(() => {
+    if (dataset?.workbench && dataset.workbench.ownerId !== workbenchOwner) {
+      resetComputationState();
+      setDataset(null);
+      void handleSelectDataset('cancer_wdbc');
+    }
+  }, [dataset, handleSelectDataset, resetComputationState, workbenchOwner]);
 
   // Rename a dataset
   const handleRenameDataset = async (id: string, newName: string) => {
+    if (id.startsWith('workbench:')) return;
     try {
-      const local = localDatasets.current.get(id);
-      if (local) {
-        localDatasets.current.set(id, { ...local, name: newName });
-        if (activeDatasetId === id) setDataset({ ...local, name: newName });
-        await fetchDatasetList(); return;
-      }
       const res = await fetchWithTimeout(`/api/datasets/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -350,12 +407,8 @@ export function App({ active = true }: { active?: boolean }) {
 
   // Delete an uploaded dataset
   const handleDeleteDataset = async (id: string) => {
+    if (id.startsWith('workbench:')) return;
     try {
-      if (localDatasets.current.delete(id)) {
-        await fetchDatasetList();
-        if (activeDatasetId === id) await handleSelectDataset('cancer_wdbc');
-        return;
-      }
       const res = await fetchWithTimeout(`/api/datasets/${id}`, {
         method: 'DELETE',
       });
@@ -386,44 +439,8 @@ export function App({ active = true }: { active?: boolean }) {
     loadInitialDataset();
   }, [loadInitialDataset]);
 
-  const handleFileUpload = async (file: File) => {
-    if (isComputing) return;
-    const request = ++datasetRequestRef.current;
-    setNotice(null);
-    setIsComputing(true); setLoadingMessage('Checking CSV…');
-    try {
-      const parsed = parseCSVString(await file.text(), file.name);
-      if (request !== datasetRequestRef.current) return;
-      const openLocally = async () => {
-        if (request !== datasetRequestRef.current) return;
-        const id = 'local_' + crypto.randomUUID();
-        localDatasets.current.set(id, { ...parsed, id });
-        activateDataset(parsed, id);
-        await fetchDatasetList();
-        setNotice({ type: 'info', message: 'CSV opened for this session. The server is unavailable.' });
-      };
-      const form = new FormData(); form.append('file', file);
-      let response: Response;
-      try { response = await fetchWithTimeout('/api/datasets/upload', { method: 'POST', body: form }); }
-      catch { await openLocally(); return; }
-      if ([502, 503, 504].includes(response.status) || (response.status === 500 && !response.headers.get('content-type')?.includes('application/json'))) { await openLocally(); return; }
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        const error = isRecord(body) ? body.error : undefined;
-        throw new Error(isRecord(error) && typeof error.message === 'string' ? error.message : 'The server rejected the CSV (HTTP ' + response.status + ').');
-      }
-      const data = isRecord(body) && 'data' in body ? body.data : body;
-      if (!isDatasetDocument(data)) throw new Error('The server returned an invalid dataset.');
-      if (request !== datasetRequestRef.current) return;
-      activateDataset({ ...parsed, name: data.name, rawRows: data.rawRows, featureColumns: data.features,
-        idColumn: data.idColumn, labelColumn: data.labelColumn }, data.id);
-      await fetchDatasetList();
-      setNotice({ type: 'success', message: 'Imported ' + data.name + ' (' + data.totalRows + ' rows).' });
-    } catch (error) {
-      if (request === datasetRequestRef.current) setNotice({ type: 'error', message: 'Could not open CSV: ' + getErrorMessage(error) });
-    } finally {
-      if (request === datasetRequestRef.current) { setIsComputing(false); setLoadingMessage(''); }
-    }
+  const handleImportDataset = () => {
+    window.dispatchEvent(new CustomEvent('dimension-lab:open-workbench', { detail: { importCsv: true } }));
   };
 
   const handleToggleFeature = (col: string) => {
@@ -444,6 +461,7 @@ export function App({ active = true }: { active?: boolean }) {
   const executeAnalysis = async (clusterConfig: ClusteringConfig, reuseEmbedding = false) => {
     if (!dataset || selectedFeatures.length < MIN_NUMERIC_FEATURES || isComputing || computingRef.current) return;
     const run: AnalysisSnapshot = { datasetId: activeDatasetId, features: [...selectedFeatures],
+      ...(dataset.workbench && { datasetRevision: dataset.workbench.revision }),
       reduction: { ...reductionConfig }, clustering: { ...clusterConfig } };
     const token = ++operationRef.current;
     const controller = new AbortController();
@@ -471,17 +489,19 @@ export function App({ active = true }: { active?: boolean }) {
         setLoadingMessage('Running ' + run.reduction.method + '…');
         matrix = extractFeatureMatrix(dataset.rawRows, run.features, run.reduction.normalization);
         let output: ReductionOutput | undefined;
-        try {
-          const response = await fetchWithTimeout('/api/compute', { method: 'POST', signal: controller.signal,
-            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matrix,
-              groundTruth: dataset.labelColumn ? dataset.rawRows.map(row => row[dataset.labelColumn!] ?? null) : [],
-              reductionConfig: run.reduction, clusteringConfig: { ...run.clustering, method: 'None' } }) });
-          if (response.ok) {
-            const body: unknown = await response.json();
-            const payload = isRecord(body) && 'data' in body ? body.data : body;
-            if (isComputeResult(payload)) output = payload;
-          }
-        } catch (error) { if (controller.signal.aborted) throw error; }
+        if (!dataset.workbench) {
+          try {
+            const response = await fetchWithTimeout('/api/compute', { method: 'POST', signal: controller.signal,
+              headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matrix,
+                groundTruth: dataset.labelColumn ? dataset.rawRows.map(row => row[dataset.labelColumn!] ?? null) : [],
+                reductionConfig: run.reduction, clusteringConfig: { ...run.clustering, method: 'None' } }) });
+            if (response.ok) {
+              const body: unknown = await response.json();
+              const payload = isRecord(body) && 'data' in body ? body.data : body;
+              if (isComputeResult(payload)) output = payload;
+            }
+          } catch (error) { if (controller.signal.aborted) throw error; }
+        }
         if (token !== operationRef.current) return;
         if (!output) {
           setLoadingMessage('Running ' + run.reduction.method + ' in your browser…');
@@ -646,26 +666,29 @@ export function App({ active = true }: { active?: boolean }) {
     if (!dataset || !completedRun || resultsDirty || isComputing) return;
     try {
       setIsSavingExperiment(true);
-      const res = await fetchWithTimeout('/api/experiments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          datasetId: completedRun.datasetId,
-          datasetName: dataset.name,
-          reductionMethod: completedRun.reduction.method,
-          clusteringMethod: completedRun.clustering.method,
-          k: completedRun.clustering.k,
-          silhouetteScore: metrics.silhouetteScore,
-          ari: metrics.adjustedRandIndex,
-          params: {
-            reduction: completedRun.reduction,
-            clustering: completedRun.clustering,
-            features: completedRun.features,
-          },
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`The server could not save the experiment (HTTP ${res.status}).`);
+      const body = {
+        datasetId: completedRun.datasetId,
+        datasetName: dataset.name,
+        reductionMethod: completedRun.reduction.method,
+        clusteringMethod: completedRun.clustering.method,
+        k: completedRun.clustering.k,
+        silhouetteScore: metrics.silhouetteScore,
+        ari: metrics.adjustedRandIndex,
+        params: {
+          reduction: completedRun.reduction,
+          clustering: completedRun.clustering,
+          features: completedRun.features,
+        },
+      };
+      if (dataset.workbench) {
+        await saveWorkbenchExperiment(dataset.workbench.ownerId, {
+          ...body, datasetId: dataset.workbench.datasetId, revision: completedRun.datasetRevision,
+        });
+      } else {
+        const res = await fetchWithTimeout('/api/experiments', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`The server could not save the experiment (HTTP ${res.status}).`);
       }
       setNotice({ type: 'success', message: 'Experiment saved.' });
       await fetchExperiments();
@@ -679,17 +702,32 @@ export function App({ active = true }: { active?: boolean }) {
   const fetchExperiments = useCallback(async () => {
     const request = ++historyRequestRef.current;
     setHistoryLoading(true); setHistoryError(null);
-    try {
+    const loadLegacy = async () => {
       const res = await fetchWithTimeout('/api/experiments');
       if (!res.ok) throw new Error('Could not load experiment history (HTTP ' + res.status + ').');
       const response: unknown = await res.json();
       const data = isRecord(response) && 'data' in response ? response.data : response;
       if (!Array.isArray(data) || !data.every(isExperimentRecord)) throw new Error('The server returned invalid experiment history.');
-      if (request === historyRequestRef.current) setExperiments(data);
-    } catch (error) {
-      if (request === historyRequestRef.current) setHistoryError(getErrorMessage(error));
-    } finally { if (request === historyRequestRef.current) setHistoryLoading(false); }
-  }, []);
+      return data;
+    };
+    const [legacy, privateResult] = await Promise.allSettled([
+      loadLegacy(), workbenchOwner ? listWorkbenchExperiments(workbenchOwner) : Promise.resolve([]),
+    ]);
+    if (request !== historyRequestRef.current) return;
+    if (legacy.status === 'fulfilled') setExperiments(legacy.value);
+    if (privateResult.status === 'fulfilled' && workbenchOwner) {
+      setWorkbenchHistory({ ownerId: workbenchOwner, records: privateResult.value });
+    }
+    if (legacy.status === 'rejected' || privateResult.status === 'rejected') {
+      const errors = [legacy, privateResult].flatMap(result => result.status === 'rejected' ? [getErrorMessage(result.reason)] : []);
+      setHistoryError(errors.join(' '));
+    }
+    setHistoryLoading(false);
+  }, [workbenchOwner]);
+
+  useEffect(() => {
+    setWorkbenchHistory(previous => previous?.ownerId === workbenchOwner ? previous : null);
+  }, [workbenchOwner]);
 
   useEffect(() => {
     if (page === 'experiments') void fetchExperiments();
@@ -698,6 +736,9 @@ export function App({ active = true }: { active?: boolean }) {
   const handleApplyExperiment = (record: ExperimentRecord) => {
     const config = experimentConfiguration(record);
     if (!dataset || !config || config.datasetId !== activeDatasetId || isComputing || isLiveAnimating) return;
+    if (record.dataset_revision !== undefined && dataset.workbench?.revision !== record.dataset_revision) {
+      setHistoryError('This experiment was saved for a different workbench dataset revision.'); return;
+    }
     if (config.features.some(feature => !dataset.featureColumns.includes(feature))) {
       setHistoryError('This dataset is missing features required by the experiment.'); return;
     }
@@ -744,7 +785,7 @@ export function App({ active = true }: { active?: boolean }) {
         onChangeColorMode={setColorMode}
         selectedColorFeature={selectedColorFeature}
         onChangeSelectedColorFeature={setSelectedColorFeature}
-        onFileUpload={handleFileUpload}
+        onImportDataset={handleImportDataset}
         isComputing={isComputing}
         hasResults={dataPoints.length > 0}
         onRunComputation={runPipeline}
@@ -760,7 +801,7 @@ export function App({ active = true }: { active?: boolean }) {
         onToggleBiplot={() => setBiplotVisible(!biplotVisible)}
         biplotTopK={biplotTopK}
         onChangeBiplotTopK={setBiplotTopK}
-        datasetList={datasetList}
+        datasetList={datasetsForModel}
         activeDatasetId={activeDatasetId}
         onSelectDataset={handleSelectDataset}
         onOpenRawDataModal={() => setIsRawDataModalOpen(true)}
@@ -770,10 +811,10 @@ export function App({ active = true }: { active?: boolean }) {
   );
 
   const pageContent = page === 'datasets' ? (
-    <DatasetsPage datasets={datasetList} activeDatasetId={dataset ? activeDatasetId : ''} busy={isComputing}
-      activity={tr(loadingMessage)} notice={notice && { ...notice, message: tr(notice.message) }} onDismissNotice={() => setNotice(null)} onUpload={handleFileUpload}
+    <DatasetsPage datasets={datasetsForModel} activeDatasetId={dataset ? activeDatasetId : ''} busy={isComputing}
+      activity={tr(loadingMessage)} notice={notice && { ...notice, message: tr(notice.message) }} onDismissNotice={() => setNotice(null)} onImportDataset={handleImportDataset}
       onRename={handleRenameDataset} onDelete={handleDeleteDataset} onSelect={async id => {
-        const opened = (dataset && id === activeDatasetId) || await handleSelectDataset(id);
+        const opened = (dataset && !dataset.workbench && id === activeDatasetId) || await handleSelectDataset(id);
         if (opened && readWorkspacePage() === 'datasets') openWorkspacePage('explore');
       }} />
   ) : page === 'methods' ? (
@@ -784,8 +825,10 @@ export function App({ active = true }: { active?: boolean }) {
     </WorkspacePage>
   ) : page === 'experiments' ? (
     <Suspense fallback={<WorkspacePage title={tr("Experiments")} description={tr("Find saved runs and reuse their settings.")}><p className="lab-page-state" role="status">{tr("Loading experiments…")}</p></WorkspacePage>}>
-      <ExperimentsPage experiments={experiments} onRefresh={fetchExperiments} isLoading={historyLoading} error={historyError && tr(historyError)}
+      <ExperimentsPage experiments={[...experiments, ...(workbenchHistory && workbenchHistory.ownerId === workbenchOwner ? workbenchHistory.records : [])]}
+        onRefresh={fetchExperiments} isLoading={historyLoading} error={historyError && tr(historyError)}
         storageLabel={dbStatus} activeDatasetId={dataset ? activeDatasetId : ''} availableFeatures={dataset?.featureColumns ?? []}
+        activeDatasetRevision={dataset?.workbench?.revision}
         isBusy={isComputing || isLiveAnimating}
         onApply={handleApplyExperiment} />
     </Suspense>

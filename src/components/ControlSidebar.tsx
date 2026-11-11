@@ -1,7 +1,7 @@
 import { useAppLanguage } from "./WelcomeLanguage";
 import { RangeNumber } from './RangeNumber';
 import { normalizationLabels } from '../utils/exploration';
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   ReductionMethod,
   ClusteringMethod,
@@ -69,7 +69,7 @@ interface ControlSidebarProps {
   onChangeColorMode: (mode: ColorMode) => void;
   selectedColorFeature: string;
   onChangeSelectedColorFeature: (feature: string) => void;
-  onFileUpload: (file: File) => void;
+  onImportDataset: () => void;
   isComputing: boolean;
   hasResults: boolean;
   onRunComputation: () => void;
@@ -111,7 +111,7 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
   onChangeColorMode,
   selectedColorFeature,
   onChangeSelectedColorFeature,
-  onFileUpload,
+  onImportDataset,
   isComputing,
   hasResults,
   onRunComputation,
@@ -136,7 +136,6 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
   const { tr } = useAppLanguage();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [featureSearch, setFeatureSearch] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 4 Collapsible Accordion Groups
   const [groupOpen, setGroupOpen] = useState({
@@ -160,13 +159,6 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
 
   const isAtlas = dbStatus.includes('Connected') || dbStatus.includes('Atlas') || dbStatus.includes('Online');
   const canRun = selectedFeatures.length >= MIN_NUMERIC_FEATURES && !isComputing;
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      onFileUpload(e.target.files[0]);
-      e.target.value = '';
-    }
-  };
 
   if (isCollapsed && !embedded) {
     return (
@@ -292,16 +284,10 @@ export const ControlSidebar: React.FC<ControlSidebarProps> = ({
               </div>
               {/* Import and feature settings */}
               <div className="flex items-center gap-1.5">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={onImportDataset}
+                  disabled={isComputing}
                   className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[var(--bg-interactive)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-main)] transition-colors"
                 >
                   <Upload size={12} className="text-[var(--accent-primary)]" />

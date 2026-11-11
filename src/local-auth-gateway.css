@@ -1,0 +1,143 @@
+#root[data-local-auth-check="pending"] { visibility: hidden; }
+
+.local-auth-note {
+  margin: 12px 0 0;
+  color: rgba(235, 240, 244, .68);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.local-auth-status {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 123, 167, .4);
+  border-radius: 12px;
+  color: #aeeaff;
+  background: rgba(0, 123, 167, .12);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.local-auth-status.is-busy::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 8px 1px 0;
+  border-radius: 50%;
+  background: #007ba7;
+  box-shadow: 0 0 12px rgba(0, 123, 167, .9);
+  animation: local-auth-pulse 1.1s ease-in-out infinite alternate;
+}
+
+.local-auth-error { margin-top: 12px; }
+.local-auth-name-field[hidden] { display: none; }
+.local-auth-toggle { width: 100%; justify-content: center; }
+
+.local-auth-notices {
+  position: fixed;
+  z-index: 10000;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  gap: 9px;
+  width: min(390px, calc(100vw - 36px));
+  pointer-events: none;
+}
+
+.local-auth-toast {
+  display: grid;
+  gap: 5px;
+  padding: 13px 16px;
+  border: 1px solid rgba(0, 123, 167, .45);
+  border-radius: 14px;
+  color: #edf7fc;
+  background: rgba(10, 10, 10, .94);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, .3), 0 0 22px rgba(0, 123, 167, .12);
+  backdrop-filter: blur(16px);
+  font: 500 13px/1.45 Inter, sans-serif;
+  animation: local-auth-enter .22s ease-out both;
+}
+
+.local-auth-toast small { color: rgba(237, 247, 252, .7); font-size: 11px; }
+.local-auth-toast--success { border-color: rgba(45, 201, 145, .55); }
+.local-auth-toast--error { border-color: rgba(255, 45, 149, .7); }
+.local-auth-toast.is-leaving { opacity: 0; transform: translateY(-6px); transition: opacity .2s, transform .2s; }
+
+.local-account-chip {
+  max-width: 260px;
+  overflow: hidden;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 123, 167, .45);
+  border-radius: 999px;
+  color: #c8efff;
+  background: rgba(0, 123, 167, .12);
+  font: 500 11px/1.3 Inter, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-data-launcher {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 8000;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(0, 123, 167, .65);
+  border-radius: 999px;
+  color: #eaf8ff;
+  background: rgba(10, 10, 10, .92);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .34), 0 0 24px rgba(0, 123, 167, .2);
+  backdrop-filter: blur(16px);
+  cursor: pointer;
+  font: 650 12px/1 Inter, sans-serif;
+  transition: border-color .18s, transform .18s, box-shadow .18s;
+}
+
+.local-data-launcher > span:first-child { color: #48c3ee; font-size: 16px; }
+.local-data-launcher:hover { transform: translateY(-2px); border-color: #48c3ee; box-shadow: 0 13px 38px rgba(0, 0, 0, .38), 0 0 28px rgba(0, 123, 167, .28); }
+.local-data-launcher:disabled { opacity: .72; cursor: progress; transform: none; }
+
+@media (max-width: 620px) {
+  .local-data-launcher { right: 12px; bottom: 12px; min-height: 40px; padding: 0 13px; }
+}
+
+@keyframes local-auth-enter {
+  from { opacity: 0; transform: translateY(-7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes local-auth-pulse {
+  from { opacity: .45; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .local-auth-toast, .local-auth-status.is-busy::before { animation: none; }
+  .local-auth-toast.is-leaving { transition: none; }
+}
+
+.local-auth-entry {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 8001;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid rgba(0, 123, 167, .72);
+  border-radius: 999px;
+  color: #eaf8ff;
+  background: rgba(10, 10, 10, .93);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .28), 0 0 20px rgba(0, 123, 167, .2);
+  backdrop-filter: blur(14px);
+  cursor: pointer;
+  font: 650 12px/1 Inter, sans-serif;
+}
+.local-auth-entry:hover { border-color: #ff2d95; box-shadow: 0 9px 30px rgba(0, 0, 0, .32), 0 0 22px rgba(255, 45, 149, .2); }
+.local-auth-entry:focus-visible { outline: 2px solid #ff2d95; outline-offset: 3px; }
+.local-auth-entry[hidden] { display: none !important; }
+@media (max-width: 620px) { .local-auth-entry { top: 12px; right: 12px; min-height: 40px; padding: 0 12px; } }
