@@ -1,9 +1,9 @@
 // Run with: node --import tsx scripts/generate-case-studies.ts
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { parseCSVString, extractFeatureMatrix } from '../src/utils/dataParser';
-import { computePCA } from '../src/algorithms/pca';
-import { computeGMM } from '../src/algorithms/gmm';
+import { parseCSVString, extractFeatureMatrix } from '@dimension-lab/algorithms/dataParser';
+import { computePCA } from '@dimension-lab/algorithms/pca';
+import { computeGMM } from '@dimension-lab/algorithms/gmm';
 const root = new URL('../', import.meta.url);
 const definitions = [
   { id: 'cancer_wdbc', name: 'Wisconsin Breast Cancer', file: 'data.csv', k: 2, description: 'Explore the structure of 30 cell morphology features. The diagnosis label and ID are excluded from projection and clustering.', features: null as string[] | null },
@@ -24,6 +24,6 @@ const stories = definitions.map(definition => {
     points: pca.coordinates.map((point, index) => ({ row: index + 1, x: +point[0].toFixed(6), y: +point[1].toFixed(6), cluster: gmm.clusters[index] })),
   };
 });
-mkdirSync(new URL('src/data/', root), { recursive: true });
-writeFileSync(new URL('src/data/case-studies.json', root), JSON.stringify(stories));
+mkdirSync(new URL('frontend/src/features/portal/data/', root), { recursive: true });
+writeFileSync(new URL('frontend/src/features/portal/data/case-studies.json', root), JSON.stringify(stories));
 console.log(`Generated ${stories.length} case studies from local CSV files (${stories.map(s => s.rowCount).join(', ')} rows).`);

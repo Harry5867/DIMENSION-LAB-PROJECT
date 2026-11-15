@@ -2,7 +2,7 @@
 
 ## Welcome preferences
 
-The homepage footer contains System / Light / Dark appearance controls and an English / Tiếng Việt selector. ThemeProvider owns one shared `dimension-lab:theme` preference for Welcome, Sign in, Workspace, Theory, About us, User Guide, Datasets and Model, including its dialogs and 3D background. It migrates the old Welcome choice before the formerly forced-light Model value. System follows OS appearance changes; explicit light/dark choices persist through navigation, refresh and sign out. Interior pages have a compact theme toggle beside their existing navigation. Language remains scoped to Welcome and Sign in and is stored separately; the document language is restored on leaving Welcome.
+The homepage footer contains Light / Dark appearance controls and an English / Tiếng Việt selector. ThemeProvider owns one shared `dimension-lab:theme` preference for Welcome, Sign in, Workspace, Theory, About us, User Guide, Datasets and Model, including its dialogs and 3D background. It migrates the old Welcome choice before the formerly forced-light Model value. System follows OS appearance changes; explicit light/dark choices persist through navigation, refresh and sign out. Interior pages have a compact theme toggle beside their existing navigation. The application-level language provider shares the selected language across Welcome and the workspace. Language is stored separately from theme.
 
 Atlas / Terrain / Stories controls are portaled into the homepage header, aligned with the numbered concepts on desktop. Compact layouts wrap the header controls into rows. Mode buttons use a short underline reveal and color change, without the shared liquid pointer effect. Globe state and its renderer stay mounted during mode changes.
 
@@ -12,7 +12,7 @@ The Workspace header appears only on the five-card overview. Theory, About us, U
 
 Terrain and Stories use single-line titles. The longer Vietnamese Stories title scales to the available column width. Terrain uses the requested `POPULATION / 2026` interface-edition label. The source attribution explicitly shows `WorldPop / CIESIN · 2020`; source metadata, readings and sampling notes retain the actual dataset year.
 
-Trang Welcome và quả cầu được giữ nguyên. Sau đăng nhập demo, `Entry` mở `#/overview` với năm thẻ chọn mục. CSS nằm trong `src/components/portal.css`, giới hạn bằng các class `portal-*`.
+Trang Welcome và quả cầu được giữ nguyên. Sau đăng nhập demo, `Entry` mở `#/overview` với năm thẻ chọn mục. CSS nằm trong `frontend/src/features/portal/styles/portal.css`, giới hạn bằng các class `portal-*`.
 
 | Mục | Route | Nội dung |
 | --- | --- | --- |
@@ -38,7 +38,7 @@ Các trang nội dung mới không dùng WebGL, thư viện animation hay ThreeU
 
 `WorkspaceDataMorph.tsx` replaces the visible left-hand heading with a continuously morphing point cloud. The heading remains available to screen readers. Eight conceptual scenes cover PCA, t-SNE, UMAP, K-Means, GMM, DBSCAN, Isolation Forest and Apriori; its accessible figure description identifies the data as illustrative. There is no visible caption or playback control. No analysis runs, source datasets or Model settings are read or modified.
 
-`src/visuals/dataMorph.ts` contains seeded shapes, palettes, responsive budgets and a delta-time playback clock. Each scene lasts 5.2 seconds, including a 1.8-second transition to the next; point identity and color interpolation persist through the loop. Breathing amplitude is .05, with a slow .075 world-unit vertical bob and phased local motion. `dataMorphRuntime.ts` lazily reuses the existing Three.js vendor chunk. Vertex interpolation runs in a single point draw call; the association scene adds a bounded line graph. Buffers are reused across cycles and disposed on responsive count changes or unmount. A Canvas 2D fallback uses the same shapes if WebGL cannot initialize.
+`frontend/src/features/portal/animations/dataMorph.ts` contains seeded shapes, palettes, responsive budgets and a delta-time playback clock. Each scene lasts 5.2 seconds, including a 1.8-second transition to the next; point identity and color interpolation persist through the loop. Breathing amplitude is .05, with a slow .075 world-unit vertical bob and phased local motion. `dataMorphRuntime.ts` lazily reuses the existing Three.js vendor chunk. Vertex interpolation runs in a single point draw call; the association scene adds a bounded line graph. Buffers are reused across cycles and disposed on responsive count changes or unmount. A Canvas 2D fallback uses the same shapes if WebGL cannot initialize.
 
 The illustration uses an expanded desktop stage and balances each scene's display scale while preserving its relative coordinates. Camera framing fits every scene across the full rotation/breathing/bobbing range and updates only on resize. Point budgets are 4,800 on desktop, 2,400 in compact viewports and 1,600 on low-power devices, with a 1,000-point Canvas 2D fallback. The denser preview keeps the existing single GPU point draw call and resolution cap. Association edges use the same display scale as their nodes. The responsive framing regression test projects the full desktop point budget at several aspect ratios and orientations to prevent edge clipping.
 
@@ -54,7 +54,7 @@ Kéo vượt 8px chặn click phát sinh sau khi thả; thao tác vuốt dọc t
 
 ## Kết quả mẫu
 
-Chạy `node --import tsx scripts/generate-case-studies.ts` từ thư mục dự án để tạo lại `src/data/case-studies.json`. Script dùng parser, chuẩn hóa Z-score, PCA ba thành phần và GMM diagonal của dự án với seed 42. Biểu đồ scatter chỉ vẽ hai thành phần đầu. Wisconsin dùng 30 đặc trưng; Wholesale chỉ dùng sáu cột chi tiêu, loại Channel và Region. Hash SHA-256 ghi nhận đúng CSV nguồn.
+Chạy `node --import tsx scripts/generate-case-studies.ts` từ thư mục dự án để tạo lại `frontend/src/features/portal/data/case-studies.json`. Script dùng parser, chuẩn hóa Z-score, PCA ba thành phần và GMM diagonal của dự án với seed 42. Biểu đồ scatter chỉ vẽ hai thành phần đầu. Wisconsin dùng 30 đặc trưng; Wholesale chỉ dùng sáu cột chi tiêu, loại Channel và Region. Hash SHA-256 ghi nhận đúng CSV nguồn.
 
 `npm test` kiểm tra routing và đối chiếu các kết quả mẫu với phép tính lại từ CSV. `npm run build` kiểm tra TypeScript và bản build Vite.
 
