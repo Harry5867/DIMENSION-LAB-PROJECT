@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import { atlasMode } from '../database/atlas';
-import { googleSessionUser, protectCookieWrite } from '../auth/googleAuth';
+import { atlasSessionUser, protectCookieWrite } from '../auth/googleAuth';
 import { authenticate, AuthenticatedRequest, requireAuth } from '../auth/auth';
 import type { Express } from 'express';
 
@@ -20,7 +20,7 @@ export function configureMiddleware(app: Express) {
   app.use('/api', (req: AuthenticatedRequest, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
     if (req.method === 'GET' && ['/health', '/auth/options', '/auth/google', '/auth/google/callback'].includes(req.path)) return next();
-    if (req.method === 'POST' && req.path === '/auth/login') return next();
+    if (req.method === 'POST' && ['/auth/login', '/auth/register'].includes(req.path)) return next();
     const authorize = () => {
       if (req.method === 'GET' && req.path === '/auth/me') return next();
       requireAuth(req, res, next);
@@ -28,12 +28,12 @@ export function configureMiddleware(app: Express) {
     if (!atlasMode) return authenticate(req, res, error => error ? next(error) : authorize());
     void Promise.resolve().then(async () => {
       protectCookieWrite(req);
-      req.user = await googleSessionUser(req) ?? undefined;
+      req.user = await atlasSessionUser(req) ?? undefined;
       if (req.method === 'POST' && req.path === '/auth/logout') return next();
       authorize();
     }).catch(next);
   });
-  app.use('/api/auth/login', express.json({ limit: '2kb' }));
+  app.use(['/api/auth/login', '/api/auth/register'], express.json({ limit: '8kb' }));
   app.use(express.json({ limit: '32mb' }));
 
   app.use((req, res, next) => {

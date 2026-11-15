@@ -1,10 +1,10 @@
 # Đăng nhập và phiên trình duyệt
 
-Giao diện đăng nhập demo và điểm bắt đầu Google OAuth.
+Giao diện đăng nhập demo, Google OAuth và tài khoản email/mật khẩu trong chế độ Atlas.
 
 ## Điểm vào và trách nhiệm
 
-- [LoginPanel](components/LoginPanel.tsx) — Hiển thị theo tùy chọn đăng nhập, gửi form demo hoặc mở Google.
+- [LoginPanel](components/LoginPanel.tsx) — Đọc tùy chọn xác thực và hiển thị form tương ứng, gồm chuyển giữa đăng ký và đăng nhập.
 
 - [Session adapter](../../shared/api/demoSession.ts) — Giữ phiên demo theo bộ nhớ và sessionStorage.
 
@@ -14,7 +14,9 @@ Giao diện đăng nhập demo và điểm bắt đầu Google OAuth.
 
 ## Luồng dữ liệu và trạng thái
 
-Backend cung cấp tùy chọn đăng nhập. Demo dùng Bearer token hoặc phiên offline của workspace mẫu. Khi chọn Google trong Atlas, Express quản lý callback và cookie phiên.
+Backend cung cấp tùy chọn qua `GET /api/auth/options`. Demo dùng Bearer token hoặc phiên offline của workspace mẫu. Google và mật khẩu trong chế độ Atlas dùng cookie phiên do Express cấp. Sau khi đăng ký thành công, người dùng quay về form đăng nhập và nhập lại mật khẩu.
+
+Đăng ký bằng mật khẩu khả dụng trong môi trường Atlas thử nghiệm. Backend dùng Argon2id và lưu tài khoản trong `password_users`. Tài khoản Google vẫn dùng collection `users`.
 
 ## Kiểm thử và phạm vi thay đổi
 

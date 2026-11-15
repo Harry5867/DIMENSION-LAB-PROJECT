@@ -75,7 +75,11 @@ export function Entry() {
         clearDemoSession();
         setSignedIn(false);
       }
-      setAuthOptions({ mode: data?.mode === 'atlas' ? 'atlas' : 'demo', google: data?.google === true });
+      setAuthOptions({
+        mode: data?.mode === 'atlas' ? 'atlas' : 'demo',
+        google: data?.google === true,
+        registration: data?.registration === true,
+      });
       if (data?.mode !== 'atlas' && !getAccessToken()) {
         setSignedIn(hasDemoSession());
         return;
@@ -86,7 +90,7 @@ export function Entry() {
       if (!signal.aborted) setSignedIn(current?.authenticated === true);
     })().catch(() => {
       if (!signal.aborted) {
-        setAuthOptions(options => options ?? { mode: 'demo', google: false });
+        setAuthOptions(options => options ?? { mode: 'demo', google: false, registration: false });
         setSignedIn(hasDemoSession());
       }
     });

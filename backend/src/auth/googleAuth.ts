@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { MongoServerError } from 'mongodb';
 import * as oidc from 'openid-client';
-import { atlasDatabase, atlasMode, type AtlasSession, type AtlasUser } from '../database/atlas';
+import { atlasDatabase, atlasMode, type AtlasProfile, type AtlasSession, type AtlasUser } from '../database/atlas';
 import { AppError, ForbiddenError } from '../http/errors';
 
 const callbackPath = '/api/auth/google/callback';
@@ -25,11 +25,23 @@ function redirectUri() {
 }
 
 export const googleEnabled = () => Boolean(atlasMode && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && redirectUri());
-const cookieOptions = (path: string) => ({ path, httpOnly: true, secure: redirectUri()?.protocol === 'https:', sameSite: 'lax' as const });
+function applicationOrigin() {
+  const configured = process.env.LAB_ALLOWED_ORIGIN;
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      if (url.origin === configured && (url.protocol === 'https:'
+        || (url.protocol === 'http:' && process.env.NODE_ENV !== 'production'))) return url.origin;
+    } catch { /* Ignore invalid origins. */ }
+  }
+  return redirectUri()?.origin ?? (process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:3000');
+}
+
+const cookieOptions = (path: string) => ({ path, httpOnly: true, secure: applicationOrigin()?.startsWith('https:') ?? false, sameSite: 'lax' as const });
 
 export function protectCookieWrite(req: Request) {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)
-    && (!redirectUri() || req.headers.origin !== redirectUri()?.origin)) {
+    && (!applicationOrigin() || req.headers.origin !== applicationOrigin())) {
     throw new ForbiddenError('This request must come from the application origin.');
   }
 }
@@ -102,16 +114,21 @@ export async function finishGoogleSignIn(req: Request, res: Response) {
   const user = await upsertGoogleUser({ sub: claims.sub, email: claims.email,
     displayName: typeof claims.name === 'string' ? claims.name : claims.email });
   if (!user) throw new AppError('Could not save the user profile.', 503, 'STORAGE_UNAVAILABLE');
-  await revokeGoogleSession(req, res);
-  const secret = token();
-  await db.collection<AtlasSession>('sessions').insertOne({
-    tokenHash: hash(secret), userId: user._id, expiresAt: new Date(Date.now() + sessionLifetime),
-  });
-  res.cookie(sessionCookie, secret, { ...cookieOptions('/api'), maxAge: sessionLifetime });
+  await issueAtlasSession(req, res, user);
   res.redirect(303, new URL('/#/overview', uri).href);
 }
 
-export async function googleSessionUser(req: Request) {
+export async function issueAtlasSession(req: Request, res: Response, user: AtlasProfile, provider?: 'password') {
+  const db = atlasDatabase();
+  const secret = token();
+  await db.collection<AtlasSession>('sessions').insertOne({
+    tokenHash: hash(secret), userId: user._id, expiresAt: new Date(Date.now() + sessionLifetime), ...(provider && { provider }),
+  });
+  await deleteAtlasSession(req);
+  res.cookie(sessionCookie, secret, { ...cookieOptions('/api'), maxAge: sessionLifetime });
+}
+
+export async function atlasSessionUser(req: Request) {
   const secret = readCookie(req, sessionCookie);
   if (!secret || !/^[\w-]{43}$/.test(secret)) return null;
   const db = atlasDatabase();
@@ -119,14 +136,19 @@ export async function googleSessionUser(req: Request) {
     tokenHash: hash(secret), expiresAt: { $gt: new Date() },
   });
   if (!session) return null;
-  const user = await db.collection<AtlasUser>('users').findOne({ _id: session.userId });
+  const user = await db.collection<AtlasProfile>(session.provider === 'password' ? 'password_users' : 'users')
+    .findOne({ _id: session.userId }, { projection: { email: 1, displayName: 1, role: 1 } });
   return user && { id: user._id.toHexString(), username: user.email, name: user.displayName, role: user.role };
 }
 
-export async function revokeGoogleSession(req: Request, res: Response) {
+async function deleteAtlasSession(req: Request) {
   const secret = readCookie(req, sessionCookie);
   if (secret && /^[\w-]{43}$/.test(secret)) {
     await atlasDatabase().collection<AtlasSession>('sessions').deleteOne({ tokenHash: hash(secret) });
   }
+}
+
+export async function revokeAtlasSession(req: Request, res: Response) {
+  await deleteAtlasSession(req);
   res.clearCookie(sessionCookie, cookieOptions('/api'));
 }

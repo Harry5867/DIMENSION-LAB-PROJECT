@@ -158,10 +158,18 @@ test('Atlas startup failure returns 503 and cannot fall back to demo authenticat
     assert.equal(health.status, 503);
     assert.equal((await health.json()).error.code, 'STORAGE_UNAVAILABLE');
     const options = await fetch(api + '/auth/options');
-    assert.deepEqual((await options.json()).data, { mode: 'atlas', google: false });
+    assert.deepEqual((await options.json()).data, { mode: 'atlas', google: false, registration: true });
     assert.equal((await fetch(api + '/auth/google')).status, 503);
     assert.equal((await fetch(api + '/auth/login', { method: 'POST',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD }) })).status, 401);
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD }) })).status, 403);
+    for (const endpoint of ['register', 'login']) {
+      const response = await fetch(api + '/auth/' + endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:3000' },
+        body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD, displayName: 'Test' }),
+      });
+      assert.equal(response.status, 503);
+      assert.equal(response.headers.get('set-cookie'), null);
+    }
     assert.equal((await fetch(api + '/datasets', { headers: { Cookie: 'lab_session=' + 'a'.repeat(43) } })).status, 503);
     assert.equal((await fetch(api + '/auth/logout', { method: 'POST', headers: { Origin: 'http://localhost:4000' } })).status, 403);
   } finally {
