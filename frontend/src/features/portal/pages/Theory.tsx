@@ -1,8 +1,7 @@
 import { useAppLanguage } from "../../../shared/providers/WelcomeLanguage";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen } from 'lucide-react';
-import { associationExample, exampleTransactions, theoryHref, theorySelection, type ChapterId, type TheoryMethod } from '../data/theory';
-import { getTheoryChapters } from '../data/localizedTheory';
+import { associationExample, exampleTransactions, theoryChapters as chapters, theoryHref, theorySelection, type ChapterId, type TheoryMethod } from '../data/theory';
 import { TheoryIllustration } from './TheoryIllustrations';
 import { ThemeToggle } from '../../../shared/ui/ThemeToggle';
 import '../styles/theory.css';
@@ -58,8 +57,7 @@ function MethodContent({ method, chapterId }: { method: TheoryMethod; chapterId:
 }
 
 export function Theory() {
-  const { language, tr, t } = useAppLanguage();
-  const chapters = useMemo(() => getTheoryChapters(language), [language]);
+  const { tr, t } = useAppLanguage();
   const [hash, setHash] = useState(() => window.location.hash);
   const selection = theorySelection(hash);
   const catalog = useRef<HTMLDivElement>(null), readerTitle = useRef<HTMLHeadingElement>(null);

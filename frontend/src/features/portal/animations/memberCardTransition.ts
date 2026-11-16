@@ -107,6 +107,10 @@ function moveCardToPortrait(source: MemberCardSnapshot, destination: DOMRect, du
       { transform: source.start },
       { transform: `translate3d(${left}px, ${top}px, 0) scale(${scale}, ${scale})` },
     ], { duration, easing, fill: 'both' }),
+    source.avatar.animate([
+      { height: avatar.height + 'px' },
+      { height: destination.height / scale + 'px' },
+    ], { duration, easing, fill: 'both' }),
     source.plane.animate([
       { opacity: source.opacity },
       { opacity: 1, offset: .25 },

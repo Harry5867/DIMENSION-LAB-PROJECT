@@ -36,14 +36,13 @@ html[data-theme=dark] .portal-page:not(.portal-page--workspace) {
 html[data-theme=dark] .portal-page--workspace > .data-atmosphere::before { background:radial-gradient(ellipse 62% 80% at 81% 49%,#315d46a6,#213f2f70 42%,transparent 90%); }
 html[data-theme=dark] .portal-page--workspace > .data-atmosphere::after { background-image:radial-gradient(circle,#88b49d38 .65px,transparent .9px); }
 html[data-theme=dark] .workspace-data-morph-stage::before { background:radial-gradient(ellipse,#315d4626,transparent 68%); }
-html[data-theme=dark] .portal-page :is(.portal-note,.portal-case,.portal-team-placeholder) { background:#18251e; color:var(--portal-ink); border-color:var(--portal-line); }
+html[data-theme=dark] .portal-page :is(.portal-note,.portal-case) { background:#18251e; color:var(--portal-ink); border-color:var(--portal-line); }
 html[data-theme=dark] .portal-case p { color:var(--portal-muted); }
 html[data-theme=dark] .portal-method > .portal-flat-summary:is(:hover,:focus-visible),
 html[data-theme=dark] .portal-story-picker button[aria-pressed=true] { background:#294638; color:var(--portal-ink); }
 html[data-theme=dark] .portal-story-picker button { border-color:var(--portal-line); }
 html[data-theme=dark] .portal-action { color:#101815; background:#8bc7b0; }
 html[data-theme=dark] .portal-action:hover { background:#acddc4; }
-html[data-theme=dark] .portal-team-placeholder { border-style:dashed; }
 html[data-theme=dark] .portal-page--theory { background:radial-gradient(ellipse at 54% 58%,#315d4629,transparent 65%),var(--portal-paper); }
 html[data-theme=dark] .theory-scope { --theory-teal:#8bc7b0; color:var(--portal-ink); }
 html[data-theme=dark] .theory-scope .theory-catalog-heading > p:last-child { color:var(--portal-ink); }

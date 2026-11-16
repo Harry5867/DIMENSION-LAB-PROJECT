@@ -127,8 +127,8 @@
 .globe-renderer::before {
   content: '';
   position: absolute;
-  top: 50%;
-  left: calc(var(--globe-center, .5) * 100%);
+  top: var(--globe-disk-y, 50%);
+  left: var(--globe-disk-x, calc(var(--globe-center, .5) * 100%));
   width: var(--globe-diameter, 0px);
   height: var(--globe-diameter, 0px);
   transform: translate(-50%, -50%);

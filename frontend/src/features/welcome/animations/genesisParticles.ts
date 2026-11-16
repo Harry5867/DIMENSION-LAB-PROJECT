@@ -11,8 +11,8 @@ export const atlasScanStyle = `
 
 export const atlasParticleStyle = `
   vec3 atlasColor(float land, float front, float dark) {
-    return mix(mix(vec3(0.72), vec3(.42,.53,.46), dark),
-      mix(vec3(.290,.310,.298), vec3(.76,.85,.78), dark), land * front);
+    return mix(mix(vec3(0.72), vec3(.22,.48,.40), dark),
+      mix(vec3(.290,.310,.298), vec3(.49,.89,.74), dark), land * front);
   }
   float atlasOpacity(float land, float front, float depth) {
     return mix(.035, mix(.24,.90,depth), front) * mix(.42,1.0,land);

@@ -3,14 +3,14 @@ import { X } from 'lucide-react';
 import type { AuthOptions } from '@dimension-lab/contracts';
 import { LoginPanel } from '../auth/components/LoginPanel';
 import { TeamLogo } from '../../shared/ui/TeamLogo';
+import { ThemeToggle } from '../../shared/ui/ThemeToggle';
 import { DataAtmosphere } from './animations/DataAtmosphere';
-import type { WelcomeTheme } from '../../shared/preferences/welcomePreferences';
 import { useAppTheme } from '../../shared/providers/ThemeProvider';
 import { useWelcomeLanguage } from '../../shared/providers/WelcomeLanguage';
-import { WelcomeSettings } from './WelcomeSettings';
 import type { GlobeMode } from './globe/DataGlobe';
 import { shouldPlayGenesis } from './animations/welcomeGenesis';
 import './styles/welcome.css';
+import './styles/welcome-settings.css';
 import './styles/welcome-exploration.css';
 import './styles/welcome-genesis.css';
 
@@ -40,14 +40,8 @@ const vietnameseConcepts = [
 ];
 
 type WelcomeProps = { onSignIn: (token?: string | null) => void; signedIn?: boolean; arrival?: 'full' | 'gentle' | null; authOptions?: AuthOptions | null };
-export function Welcome(props: WelcomeProps) {
-  const { theme, setMode } = useAppTheme();
-  return <WelcomeScreen {...props} theme={theme} onTheme={setMode} />;
-}
-
-function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme, authOptions = null }: WelcomeProps & {
-  theme: 'light' | 'dark'; onTheme: (theme: WelcomeTheme) => void;
-}) {
+export function Welcome({ onSignIn, signedIn, arrival = null, authOptions = null }: WelcomeProps) {
+  const { theme } = useAppTheme();
   const { language, t } = useWelcomeLanguage();
   const items = language === 'vi' ? vietnameseConcepts : concepts;
   const [systemReduced, setSystemReduced] = useState(() => window.matchMedia(reducedMotionQuery).matches);
@@ -140,9 +134,9 @@ function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme, aut
     description: t('Discover the ideas behind the data.', 'Khám phá những ý tưởng đằng sau dữ liệu.'),
   } : {
     eyebrow: t('THE DATA EXPLORATION LAB', 'PHÒNG THÍ NGHIỆM KHÁM PHÁ DỮ LIỆU'),
-    title: t('LESS NOISE. MORE DIMENSION.', 'ÍT NHIỄU. THÊM GÓC NHÌN.'),
-    lines: [t('LESS NOISE.', 'ÍT NHIỄU.'), t('MORE DIMENSION', 'THÊM GÓC NHÌN')],
-    description: t('DISCOVER PATTERNS BEYOND WHAT YOU CAN SEE.', 'KHÁM PHÁ NHỮNG QUY LUẬT VƯỢT NGOÀI TẦM NHÌN.'),
+    title: t('LESS NOISE MORE DIMENSION.', 'ÍT NHIỄU THÊM GÓC NHÌN.'),
+    lines: [t('LESS NOISE', 'ÍT NHIỄU'), t('MORE', 'THÊM'), t('DIMENSION', 'GÓC NHÌN')],
+    description: t('Discover patterns beyond what you can see.', 'Khám phá những quy luật vượt ngoài tầm nhìn.'),
   };
   const concept = active === null ? null : items[active];
   useEffect(() => { document.title = t('Dimension Lab — A world of dimensions', 'Dimension Lab — Thế giới đa chiều'); return () => { document.title = 'Dimension Lab — Interactive Data Exploration'; }; }, [t]);
@@ -212,6 +206,7 @@ function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme, aut
         </section>}
       </div>
       <div className="welcome-globe-modes" ref={setGlobeControlsHost} />
+      <div className="welcome-theme-toggle"><ThemeToggle /></div>
     </header>
     <main className="welcome-main">
       <section className={'welcome-copy' + (exploring ? ' welcome-copy--exploring' : '')}>
@@ -223,7 +218,9 @@ function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme, aut
         <div className="welcome-exploration-controls" ref={setExplorationControlsHost} hidden={!exploring} tabIndex={exploring ? 0 : undefined}
           role="region" aria-label={t('Exploration controls and details', 'Điều khiển và thông tin khám phá')} />
         <div className="welcome-actions">
-          <button ref={enterRef} className="welcome-primary welcome-enter" onClick={openLogin}>{t('ENTER THE LAB', 'VÀO PHÒNG LAB')}</button>
+          <button ref={enterRef} className="welcome-primary welcome-enter" onClick={openLogin}>
+            {t('ENTER THE LAB', 'VÀO PHÒNG LAB')}
+          </button>
         </div>
       </section>
       <GlobeBoundary
@@ -238,7 +235,6 @@ function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme, aut
         </Suspense>
       </GlobeBoundary>
     </main>
-    <footer className="welcome-footer"><WelcomeSettings theme={theme} onTheme={onTheme} /></footer>
     </div>
     {login && <div className="welcome-login-layer" inert={loginPhase === 'closing'} onAnimationEnd={event => {
       if (event.target === event.currentTarget) finishLoginTransition();

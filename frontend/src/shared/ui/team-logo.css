@@ -3,7 +3,7 @@
   width: var(--team-logo-width, 96px);
   aspect-ratio: 1.72;
   background: linear-gradient(108deg, #087c70, #005c55);
-  mask: url('../visuals/dimension-team-logo-sharp.png') center / 112% auto no-repeat alpha;
+  mask: url('../visuals/dimension-team-logo-mask.webp') center / 112% auto no-repeat alpha;
 }
 
 .welcome-page[data-theme=dark] .team-logo {

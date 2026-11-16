@@ -44,18 +44,12 @@ function TeamAvatar({ member }: { member: TeamMember }) {
 }
 
 function MemberCard({ member }: { member: TeamMember }) {
-  const { language, tr } = useAppLanguage();
   return <div className="member-card">
     <div className="member-card-surface">
       <header className="member-card-heading">
-        <p className="member-about-label">{tr('About us')}</p>
         <strong>{member.name}</strong>
       </header>
       <TeamAvatar member={member} />
-      {(member.role || member.shortDescription) && <div className="member-card-copy">
-        {member.role && <p className="member-card-role">{member.role[language]}</p>}
-        {member.shortDescription && <p>{member.shortDescription[language]}</p>}
-      </div>}
     </div>
   </div>;
 }
@@ -224,32 +218,29 @@ export function TeamBrowser({ hash, onOpenMember }: {
 }
 
 export function TeamProfile({ member }: { member: TeamMember | null }) {
-  const { language, t, tr } = useAppLanguage();
+  const { tr } = useAppLanguage();
   if (!member) return <div className="portal-content-heading portal-team-error">
     <h1>{tr('Team member not found')}</h1>
     <p>{tr('Check the address or choose a member from the team page.')}</p>
   </div>;
-  const links = Object.entries(member.links ?? {}).filter(([, url]) => /^https?:\/\//i.test(url));
-  return <article className="member-profile">
-    <span className="member-watermark" aria-hidden="true">{tr('About us')}</span>
+  return <article className="member-profile" aria-labelledby="member-profile-name">
     <div className="member-profile-card">
       <div className="member-profile-portrait">
         <TeamAvatar member={member} />
       </div>
       <div className="member-profile-copy">
         <header>
-          <p className="member-about-label">{tr('About us')}</p>
-          <h1>{member.name}</h1>
-          <p className="member-profile-role">{member.role?.[language] ?? t('Dimension Lab team member', 'Thành viên Dimension Lab')}</p>
+          <h1 id="member-profile-name">{member.name}</h1>
+          <p className="member-profile-role">{member.role}</p>
         </header>
-        {member.shortDescription && <p>{member.shortDescription[language]}</p>}
-        {member.bio && <section><h2>{tr('Biography')}</h2><p>{member.bio[language]}</p></section>}
-        {!!member.contributions?.length && <section><h2>{tr('Contributions')}</h2>
-          <ul>{member.contributions.map(contribution => <li key={contribution.en}>{contribution[language]}</li>)}</ul>
-        </section>}
-        {links.length > 0 && <nav className="portal-team-links" aria-label={tr('Profile links')}>
-          {links.map(([label, href]) => <a key={label} href={href}>{tr(label)}</a>)}
-        </nav>}
+        <section>
+          <h2>Interests</h2>
+          <p>{member.interests}</p>
+        </section>
+        <section>
+          <h2>Project Responsibilities</h2>
+          <ul>{member.responsibilities.map(responsibility => <li key={responsibility}>{responsibility}</li>)}</ul>
+        </section>
       </div>
     </div>
   </article>;

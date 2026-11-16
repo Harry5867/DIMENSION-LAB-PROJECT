@@ -18,7 +18,7 @@ import { associationExample, exampleTransactions, theoryChapters, theoryHref, th
 import { computeApriori } from '@dimension-lab/algorithms/apriori';
 import { parseWelcomePreferences, resolveWelcomeTheme } from '../../frontend/src/shared/preferences/welcomePreferences';
 import { readThemeMode, resolveTheme, themePreferenceKey } from '../../frontend/src/shared/preferences/themePreferences';
-import { shouldPlayGenesis, genesisBrandPath, genesisDuration, genesisFrame, genesisImpact, genesisImpactPoint, genesisLogoOrbitEnd, genesisReturnEnd, genesisSatelliteEnd, genesisScanEnd, genesisSignalStart, genesisProjection } from '../../frontend/src/features/welcome/animations/welcomeGenesis';
+import { shouldPlayGenesis, genesisBrandPath, genesisDuration, genesisFrame, genesisGrowthStart, genesisImpact, genesisImpactPoint, genesisLogoOrbitEnd, genesisReturnEnd, genesisSatelliteEnd, genesisScanEnd, genesisSignalStart, genesisProjection } from '../../frontend/src/features/welcome/animations/welcomeGenesis';
 import { createEarthRenderer } from '../../frontend/src/features/welcome/globe/globeScene';
 
 test('a fresh Welcome plays its intro automatically unless it is returning or reduced motion is enabled', () => {
@@ -76,7 +76,7 @@ test('the Canvas fallback reveals the live points in place and preserves their a
   }
 });
 
-test('Welcome intro scans the globe, circles it once, and forms the logo before completion', () => {
+test('Welcome intro scans the globe, circles it once, and forms the logo before enlarging the globe', () => {
   const opening = genesisFrame(.12);
   assert.equal(opening.phase, 'empty');
   for (const value of [opening.silhouette, opening.atmosphere, opening.scanGlow, opening.satelliteTurns, opening.returning, opening.logoOrbit, opening.logo]) assert.equal(value, 0);
@@ -115,13 +115,21 @@ test('Welcome intro scans the globe, circles it once, and forms the logo before 
   assert.equal(tracing.returning, 1);
   assert.ok(tracing.logoOrbit > 0 && tracing.logoOrbit < 1);
   assert.equal(tracing.logo, 0);
-  const forming = genesisFrame((genesisLogoOrbitEnd + genesisDuration) / 2);
+  const forming = genesisFrame((genesisLogoOrbitEnd + genesisGrowthStart) / 2);
   assert.equal(forming.logoOrbit, 1);
   assert.ok(forming.logo > 0 && forming.logo < 1);
+  assert.equal(forming.growth, 0);
+  const growthStart = genesisFrame(genesisGrowthStart);
+  assert.equal(growthStart.phase, 'grow');
+  assert.equal(growthStart.logo, 1);
+  assert.equal(growthStart.growth, 0);
+  const growing = genesisFrame((genesisGrowthStart + genesisDuration) / 2);
+  assert.ok(growing.growth > 0 && growing.growth < 1);
+  assert.equal(growing.complete, false);
   assert.equal(genesisFrame(genesisDuration - .01).complete, false);
   const completed = genesisFrame(genesisDuration + 1);
   assert.equal(completed.phase, 'complete');
-  for (const value of [completed.grid, completed.borders, completed.returning, completed.logoOrbit, completed.logo]) assert.equal(value, 1);
+  for (const value of [completed.grid, completed.borders, completed.returning, completed.logoOrbit, completed.logo, completed.growth]) assert.equal(value, 1);
   assert.equal(completed.scanGlow, 0);
 });
 
@@ -138,6 +146,9 @@ test('the overlay targets the live Atlas in desktop and stacked layouts', () => 
     assert.equal(projection.radius, radius);
     assert.equal(host.left + projection.x, globe.left + centerX);
     assert.equal(host.top + projection.y, globe.top + globe.height / 2);
+    const raisedCenter = globe.height * .42;
+    const raisedProjection = genesisProjection(host, globe, centerX, radius, raisedCenter);
+    assert.equal(host.top + raisedProjection.y, globe.top + raisedCenter);
   }
 });
 

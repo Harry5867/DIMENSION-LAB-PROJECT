@@ -84,7 +84,7 @@ export type AtlasLayers = Record<keyof typeof atlasLayerNames, boolean>;
 const gridColor = '#D8DDDA';
 const borderColor = '#C8CECA';
 
-type AtlasReveal = Pick<GenesisFrame, 'scan' | 'scanGlow' | 'grid' | 'borders'>;
+type AtlasReveal = Pick<GenesisFrame, 'scan' | 'scanGlow' | 'grid' | 'borders'> & { centerX?: number; centerY?: number };
 
 interface EarthRenderer {
   kind: 'webgl' | 'canvas';
@@ -92,7 +92,7 @@ interface EarthRenderer {
   failed: () => boolean;
   needsRedraw: () => boolean;
   frameInterval: number;
-  resize: (width: number, height: number, centerX: number) => void;
+  resize: (width: number, height: number, centerX: number, centerY?: number) => void;
   draw: (orientation: THREE.Quaternion, radius: number, highlight: THREE.Vector3 | null, layers: AtlasLayers, detailed: boolean, terrain: TerrainView | null, terrainBlend: number, hover?: GlobeHover | null, theme?: 'light' | 'dark', stories?: boolean, reveal?: AtlasReveal) => void;
   dispose: () => void;
   pickTerrain: (view: TerrainView, blend: number, orientation: THREE.Quaternion, x: number, y: number) => number | null;
@@ -208,7 +208,7 @@ export function createEarthRenderer(container: HTMLElement, forceCanvas = false)
   globe.add(hoverNodes, hoverEdges);
   scene.add(globe);
   container.append(renderer.domElement);
-  let width = 1, height = 1, centerX = .5, pixelRatio = 1;
+  let width = 1, height = 1, centerX = .5, centerY = .5, pixelRatio = 1;
   let colorTheme: 'light' | 'dark' = 'light';
   let shaderFailed = false;
   const defaultShaderError = renderer.debug.onShaderError;
@@ -222,10 +222,11 @@ export function createEarthRenderer(container: HTMLElement, forceCanvas = false)
     failed: () => shaderFailed || renderer.getContext().isContextLost(),
     needsRedraw: storyEarth.needsRedraw,
     frameInterval: 0,
-    resize(w, h, x) {
+    resize(w, h, x, y = h / 2) {
       width = w;
       height = h;
       centerX = x;
+      centerY = y;
       pixelRatio = Math.min(window.devicePixelRatio || 1, width < 520 ? 1.5 : 1.75);
       renderer.setPixelRatio(pixelRatio);
       renderer.setSize(width, height, false);
@@ -242,10 +243,12 @@ export function createEarthRenderer(container: HTMLElement, forceCanvas = false)
         edgeMaterial.color.set(dark ? '#91d1bd' : '#007a6e');
         nodeMaterial.uniforms.color.value.setRGB(dark ? .569 : 0, dark ? .820 : .478, dark ? .741 : .431);
       }
-      camera.left = -centerX / radius;
-      camera.right = (width - centerX) / radius;
-      camera.top = height / (2 * radius);
-      camera.bottom = -camera.top;
+      const x = reveal?.centerX ?? centerX;
+      const y = reveal?.centerY ?? centerY;
+      camera.left = -x / radius;
+      camera.right = (width - x) / radius;
+      camera.top = y / radius;
+      camera.bottom = (y - height) / radius;
       camera.updateProjectionMatrix();
       globe.quaternion.copy(orientation);
       storyEarth.draw(stories);
@@ -303,7 +306,7 @@ function createCanvasRenderer(container: HTMLElement): EarthRenderer {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   container.append(canvas);
-  let width = 1, height = 1, centerX = .5;
+  let width = 1, height = 1, centerX = .5, centerY = .5;
   function sizeCanvas(w: number, h: number, maxRatio = 1.5) {
     const ratio = Math.min(window.devicePixelRatio || 1, maxRatio);
     canvas.width = w * ratio;
@@ -343,19 +346,20 @@ function createCanvasRenderer(container: HTMLElement): EarthRenderer {
     failed: () => !ctx,
     needsRedraw: storyEarth.needsRedraw,
     frameInterval: 1000 / 30,
-    resize(w, h, x) {
+    resize(w, h, x, y = h / 2) {
       width = w;
       height = h;
       centerX = x;
+      centerY = y;
       sizeCanvas(w, h);
     },
     draw(orientation, radius, highlight, layers, detailed, terrain, terrainBlend, hover = null, theme = 'light', stories = false, reveal) {
       if (!ctx) return;
       const dark = theme === 'dark';
-      const x = centerX, y = height / 2;
+      const x = reveal?.centerX ?? centerX, y = reveal?.centerY ?? centerY;
       const scan = reveal?.scan ?? 1.16;
       ctx.clearRect(0, 0, width, height);
-      if (stories) { storyEarth.draw(ctx, orientation, radius, centerX, height / 2); return; }
+      if (stories) { storyEarth.draw(ctx, orientation, radius, x, y); return; }
       if (layers.grid && terrainBlend < 1) drawLines(detailed ? atlasLines.detail : atlasLines.grid, orientation, radius, dark ? '#739581' : gridColor,
         (detailed ? .26 : .30) * (1 - terrainBlend) * (reveal?.grid ?? 1), x, y, scan);
       if (layers.borders) drawLines(atlasLines.borders, orientation, radius, dark ? '#a2bba9' : borderColor, (detailed ? .68 : .52) * (reveal?.borders ?? 1), x, y, scan);
@@ -376,21 +380,21 @@ function createCanvasRenderer(container: HTMLElement): EarthRenderer {
         const size = atlasSize * (1 + glow * .38);
         ctx.globalAlpha = opacity;
         ctx.fillStyle = glow > .25 ? dark ? '#a5fbdb' : '#007869' :
-          sample.land && point.z >= 0 ? dark ? '#c2d9c7' : '#4A4F4C' : dark ? '#6b8775' : '#b8b8b8';
+          sample.land && point.z >= 0 ? dark ? '#7ee4bd' : '#4A4F4C' : dark ? '#397a65' : '#b8b8b8';
         ctx.beginPath();
         ctx.arc(x + point.x * radius, y - point.y * radius, size, 0, Math.PI * 2);
         ctx.fill();
       }
       if (reveal) { ctx.globalAlpha = 1; return; }
-      if (terrain && terrainBlend > 0) terrainLayer.draw(ctx, terrain, terrainBlend, orientation, radius, centerX, height / 2);
+      if (terrain && terrainBlend > 0) terrainLayer.draw(ctx, terrain, terrainBlend, orientation, radius, x, y);
       const graph = constellationGraph(samples, orientation, layers.particles && terrainBlend === 0 ? hover : null, radius, count);
       ctx.strokeStyle = ctx.fillStyle = dark ? '#91d1bd' : '#007a6e'; ctx.lineWidth = .8; ctx.globalAlpha = .45;
       ctx.beginPath();
       graph.edges.forEach(([a,b]) => {
-        ctx.moveTo(centerX + graph.nodes[a].x * radius, height / 2 - graph.nodes[a].y * radius);
-        ctx.lineTo(centerX + graph.nodes[b].x * radius, height / 2 - graph.nodes[b].y * radius);
+        ctx.moveTo(x + graph.nodes[a].x * radius, y - graph.nodes[a].y * radius);
+        ctx.lineTo(x + graph.nodes[b].x * radius, y - graph.nodes[b].y * radius);
       }); ctx.stroke();
-      graph.nodes.forEach(node => { ctx.beginPath(); ctx.arc(centerX + node.x * radius, height / 2 - node.y * radius, 3, 0, Math.PI * 2); ctx.fill(); });
+      graph.nodes.forEach(node => { ctx.beginPath(); ctx.arc(x + node.x * radius, y - node.y * radius, 3, 0, Math.PI * 2); ctx.fill(); });
       ctx.globalAlpha = 1;
     },
     pickTerrain: (view, blend, orientation, x, y) => terrainLayer.pick(view, blend, orientation, x, y),

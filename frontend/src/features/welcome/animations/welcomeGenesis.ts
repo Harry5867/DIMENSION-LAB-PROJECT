@@ -5,7 +5,8 @@ export const genesisScanEnd = 3.64;
 export const genesisSatelliteEnd = genesisScanEnd + 1.05;
 export const genesisReturnEnd = genesisSatelliteEnd + 1.3;
 export const genesisLogoOrbitEnd = genesisReturnEnd + .36;
-export const genesisDuration = genesisLogoOrbitEnd + .52;
+export const genesisGrowthStart = genesisLogoOrbitEnd + .52;
+export const genesisDuration = genesisGrowthStart + .92;
 
 // A tilted plane sweeps through the globe. The curve and the Atlas shaders
 // share this axis, so the light stays attached to the real geographic points.
@@ -33,7 +34,7 @@ export function genesisFrame(elapsed: number) {
     time,
     phase: time < genesisGlobeStart ? 'empty' : time < genesisSignalStart ? 'globe' :
       time < genesisImpact ? 'signal' : time < genesisScanEnd ? 'scan' : time < genesisSatelliteEnd ? 'satellite' :
-      time < genesisReturnEnd ? 'return' : time < genesisDuration ? 'logo' : 'complete',
+      time < genesisReturnEnd ? 'return' : time < genesisGrowthStart ? 'logo' : time < genesisDuration ? 'grow' : 'complete',
     complete: time >= genesisDuration,
     scan: -1 + 2.16 * sweep,
     scanProgress: sweep,
@@ -46,15 +47,16 @@ export function genesisFrame(elapsed: number) {
     satelliteTurns: genesisProgress(time, genesisScanEnd, genesisSatelliteEnd),
     returning: departure * (2 - departure),
     logoOrbit: genesisProgress(time, genesisReturnEnd, genesisLogoOrbitEnd),
-    logo: ramp(genesisLogoOrbitEnd, genesisDuration - .08),
+    logo: ramp(genesisLogoOrbitEnd, genesisGrowthStart - .08),
+    growth: ramp(genesisGrowthStart, genesisDuration),
   };
 }
 
 export type GenesisFrame = ReturnType<typeof genesisFrame>;
 
 type Rect = { left: number; top: number };
-export function genesisProjection(host: Rect, globe: Rect & { height: number }, centerX: number, radius: number) {
-  return { x: globe.left - host.left + centerX, y: globe.top - host.top + globe.height / 2, radius };
+export function genesisProjection(host: Rect, globe: Rect & { height: number }, centerX: number, radius: number, centerY = globe.height / 2) {
+  return { x: globe.left - host.left + centerX, y: globe.top - host.top + centerY, radius };
 }
 
 type Point = { x: number; y: number };

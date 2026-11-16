@@ -299,15 +299,19 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     let renderer = createEarthRenderer(mount);
     const glCanvas = renderer.kind === 'webgl' ? renderer.canvas : null;
     const surfaceStyle = mount.style;
+    const page = frame.closest<HTMLElement>('.welcome-page');
+    const copy = page?.querySelector<HTMLElement>('.welcome-copy');
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
     const compactIntro = matchMedia('(max-width: 599px)');
     let width = 0, height = 0, radius = 0, raf = 0, lastTime = 0;
-    let centerX = 0, baseRadius = 0, markerLeft = 8, markerTop = 8, markerBottom = 0;
+    let centerX = 0, centerY = 0, baseRadius = 0, markerLeft = 8, markerTop = 8, markerBottom = 0;
+    let lastControlsOpacity = 1;
     let visible = true, needsDraw = true;
     let tiltX = 0, tiltY = 0;
     let lastHoverX = 2, lastHoverY = 2;
     let lastTheme = theme, lastLanguage = language;
     let frameBounds = frame.getBoundingClientRect();
+    let copyBounds = copy?.firstElementChild?.getBoundingClientRect();
     let lastYaw = NaN, lastPitch = NaN, lastRadius = NaN;
     let lastActive: number | null = null, lastHovered: number | null = null;
     let lastLayers: AtlasLayers | undefined, lastMarkers: number[] | undefined;
@@ -321,14 +325,18 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     const labelRects: LabelRect[] = [];
     let introId = 0, introElapsed = 0;
     let lastIntroDraw = -Infinity;
-    let introBounds: DOMRect | null = null;
-    let introBrandPath: ReturnType<typeof genesisBrandPath> | null = null;
+    let globeShift = 0;
+    let introGlobe: {
+      centerX: number; centerY: number; radius: number; shift: number;
+      projection: ReturnType<typeof genesisProjection>;
+      path: ReturnType<typeof genesisBrandPath> | null;
+    } | null = null;
     let ignition: ReturnType<typeof createAtlasIgnition> = null;
 
     function switchToCanvasFallback() {
       renderer.dispose();
       renderer = createEarthRenderer(mount!, true);
-      if (width && height) renderer.resize(width, height, centerX);
+      if (width && height) renderer.resize(width, height, centerX, centerY);
       needsDraw = true;
     }
 
@@ -362,27 +370,30 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       height = entry.contentRect.height;
       if (!width || !height) return;
       const style = getComputedStyle(frame);
-      const desktopCenter = Number.parseFloat(style.getPropertyValue('--globe-center'));
-      const immersive = Number.isFinite(desktopCenter);
-      const fitted = style.getPropertyValue('--globe-fit').trim() === '1';
-      const bleed = Number.parseFloat(style.getPropertyValue('--atlas-bleed')) || 0;
-      centerX = width * (immersive ? desktopCenter : .5);
-      baseRadius = fitted ? Math.min(width * .46, Math.max(1, height - bleed * 2) * .43) : immersive ? Math.max(height * .56, width * .64) : Math.min(width, height) * .46;
-      markerLeft = immersive && !fitted ? width * .13 : 8;
-      markerTop = immersive && !fitted ? Math.min(106, Math.max(70, height * .1 + 6)) : Math.max(14, bleed - 26);
-      markerBottom = height - (immersive && !fitted ? 96 : Math.max(8, bleed - 28));
-      frameBounds = frame.getBoundingClientRect();
-      renderer.resize(width, height, centerX);
-      introBounds = null;
+      const center = Number.parseFloat(style.getPropertyValue('--globe-center'));
+      const hero = style.getPropertyValue('--globe-hero').trim() === '1';
+      const desktopHero = hero && !compactIntro.matches;
+      centerX = width * (Number.isFinite(center) ? center : .5);
+      baseRadius = hero
+        ? desktopHero ? Math.min(width * .40, height * .485) : Math.min(width * .59, height * .48)
+        : Math.min(width * .46, height * .43);
+      centerY = height / 2;
+      surfaceStyle.setProperty('--globe-disk-y', `${centerY}px`);
+      markerLeft = desktopHero ? width * .35 : 8;
+      markerTop = desktopHero ? MathUtils.clamp(height * .12, 76, 108) : 14;
+      markerBottom = hero ? Math.min(height, frame.parentElement?.clientHeight ?? height) - 24 : height - 8;
+      refreshBounds();
+      renderer.resize(width, height, centerX, centerY);
       setStoriesCompact(width < 520);
       needsDraw = true;
     });
     sizeObserver.observe(frame);
     const visibilityObserver = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
     visibilityObserver.observe(frame);
-    const refreshBounds = () => { frameBounds = frame!.getBoundingClientRect(); introBounds = null; };
-    const finishGlobeShift = (event: TransitionEvent) => {
-      if (event.target === frame && event.propertyName === 'translate') refreshBounds();
+    const refreshBounds = () => {
+      frameBounds = frame!.getBoundingClientRect();
+      copyBounds = copy?.firstElementChild?.getBoundingClientRect();
+      introGlobe = null;
     };
     const syncVisibility = () => {
       cancelAnimationFrame(raf);
@@ -390,7 +401,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       if (!document.hidden) raf = requestAnimationFrame(tick);
     };
     window.addEventListener('resize', refreshBounds);
-    frame.addEventListener('transitionend', finishGlobeShift);
     document.addEventListener('visibilitychange', syncVisibility);
     const trackPointer = (event: PointerEvent) => {
       if (event.pointerType !== 'mouse') return;
@@ -398,8 +408,16 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       const x = event.clientX - frameBounds.left, y = event.clientY - frameBounds.top;
       const overControl = event.target instanceof Element && !!event.target.closest('button, input, select, summary, .globe-city-panel');
       constellationPointer.current = !overControl && x >= 0 && x <= width && y >= 0 && y <= height ? { x, y } : null;
+      const overCopy = !event.buttons && state.current.isAtlas && !genesisRef.current && !!copyBounds &&
+        event.clientX >= copyBounds.left && event.clientX <= copyBounds.right &&
+        event.clientY >= copyBounds.top && event.clientY <= copyBounds.bottom;
+      page?.toggleAttribute('data-atlas-copy-hovered', overCopy);
     };
-    const resetPointer = () => { pointer.current = { x: 0, y: 0 }; constellationPointer.current = null; };
+    const resetPointer = () => {
+      pointer.current = { x: 0, y: 0 };
+      constellationPointer.current = null;
+      page?.removeAttribute('data-atlas-copy-hovered');
+    };
     window.addEventListener('pointermove', trackPointer, { passive: true });
     window.addEventListener('blur', resetPointer);
     window.addEventListener('pointerout', eventLeave);
@@ -411,7 +429,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         event.target.closest('button, details, .globe-city-panel')) return;
       const rect = frame!.getBoundingClientRect();
       const x = event.clientX - rect.left - centerX;
-      const y = event.clientY - rect.top - height / 2;
+      const y = event.clientY - rect.top - centerY;
       if (Math.hypot(x, y) > radius) return;
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1);
       const next = MathUtils.clamp(goal.current.zoom - delta * .0012, minZoom, maxZoom);
@@ -429,8 +447,10 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       if (!genesisRef.current && introId) {
         introId = 0;
         ignition = null;
-        introBounds = null;
-        introBrandPath = null;
+        globeShift = 0;
+        frame!.style.removeProperty('--genesis-globe-shift');
+        surfaceStyle.removeProperty('--globe-disk-x');
+        surfaceStyle.setProperty('--globe-disk-y', `${centerY}px`);
         refreshBounds();
         needsDraw = true;
       }
@@ -439,14 +459,14 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       const target = goal.current;
       const { isAtlas, active, hovered, layers, markerIndices, terrain, terrainInspecting, isStories, storyGroups, storyHovered, storySelected, storyInspecting, storiesDetailed, theme, language } = state.current;
       const request = genesisRef.current;
-      let reveal: ReturnType<typeof genesisFrame> | undefined;
+      let reveal: (ReturnType<typeof genesisFrame> & { centerX?: number; centerY?: number }) | undefined;
       const host = request?.host.current;
       if (host && request && isAtlas) {
         if (introId !== request.id) {
           introId = request.id;
           introElapsed = 0;
           lastIntroDraw = -Infinity;
-          introBounds = null;
+          introGlobe = null;
           ignition = createAtlasIgnition(host);
           drag.current = null;
           resetPointer();
@@ -468,25 +488,36 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         for (const key of ['silhouette', 'atmosphere', 'disk', 'logo'] as const) {
           page?.setProperty('--genesis-' + key, reveal[key].toFixed(4));
         }
-        if (!introBounds) {
+        if (!introGlobe) {
           const box = host.getBoundingClientRect();
           if (box.width > 0 && box.height > 0) {
-            if (compactIntro.matches && frame!.parentElement) {
-              const unshiftedCenter = frame!.parentElement.getBoundingClientRect().top + frame!.offsetTop + height / 2;
-              const shift = Math.min(0, box.top + box.height * .52 - unshiftedCenter);
-              frame!.style.setProperty('--genesis-globe-shift', `${shift}px`);
-              frameBounds = frame!.getBoundingClientRect();
-            }
-            introBounds = box;
+            const compact = compactIntro.matches;
+            const top = frameBounds.top - globeShift;
+            const y = height / 2;
+            const shift = compact ? Math.min(0, box.top + box.height * .52 - (top + y)) : 0;
+            const x = compact ? centerX : width * .45;
+            const startRadius = baseRadius * .50;
+            const projection = genesisProjection(box, { left: frameBounds.left, top: top + shift, height }, x, startRadius, y);
             ignition?.resize(box.width, box.height, window.devicePixelRatio || 1);
             const logo = request.logo.current?.getBoundingClientRect();
-            introBrandPath = logo && logo.width > 0
-              ? genesisBrandPath(box, genesisProjection(box, frameBounds, centerX, baseRadius), logo)
-              : null;
+            introGlobe = {
+              centerX: x, centerY: y, radius: startRadius, shift, projection,
+              path: logo && logo.width > 0 ? genesisBrandPath(box, projection, logo) : null,
+            };
           }
         }
-        if (introBounds) ignition?.draw(reveal, genesisProjection(introBounds, frameBounds, centerX, baseRadius),
-          theme === 'dark', introBrandPath);
+        if (introGlobe) {
+          const shift = introGlobe.shift * (1 - reveal.growth);
+          if (shift !== globeShift) {
+            globeShift = shift;
+            frame!.style.setProperty('--genesis-globe-shift', `${shift}px`);
+          }
+          reveal.centerX = MathUtils.lerp(introGlobe.centerX, centerX, reveal.growth);
+          reveal.centerY = MathUtils.lerp(introGlobe.centerY, centerY, reveal.growth);
+          surfaceStyle.setProperty('--globe-disk-x', `${reveal.centerX}px`);
+          surfaceStyle.setProperty('--globe-disk-y', `${reveal.centerY}px`);
+          ignition?.draw(reveal, introGlobe.projection, theme === 'dark', introGlobe.path);
+        }
       } else if (request) {
         request.onComplete(request.id);
       }
@@ -509,19 +540,25 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         current.velocityX *= Math.exp(-6 * dt);
         current.velocityY *= Math.exp(-6 * dt);
       }
-      const idleSpeed = !request && free && !reduced && active === null && hovered === null && !terrainInspecting && !storyInspecting ? (isStories ? .025 : .082) : 0;
-      current.idle = reduced ? 0 : ease(current.idle, idleSpeed, 3, dt);
+      const idleSpeed = !isAtlas && !request && free && !reduced && active === null && hovered === null && !terrainInspecting && !storyInspecting ? (isStories ? .025 : .082) : 0;
+      current.idle = reduced || isAtlas ? 0 : ease(current.idle, idleSpeed, 3, dt);
       current.yaw += current.idle * dt;
       current.zoom = reduced ? target.zoom : ease(current.zoom, target.zoom, 11, dt);
-      const follow = !request && !reduced && free && active === null && hovered === null && !terrainInspecting && !storyInspecting;
+      const controlsOpacity = isAtlas && !request
+        ? Math.round((1 - .82 * MathUtils.smoothstep(current.zoom, 1.03, 1.5)) * 1000) / 1000 : 1;
+      if (controlsOpacity !== lastControlsOpacity) {
+        lastControlsOpacity = controlsOpacity;
+        page?.style.setProperty('--atlas-controls-opacity', String(controlsOpacity));
+      }
+      const follow = !isAtlas && !request && !reduced && free && active === null && hovered === null && !terrainInspecting && !storyInspecting;
       const inspectingPointer = free && ((terrain && terrainPointer.current && terrainInspecting) || (isStories && storyHovered !== null));
       tiltX = reduced ? 0 : inspectingPointer ? tiltX : ease(tiltX, follow ? pointer.current.x * .13 : 0, 6, dt);
       tiltY = reduced ? 0 : inspectingPointer ? tiltY : ease(tiltY, follow ? pointer.current.y * .10 : 0, 6, dt);
       const yaw = current.yaw + tiltX;
       const pitch = current.pitch + tiltY;
-      radius = baseRadius * current.zoom;
+      radius = reveal && introGlobe ? MathUtils.lerp(introGlobe.radius, baseRadius, reveal.growth) : baseRadius * current.zoom;
       const cursor = !request && isAtlas && layers.particles && !drag.current && !target.focus ? constellationPointer.current : null;
-      const hoverPoint = cursor ? { x: (cursor.x - centerX) / radius, y: (height / 2 - cursor.y) / radius } : null;
+      const hoverPoint = cursor ? { x: (cursor.x - centerX) / radius, y: (centerY - cursor.y) / radius } : null;
       const hoverX = hoverPoint?.x ?? 2, hoverY = hoverPoint?.y ?? 2;
       const highlight = hovered ?? active;
       if (terrain) retainedTerrain = terrain;
@@ -536,7 +573,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         lastPickTime = time;
         const position = terrainPointer.current;
         const nearest = position && !drag.current && !target.focus
-          ? renderer.pickTerrain(terrain, terrainBlend, orientation, (position.x - centerX) / radius, (height / 2 - position.y) / radius)
+          ? renderer.pickTerrain(terrain, terrainBlend, orientation, (position.x - centerX) / radius, (centerY - position.y) / radius)
           : null;
         if (nearest !== state.current.terrainHovered) {
           setTerrainHovered(nearest);
@@ -572,6 +609,10 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       if (reveal && renderer.failed()) {
         if (renderer.kind === 'webgl') switchToCanvasFallback();
         else if (request) request.onComplete(request.id);
+        return;
+      }
+      if (reveal) {
+        if (reveal.complete && request) request.onComplete(request.id);
         return;
       }
 
@@ -631,7 +672,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       for (const [index, marker] of markers.current) {
         projected.copy(capitalPositions[index]).applyQuaternion(orientation);
         const x = centerX + projected.x * radius;
-        const y = height / 2 - projected.y * radius;
+        const y = centerY - projected.y * radius;
         if (projected.z <= (index === hanoiIndex ? 0 : .13) || x <= markerLeft || x >= width - 8 || y <= markerTop || y >= markerBottom) {
           if (!marker.hidden) marker.hidden = true;
           continue;
@@ -669,9 +710,8 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
           if (!label.hidden) label.hidden = true;
           return;
         }
-        positionLabel(label, centerX + projected.x * radius, height / 2 - projected.y * radius, text.length * 6, 12, true);
+        positionLabel(label, centerX + projected.x * radius, centerY - projected.y * radius, text.length * 6, 12, true);
       });
-      if (reveal?.complete && request) request.onComplete(request.id);
     }
     syncVisibility();
     return () => {
@@ -679,7 +719,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       sizeObserver.disconnect();
       visibilityObserver.disconnect();
       frame.removeEventListener('wheel', handleWheel);
-      frame.removeEventListener('transitionend', finishGlobeShift);
       glCanvas?.removeEventListener('webglcontextlost', contextLost);
       window.removeEventListener('resize', refreshBounds);
       document.removeEventListener('visibilitychange', syncVisibility);
@@ -687,6 +726,8 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       window.removeEventListener('blur', resetPointer);
       window.removeEventListener('pointerout', eventLeave);
       document.removeEventListener('scroll', refreshBounds, true);
+      page?.style.removeProperty('--atlas-controls-opacity');
+      page?.removeAttribute('data-atlas-copy-hovered');
       renderer.dispose();
     };
   }, []);

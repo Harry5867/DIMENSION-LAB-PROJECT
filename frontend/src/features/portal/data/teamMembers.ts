@@ -1,44 +1,78 @@
-type LocalizedText = { en: string; vi: string };
-
 export interface TeamMember {
   slug: string;
   name: string;
   photo?: { src: string; position?: string };
-  shortDescription?: LocalizedText;
-  role?: LocalizedText;
-  bio?: LocalizedText;
-  contributions?: LocalizedText[];
-  links?: Partial<Record<'GitHub' | 'LinkedIn' | 'Portfolio', string>>;
+  role: string;
+  interests: string;
+  responsibilities: readonly string[];
 }
 
 export const teamMembers: TeamMember[] = [
   {
     slug: 'nguyen-huu-anh-khoa',
-    name: 'Nguyễn Hữu Anh Khoa',
-    photo: { src: '/team/nguyen-huu-anh-khoa.png' },
+    name: 'Nguyen Huu Anh Khoa',
+    photo: { src: '/team/nguyen-huu-anh-khoa.webp' },
+    role: 'Frontend, Security & Architecture',
+    interests: 'Enjoys sports, working out, listening to music, and meeting new people.',
+    responsibilities: [
+      'Design the frontend interface.',
+      'Work on system security.',
+      'Define the overall project architecture.',
+    ],
   },
   {
     slug: 'nguyen-hai-duy',
-    name: 'Nguyễn Hải Duy',
+    name: 'Nguyen Hai Duy',
     photo: { src: '/team/nguyen-hai-duy.jpeg' },
+    role: 'System & Feature Specifications',
+    interests: 'Enjoys gaming, traveling, and reading stories.',
+    responsibilities: [
+      'Write detailed system specifications.',
+      'Define how individual features should work.',
+    ],
   },
   {
     slug: 'tran-thi-thu-hang',
-    name: 'Trần Thị Thu Hằng',
+    name: 'Tran Thi Thu Hang',
     photo: { src: '/team/tran-thi-thu-hang.jpeg' },
+    role: 'Quality Assurance',
+    interests: 'Enjoys photography, trying new food, and quiet time.',
+    responsibilities: [
+      'Test system features and verify that they work as intended.',
+      'Evaluate the system based on test results.',
+    ],
   },
   {
     slug: 'nguyen-xuan-anh-kiet',
-    name: 'Nguyễn Xuân Anh Kiệt',
+    name: 'Nguyen Xuan Anh Kiet',
     photo: { src: '/team/nguyen-xuan-anh-kiet.jpeg' },
+    role: 'Presentation & Project Review',
+    interests: 'Enjoys working out, creating content, and seeking out new adventures.',
+    responsibilities: [
+      'Design the presentation slides.',
+      'Present the project.',
+      'Evaluate the system as a whole.',
+    ],
   },
   {
     slug: 'tran-khanh-duyen',
-    name: 'Trần Khánh Duyên',
+    name: 'Tran Khanh Duyen',
     photo: { src: '/team/tran-khanh-duyen.jpeg', position: '50% 95%' },
+    role: 'Database & Data Management',
+    interests: 'Enjoys spending time with friends, hiking, and listening to music.',
+    responsibilities: [
+      'Connect the application to the database.',
+      'Organize and manage project data.',
+    ],
   },
   {
     slug: 'tran-hoang-son',
-    name: 'Trần Hoàng Sơn',
+    name: 'Tran Hoang Son',
+    role: 'Backend Development',
+    interests: 'Enjoys reading, listening to music, and quiet time.',
+    responsibilities: [
+      'Set up the backend.',
+      'Develop and maintain backend components.',
+    ],
   },
 ];
