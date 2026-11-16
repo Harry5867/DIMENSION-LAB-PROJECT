@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { portalSections, portalRoute, isModelRoute, isWelcomeRoute } from '../../frontend/src/shared/navigation/portalNavigation';
+import { portalSections, portalRoute, isModelRoute, isWelcomeRoute, aboutProfileSlug, aboutTeamHref, aboutTeamSelection, signInDestination } from '../../frontend/src/shared/navigation/portalNavigation';
+import { teamMembers } from '../../frontend/src/features/portal/data/teamMembers';
 import caseStudies from '../../frontend/src/features/portal/data/case-studies.json';
 import { parseCSVString, extractFeatureMatrix } from '@dimension-lab/algorithms/dataParser';
 import { computePCA } from '@dimension-lab/algorithms/pca';
@@ -379,6 +380,39 @@ test('portal separates content pages and legacy workspace routes, with a safe ov
   for (const route of ['explore', 'datasets', 'methods', 'experiments']) assert.equal(isModelRoute(portalRoute('#/' + route)), true);
   for (const hash of ['', '#/', '#/missing', '#portal-main', '#/overview/extra']) assert.equal(portalRoute(hash), 'overview');
   assert.equal(portalRoute('#/library?example=1'), 'library');
+});
+
+test('team and profile hashes retain the About route and round-trip the selected member', () => {
+  assert.equal(new Set(teamMembers.map(member => member.slug)).size, teamMembers.length);
+  for (const { slug } of teamMembers) {
+    const profile = '#/about/' + slug;
+    const team = aboutTeamHref(slug);
+    assert.equal(portalRoute(profile), 'about');
+    assert.equal(aboutProfileSlug(profile), slug);
+    assert.equal(aboutProfileSlug(team), undefined);
+    assert.equal(portalRoute(team), 'about');
+    assert.equal(aboutTeamSelection(team), slug);
+    assert.equal(aboutTeamSelection(profile + '?member=' + slug), null);
+    assert.equal(signInDestination(profile), profile);
+    assert.equal(signInDestination(team), team);
+  }
+  assert.equal(aboutTeamSelection('#/about'), null);
+  assert.equal(aboutProfileSlug('#/about/%6cinh?source=shared'), 'linh');
+  assert.equal(signInDestination('#/about'), '#/about');
+});
+
+test('malformed and unknown profiles stay in About while other sign-in destinations use Workspace', () => {
+  for (const hash of ['#/about/', '#/about/foo/bar', '#/about/foo%2Fbar', '#/about/%E0%A4', '#/about/UPPER', '#/about/foo/']) {
+    assert.equal(portalRoute(hash), 'about');
+    assert.equal(aboutProfileSlug(hash), null);
+    assert.equal(signInDestination(hash), hash);
+  }
+  const missing = '#/about/unknown-member';
+  assert.equal(portalRoute(missing), 'about');
+  assert.equal(teamMembers.some(member => member.slug === aboutProfileSlug(missing)), false);
+  for (const hash of ['#/', '#/aboutextra', '#/theory?chapter=reduction', '#/explore', '//example.org/#/about']) {
+    assert.equal(signInDestination(hash), '#/overview');
+  }
 });
 
 test('prepared data stories reproduce PCA and seeded GMM from the exact bundled source files', () => {

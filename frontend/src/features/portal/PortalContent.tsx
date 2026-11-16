@@ -2,6 +2,8 @@ import { useAppLanguage } from "../../shared/providers/WelcomeLanguage";
 import { lazy, Suspense } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 import type { PortalRoute } from '../../shared/navigation/portalNavigation';
+import type { TeamMember } from './data/teamMembers';
+import { TeamBrowser, TeamProfile } from './pages/TeamProfile';
 
 const DatasetStories = lazy(() => import('./pages/DatasetStories'));
 const Theory = lazy(() => import('./pages/Theory').then(module => ({ default: module.Theory })));
@@ -23,20 +25,14 @@ function Guide() {
   </div>;
 }
 
-function About() {
-  const { tr } = useAppLanguage();
-  return <div className="portal-prose"><h2>{tr("Make complex data visible.")}</h2><p>{tr("This project is a space for learning and practicing high-dimensional data visualization. It connects dimensionality reduction, clustering, anomaly detection and association rules with interactive data exploration.")}</p>
-    <h2>{tr("What are we building?")}</h2><p>{tr("A workflow that takes learners from theory to experimentation: understand an algorithm, adjust its settings, explore the results and check findings against individual source rows.")}</p>
-    <div className="portal-team-placeholder"><strong>{tr("Team information — Coming soon")}</strong><p>{tr("The official project title, team members and their roles will be added when the team provides this information.")}</p></div>
-    <a className="portal-action" href="#/theory">{tr("Explore the theory")} <ArrowUpRight size={16} /></a>
-  </div>;
-}
-
-export function PortalContent({ route }: { route: PortalRoute }) {
+export function PortalContent({ route, hash, profile, onOpenMember }: {
+  route: PortalRoute; hash: string; profile?: TeamMember | null;
+  onOpenMember: (member: TeamMember, source: HTMLAnchorElement) => void;
+}) {
   const { tr } = useAppLanguage();
   if (route === 'theory') return <Suspense fallback={<p role="status">{tr("Loading theory…")}</p>}><Theory /></Suspense>;
   if (route === 'guide') return <Guide />;
-  if (route === 'about') return <About />;
+  if (route === 'about') return profile === undefined ? <TeamBrowser key={hash} hash={hash} onOpenMember={onOpenMember} /> : <TeamProfile member={profile} />;
   if (route === 'library') return <Suspense fallback={<p role="status">{tr("Loading data stories…")}</p>}><DatasetStories /></Suspense>;
   return null;
 }
