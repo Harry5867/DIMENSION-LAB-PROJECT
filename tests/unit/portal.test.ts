@@ -17,7 +17,7 @@ import { associationExample, exampleTransactions, theoryChapters, theoryHref, th
 import { computeApriori } from '@dimension-lab/algorithms/apriori';
 import { parseWelcomePreferences, resolveWelcomeTheme } from '../../frontend/src/shared/preferences/welcomePreferences';
 import { readThemeMode, resolveTheme, themePreferenceKey } from '../../frontend/src/shared/preferences/themePreferences';
-import { shouldPlayGenesis, genesisDuration, genesisFrame, genesisImpact, genesisScanEnd, genesisSignalStart, genesisProjection } from '../../frontend/src/features/welcome/animations/welcomeGenesis';
+import { shouldPlayGenesis, genesisBrandPath, genesisDuration, genesisFrame, genesisImpact, genesisImpactPoint, genesisLogoOrbitEnd, genesisReturnEnd, genesisSatelliteEnd, genesisScanEnd, genesisSignalStart, genesisProjection } from '../../frontend/src/features/welcome/animations/welcomeGenesis';
 import { createEarthRenderer } from '../../frontend/src/features/welcome/globe/globeScene';
 
 test('a fresh Welcome plays its intro automatically unless it is returning or reduced motion is enabled', () => {
@@ -75,10 +75,10 @@ test('the Canvas fallback reveals the live points in place and preserves their a
   }
 });
 
-test('Welcome intro starts blank, reveals the globe before the signal, and shows the header after the scan', () => {
+test('Welcome intro scans the globe, circles it once, and forms the logo before completion', () => {
   const opening = genesisFrame(.12);
   assert.equal(opening.phase, 'empty');
-  for (const value of [opening.silhouette, opening.atmosphere, opening.scanGlow, opening.navigation, opening.headline]) assert.equal(value, 0);
+  for (const value of [opening.silhouette, opening.atmosphere, opening.scanGlow, opening.satelliteTurns, opening.returning, opening.logoOrbit, opening.logo]) assert.equal(value, 0);
   const globe = genesisFrame(.54);
   assert.equal(globe.phase, 'globe');
   assert.ok(globe.silhouette > 0 && globe.silhouette < 1);
@@ -88,15 +88,39 @@ test('Welcome intro starts blank, reveals the globe before the signal, and shows
   const impact = genesisFrame(genesisImpact);
   assert.equal(impact.phase, 'scan');
   assert.equal(impact.scan, -1);
+  assert.equal(impact.satelliteTurns, 0);
   const middle = genesisFrame(2.55);
   assert.ok(middle.scan > -1 && middle.scan < 1 && middle.scanGlow > 0);
-  assert.equal(middle.hanoi, 0);
-  assert.equal(genesisFrame(genesisScanEnd - .01).navigation, 0);
-  assert.equal(genesisFrame(genesisScanEnd).phase, 'welcome');
-  assert.ok(genesisFrame(4).hanoi > 0 && genesisFrame(4).action > 0 && genesisFrame(4).navigation > 0);
+  assert.ok(middle.scanProgress > 0 && middle.scanProgress < 1);
+  assert.equal(middle.satelliteTurns, 0);
+  assert.equal(middle.returning, 0);
+  assert.equal(genesisFrame(genesisScanEnd - .01).satelliteTurns, 0);
+  const orbitStart = genesisFrame(genesisScanEnd);
+  assert.equal(orbitStart.phase, 'satellite');
+  assert.equal(orbitStart.scanProgress, 1);
+  assert.equal(orbitStart.satelliteTurns, 0);
+  assert.ok(Math.abs(genesisSatelliteEnd - genesisScanEnd - 1.05) < 1e-9);
+  const halfway = genesisFrame((genesisScanEnd + genesisSatelliteEnd) / 2);
+  assert.ok(Math.abs(halfway.satelliteTurns - .5) < 1e-9);
+  assert.equal(halfway.returning, 0);
+  assert.equal(genesisFrame(genesisSatelliteEnd).satelliteTurns, 1);
+  const returning = genesisFrame((genesisSatelliteEnd + genesisReturnEnd) / 2);
+  assert.equal(returning.phase, 'return');
+  assert.ok(returning.returning > 0 && returning.returning < 1);
+  assert.equal(returning.logoOrbit, 0);
+  assert.equal(returning.logo, 0);
+  const tracing = genesisFrame((genesisReturnEnd + genesisLogoOrbitEnd) / 2);
+  assert.equal(tracing.phase, 'logo');
+  assert.equal(tracing.returning, 1);
+  assert.ok(tracing.logoOrbit > 0 && tracing.logoOrbit < 1);
+  assert.equal(tracing.logo, 0);
+  const forming = genesisFrame((genesisLogoOrbitEnd + genesisDuration) / 2);
+  assert.equal(forming.logoOrbit, 1);
+  assert.ok(forming.logo > 0 && forming.logo < 1);
+  assert.equal(genesisFrame(genesisDuration - .01).complete, false);
   const completed = genesisFrame(genesisDuration + 1);
   assert.equal(completed.phase, 'complete');
-  for (const value of [completed.grid, completed.borders, completed.hanoi, completed.controls]) assert.equal(value, 1);
+  for (const value of [completed.grid, completed.borders, completed.returning, completed.logoOrbit, completed.logo]) assert.equal(value, 1);
   assert.equal(completed.scanGlow, 0);
 });
 
@@ -113,6 +137,42 @@ test('the overlay targets the live Atlas in desktop and stacked layouts', () => 
     assert.equal(projection.radius, radius);
     assert.equal(host.left + projection.x, globe.left + centerX);
     assert.equal(host.top + projection.y, globe.top + globe.height / 2);
+  }
+});
+
+test('the stream crosses the globe and hands off to the satellite at the end of the scan', () => {
+  for (const [width, height, x, y, radius] of [[1440, 780, 1020, 400, 210], [390, 700, 195, 364, 125], [320, 568, 160, 295, 108]]) {
+    const host = { left: 8, top: 4, width, height };
+    const globe = { x, y, radius };
+    const logo = { left: host.left + 20, top: host.top + 12, width: 68, height: 40 };
+    const path = genesisBrandPath(host, globe, logo);
+    const launch = path.point(0);
+    const bottom = path.point(.69);
+    const arrival = path.point(1);
+    const hit = genesisImpactPoint(globe);
+    const orbitStart = path.satellite(0);
+    const satellite = path.satellite(1);
+    assert.deepEqual(path.signal(1), hit);
+    assert.deepEqual(path.scan(0), hit);
+    const scanEnd = path.scan(1);
+    assert.ok(hit.x < x - radius * .95 && scanEnd.x > x + radius * .95);
+    assert.ok(Math.hypot(orbitStart.x - scanEnd.x, orbitStart.y - scanEnd.y) < 1e-9);
+    const scanning = path.scan(.999);
+    const orbitNext = path.satellite(.001);
+    assert.ok(orbitNext.x > scanEnd.x && orbitNext.y > scanEnd.y);
+    assert.ok((scanEnd.x - scanning.x) * (orbitNext.x - scanEnd.x) + (scanEnd.y - scanning.y) * (orbitNext.y - scanEnd.y) > 0);
+    assert.ok(Math.hypot(launch.x - satellite.x, launch.y - satellite.y) < 1e-9);
+    assert.ok(satellite.front && satellite.visible);
+    const orbit = Array.from({ length: 48 }, (_, index) => path.satellite(index / 48));
+    assert.ok(orbit.some(point => !point.front && !point.visible));
+    assert.ok(orbit.some(point => !point.front && point.visible));
+    const approaching = path.satellite(.999);
+    const leaving = path.point(.001);
+    assert.ok((launch.x - approaching.x) * (leaving.x - launch.x) + (launch.y - approaching.y) * (leaving.y - launch.y) > 0);
+    assert.ok(launch.y < bottom.y && bottom.y < height);
+    assert.ok(launch.x > bottom.x && launch.x > arrival.x);
+    assert.ok(arrival.x >= logo.left - host.left && arrival.x <= logo.left - host.left + logo.width);
+    assert.ok(arrival.y >= logo.top - host.top && arrival.y <= logo.top - host.top + logo.height);
   }
 });
 

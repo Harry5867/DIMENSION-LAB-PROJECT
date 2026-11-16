@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUpRight, X } from 'lucide-react';
+import { ChevronLeft, Eye, EyeOff } from 'lucide-react';
 import type { AuthOptions } from '@dimension-lab/contracts';
 import { DEMO_EMAIL, DEMO_PASSWORD, validDemoCredentials } from '@dimension-lab/contracts/demo';
 import { useWelcomeLanguage } from '../../../shared/providers/WelcomeLanguage';
 import { fetchWithTimeout } from '../../../shared/api/network';
-import { useDialogFocus } from '../../../shared/hooks/useDialogFocus';
-import { LabMark } from '../../../shared/ui/LabMark';
+import { TeamLogo } from '../../../shared/ui/TeamLogo';
+import { LoginBackdrop } from './LoginBackdrop';
+import './login.css';
 
 export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { onClose: () => void; onSignIn: (token?: string | null) => void; authOptions: AuthOptions | null; googleError: boolean }) {
   const { t } = useWelcomeLanguage();
-  const [closing, setClosing] = useState(false);
-  const close = () => { loginRequest.current?.abort(); setClosing(true); };
-  const dialog = useDialogFocus(true, close, '#login-email');
+  const heading = useRef<HTMLHeadingElement>(null);
   const [registering, setRegistering] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -24,8 +23,10 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
   const [submitting, setSubmitting] = useState(false);
   const loginRequest = useRef<AbortController | null>(null);
   useEffect(() => () => loginRequest.current?.abort(), []);
+  useEffect(() => { heading.current?.focus({ preventScroll: true }); }, [registering]);
+  const close = () => { loginRequest.current?.abort(); onClose(); };
   async function signIn() {
-    if (closing || loginRequest.current) return;
+    if (loginRequest.current) return;
     const atlas = authOptions?.mode === 'atlas';
     setFeedback('');
     setRegistered(false);
@@ -91,17 +92,16 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
       else setError(true);
     }
   }
-  useEffect(() => {
-    if (!closing) return;
-    const timer = window.setTimeout(onClose, 420);
-    return () => window.clearTimeout(timer);
-  }, [closing, onClose]);
-  return <div className={'login-backdrop' + (closing ? ' is-closing' : '')} onClick={close}>
-    <div className="login-panel" role="dialog" aria-modal="true" aria-labelledby="login-title" tabIndex={-1} ref={dialog} onClick={event => event.stopPropagation()}
-      onAnimationEnd={event => { if (closing && event.target === event.currentTarget) onClose(); }}>
-      <header className="login-step login-step--header"><span>{t('DIMENSION / LAB — ACCESS', 'DIMENSION / LAB — ĐĂNG NHẬP')}</span><button className="login-close" aria-label={t('Close login panel', 'Đóng bảng đăng nhập')} onClick={close}><X size={18} /></button></header>
-      <LabMark className="login-logo login-step login-step--logo" />
-      <h2 id="login-title" className="login-step login-step--title">{registering ? t('Create account', 'Tạo tài khoản') : t('Sign in', 'Đăng nhập')}</h2>
+  return <main className="login-page" aria-labelledby="login-title" onKeyDown={event => {
+    if (event.key === 'Escape' && !event.defaultPrevented) close();
+  }}>
+    <LoginBackdrop />
+    <button className="back-control back-control--icon login-back" type="button" aria-label="Back to welcome" onClick={close}>
+      <ChevronLeft size={20} strokeWidth={1.7} aria-hidden="true" />
+    </button>
+    <div className="login-brand"><TeamLogo label="Dimension Lab" /></div>
+    <div className="login-content">
+      <h1 id="login-title" className="sr-only" ref={heading} tabIndex={-1}>{registering ? t('Create account', 'Tạo tài khoản') : t('Sign in', 'Đăng nhập')}</h1>
       {authOptions ? <>
       {googleError && !registering && <p role="alert" className="login-error">{t('Google sign-in could not be completed. Please try again.', 'Không thể hoàn tất đăng nhập Google. Hãy thử lại.')}</p>}
       {registered && <p role="status">{t('Account created. Sign in with your password.', 'Đã tạo tài khoản. Hãy nhập mật khẩu để đăng nhập.')}</p>}
@@ -110,13 +110,22 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
           <label htmlFor="login-name">{t('Display name', 'Tên hiển thị')}</label>
           <input id="login-name" autoComplete="name" maxLength={80} required value={displayName} onChange={event => setDisplayName(event.target.value)} />
         </div>}
-        <div className="login-field login-step login-step--email">
-        <label htmlFor="login-email">{t('Email address', 'Địa chỉ email')}</label>
+        <div className="login-field">
+        <label htmlFor="login-email">{t('Email', 'Địa chỉ email')}</label>
         <input id="login-email" type="email" autoComplete="username" placeholder="you@example.com" maxLength={254} value={email} required onChange={event => { setEmail(event.target.value); setError(false); }} aria-invalid={error} aria-describedby={error ? 'login-error' : undefined} />
         </div>
-        <div className="login-field login-step login-step--password">
-        <label htmlFor="login-password">{t('Password', 'Mật khẩu')}</label>
-        <div className="login-password"><input id="login-password" type={visible ? 'text' : 'password'} autoComplete={registering ? 'new-password' : 'current-password'} placeholder={registering ? t('At least 12 characters', 'Tối thiểu 12 ký tự') : t('Enter your password', 'Nhập mật khẩu của bạn')} required value={password} onChange={event => { setPassword(event.target.value); setError(false); }} aria-invalid={error} aria-describedby={error ? 'login-error' : undefined} /><button className="login-visibility-toggle" type="button" aria-controls="login-password" aria-label={visible ? t('Hide password', 'Ẩn mật khẩu') : t('Show password', 'Hiện mật khẩu')} onClick={() => setVisible(value => !value)}>{visible ? t('HIDE', 'ẨN') : t('SHOW', 'HIỆN')}</button></div>
+        <div className="login-field">
+          <label htmlFor="login-password">{t('Password', 'Mật khẩu')}</label>
+          <div className="login-password">
+            <input id="login-password" type={visible ? 'text' : 'password'} autoComplete={registering ? 'new-password' : 'current-password'}
+              placeholder={registering ? t('At least 12 characters', 'Tối thiểu 12 ký tự') : t('Enter your password', 'Nhập mật khẩu của bạn')}
+              required value={password} onChange={event => { setPassword(event.target.value); setError(false); }}
+              aria-invalid={error} aria-describedby={error ? 'login-error' : undefined} />
+            <button className="login-visibility-toggle" type="button" aria-controls="login-password"
+              aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(value => !value)}>
+              {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+            </button>
+          </div>
         </div>
         {registering && <div className="login-field">
           <label htmlFor="login-confirmation">{t('Confirm password', 'Xác nhận mật khẩu')}</label>
@@ -124,23 +133,33 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
         </div>}
         {feedback && <p role="alert" className="login-error">{feedback}</p>}
         {error && <p role="alert" id="login-error" className="login-error">{t('Email or password is incorrect. Use the demo account below.', 'Email hoặc mật khẩu chưa đúng. Hãy dùng tài khoản mẫu bên dưới.')}</p>}
-        <button className="welcome-primary login-submit login-step login-step--submit" type="submit" disabled={closing || submitting}><span>{submitting ? t('Please wait…', 'Vui lòng đợi…') : registering ? t('Create account', 'Tạo tài khoản') : t('Sign in', 'Đăng nhập')}</span><ArrowUpRight size={18} aria-hidden="true" /></button>
+        <button className="login-submit" type="submit" disabled={submitting}>{submitting ? t('Please wait…', 'Vui lòng đợi…') : registering ? t('Create account', 'Tạo tài khoản') : t('Sign in', 'Đăng nhập')}</button>
       </form>
       {authOptions.mode === 'demo' && <div className="login-demo">
-        <button type="button" className="lab-action login-demo-action login-step login-step--demo" onClick={() => { setEmail(DEMO_EMAIL); setPassword(DEMO_PASSWORD); setError(false); }}><span>{t('Use demo account', 'Dùng tài khoản mẫu')}</span><ArrowUpRight size={14} aria-hidden="true" /></button>
+        <button type="button" className="login-option" disabled={submitting} onClick={() => { setEmail(DEMO_EMAIL); setPassword(DEMO_PASSWORD); setError(false); }}><span>{t('Use demo account', 'Dùng tài khoản mẫu')}</span></button>
       </div>}
-      {authOptions.registration && <div className="login-demo">
-        <button className="lab-action login-demo-action" type="button" disabled={closing || submitting} onClick={() => {
+      {authOptions.google && <>
+        <p className="login-divider">{t('or', 'hoặc')}</p>
+        <a className="login-option" href="/api/auth/google" aria-disabled={submitting || undefined} onClick={event => {
+          if (submitting) event.preventDefault();
+        }}>
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#4285F4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5h6.6c3.9-3.5 6.1-8.7 6.1-14.9Z" />
+            <path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.6l-6.6-5A12.4 12.4 0 0 1 12.5 28H5.7v5.2A20 20 0 0 0 24 44Z" />
+            <path fill="#FBBC05" d="M12.5 28a12 12 0 0 1 0-8v-5.2H5.7a20 20 0 0 0 0 18.4Z" />
+            <path fill="#EA4335" d="M24 12c3 0 5.7 1 7.8 3l5.9-5.8A20 20 0 0 0 5.7 14.8l6.8 5.2A12 12 0 0 1 24 12Z" />
+          </svg>
+          {t('Continue with Google', 'Tiếp tục với Google')}
+        </a>
+      </>}
+      {authOptions.registration && <p className="login-switch">
+        {registering ? t('Already have an account?', 'Đã có tài khoản?') : t('New to Dimension Lab?', 'Bạn mới đến Dimension Lab?')}{' '}
+        <button type="button" disabled={submitting} onClick={() => {
           setRegistering(value => !value);
-          setPassword('');
-          setConfirmation('');
-          setVisible(false);
-          setFeedback('');
-          setRegistered(false);
-        }}>{registering ? t('Back to sign in', 'Quay lại đăng nhập') : t('Create account', 'Tạo tài khoản')}</button>
-      </div>}
-      {authOptions.google && !registering && <a className="lab-action login-google" href="/api/auth/google">{t('Sign in with Google', 'Đăng nhập với Google')}</a>}
+          setPassword(''); setConfirmation(''); setVisible(false); setFeedback(''); setRegistered(false);
+        }}>{registering ? t('Sign in', 'Đăng nhập') : t('Create an account', 'Tạo tài khoản')}</button>
+      </p>}
       </> : <p role="status">{t('Checking sign-in options…', 'Đang kiểm tra phương thức đăng nhập…')}</p>}
     </div>
-  </div>;
+  </main>;
 }

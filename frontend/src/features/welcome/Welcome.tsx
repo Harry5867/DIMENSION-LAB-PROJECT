@@ -2,7 +2,7 @@ import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, ty
 import { X } from 'lucide-react';
 import type { AuthOptions } from '@dimension-lab/contracts';
 import { LoginPanel } from '../auth/components/LoginPanel';
-import { LabMark } from '../../shared/ui/LabMark';
+import { TeamLogo } from '../../shared/ui/TeamLogo';
 import { DataAtmosphere } from './animations/DataAtmosphere';
 import type { WelcomeTheme } from '../../shared/preferences/welcomePreferences';
 import { useAppTheme } from '../../shared/providers/ThemeProvider';
@@ -60,22 +60,31 @@ function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme, aut
     return () => preference.removeEventListener('change', sync);
   }, []);
   const [googleError] = useState(() => new URLSearchParams(window.location.search).get('auth') === 'google-error');
-  const [login, setLogin] = useState(googleError);
+  const [loginPhase, setLoginPhase] = useState<'welcome' | 'opening' | 'open' | 'closing'>(googleError ? 'open' : 'welcome');
+  const login = loginPhase !== 'welcome';
   useEffect(() => {
     if (googleError) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
   }, [googleError]);
   const [active, setActive] = useState<number | null>(null);
+  const conceptButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const [globeControlsHost, setGlobeControlsHost] = useState<HTMLDivElement | null>(null);
   const [explorationControlsHost, setExplorationControlsHost] = useState<HTMLDivElement | null>(null);
   const [globeMode, setGlobeMode] = useState<GlobeMode>('atlas');
   const [genesisPhase, setGenesisPhase] = useState<'playing' | 'finished' | 'bypassed'>(() =>
-    shouldPlayGenesis(Boolean(arrival), genesisStartedInPage, systemReduced) ? 'playing' : 'bypassed');
+    shouldPlayGenesis(Boolean(arrival) || googleError, genesisStartedInPage, systemReduced) ? 'playing' : 'bypassed');
   const genesisId = genesisPhase === 'playing' ? 1 : null;
   const [startedId, setStartedId] = useState<number | null>(null);
   const genesisVisited = genesisPhase === 'playing' || genesisPhase === 'finished';
   const genesisHost = useRef<HTMLCanvasElement>(null);
+  const genesisLogo = useRef<HTMLSpanElement>(null);
   const enterRef = useRef<HTMLButtonElement>(null);
+  const focusAfterLogin = useRef(false);
   const focusAfterSkip = useRef(false);
+  useEffect(() => {
+    if (loginPhase !== 'welcome' || !focusAfterLogin.current) return;
+    focusAfterLogin.current = false;
+    enterRef.current?.focus({ preventScroll: true });
+  }, [loginPhase]);
   const finishGenesis = useCallback(() => {
     setGenesisPhase(current => current === 'playing' ? 'finished' : current);
   }, []);
@@ -140,33 +149,68 @@ function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme, aut
   const selectConcept = (index: number) => {
     setActive(current => current === index ? null : index);
   };
+  const closeConcept = useCallback(() => {
+    if (active === null) return;
+    setActive(null);
+    conceptButtons.current[active]?.focus({ preventScroll: true });
+  }, [active]);
+  useEffect(() => {
+    if (active === null || login || genesisId !== null) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      closeConcept();
+    };
+    window.addEventListener('keydown', escape);
+    return () => window.removeEventListener('keydown', escape);
+  }, [active, closeConcept, login, genesisId]);
   const openLogin = () => {
     if (genesisId !== null) finishGenesis();
     setActive(null);
     if (signedIn) onSignIn();
-    else setLogin(true);
+    else setLoginPhase('opening');
   };
-  return <div className={'welcome-page' + (arrival ? ' welcome-page--returning' : '')} lang={language} data-theme={theme} data-globe-mode={globeMode} data-arrival-motion={arrival ?? undefined} data-motion={motionEnabled ? 'full' : 'gentle'} data-login-open={login || undefined}
-    data-genesis={genesisId !== null || undefined} data-genesis-visited={genesisVisited || undefined}>
-    {genesisId !== null && <>
+  const closeLogin = () => {
+    setLoginPhase('closing');
+  };
+  const finishLoginTransition = () => {
+    if (loginPhase === 'opening') setLoginPhase('open');
+    if (loginPhase === 'closing') {
+      focusAfterLogin.current = true;
+      setLoginPhase('welcome');
+    }
+  };
+  return <div className={'welcome-page' + (arrival ? ' welcome-page--returning' : '')} lang={language} data-theme={theme} data-globe-mode={globeMode} data-arrival-motion={arrival ?? undefined} data-motion={motionEnabled ? 'full' : 'gentle'} data-login-phase={loginPhase}
+    data-genesis={(!login && genesisId !== null) || undefined} data-genesis-visited={genesisVisited || undefined}>
+    {!login && genesisId !== null && <>
       <canvas className="welcome-genesis" ref={genesisHost} aria-hidden="true" />
       <div className="genesis-pointer-guard" aria-hidden="true" />
     </>}
-    <DataAtmosphere variant="welcome" active={!login && genesisId === null} />
+    <DataAtmosphere variant="welcome" active={loginPhase !== 'open' && genesisId === null} />
     <div className="welcome-surface" inert={login || genesisId !== null}>
     <header className="welcome-header">
-      <a href="#/" className="workspace-brand" aria-label={t('Dimension Lab welcome', 'Trang chủ Dimension Lab')}>
-        <LabMark className="welcome-mark" /> DIMENSION <span className="brand-slash">/</span> LAB
+      <a href="#/" className="welcome-brand" aria-label={t('Dimension Lab welcome', 'Trang chủ Dimension Lab')}>
+        <TeamLogo ref={genesisLogo} />
       </a>
-      <nav className="welcome-concepts" aria-label={t('Globe concepts', 'Các chủ đề khám phá')}>
-        {items.map((item, index) => (
-          <button key={index} aria-label={t('Discover ', 'Chủ đề: ') + item.name.toLowerCase()}
-            aria-pressed={active === index} aria-expanded={active === index} aria-controls={active === index ? 'welcome-concept-panel' : undefined} onClick={() => selectConcept(index)}>
-            <span className="welcome-concept-index">{String(index + 1).padStart(2, '0')}</span>
-            <span className="welcome-concept-label" aria-hidden="true">{item.name}</span>
-          </button>
-        ))}
-      </nav>
+      <div className="welcome-concept-group" data-open={concept ? '' : undefined}>
+        <nav className="welcome-concepts" aria-label={t('Globe concepts', 'Các chủ đề khám phá')}>
+          {items.map((item, index) => (
+            <button key={item.name} type="button" ref={element => { conceptButtons.current[index] = element; }}
+              aria-label={t('Discover ', 'Chủ đề: ') + item.name.toLowerCase()}
+              aria-pressed={active === index} aria-expanded={active === index} aria-controls={active === index ? 'welcome-concept-panel' : undefined} onClick={() => selectConcept(index)}>
+              <span className="welcome-concept-index">{String(index + 1).padStart(2, '0')}</span>
+              <span className="welcome-concept-label" aria-hidden="true">{item.name}</span>
+            </button>
+          ))}
+        </nav>
+        {concept && <section id="welcome-concept-panel" className="welcome-concept" aria-labelledby="welcome-concept-title">
+          <div className="welcome-concept-heading">
+            <h2 id="welcome-concept-title">{concept.name}</h2>
+            <button type="button" aria-label={t('Close concept', 'Đóng chủ đề')} onClick={closeConcept}><X size={16} aria-hidden="true" /></button>
+          </div>
+          <p>{concept.text}</p>
+        </section>}
+      </div>
       <div className="welcome-globe-modes" ref={setGlobeControlsHost} />
     </header>
     <main className="welcome-main">
@@ -187,22 +231,20 @@ function WelcomeScreen({ onSignIn, signedIn, arrival = null, theme, onTheme, aut
         fallback={<div className="data-globe globe-loading" role="status">{t('The globe is unavailable.', 'Hiện không tải được quả cầu.')}</div>}
       >
         <Suspense fallback={<div className="data-globe globe-loading" role="status" aria-hidden={genesisId !== null}>{t('Loading the data globe…', 'Đang tải quả cầu dữ liệu…')}</div>}>
-          <DataGlobe suspended={login} motionEnabled={motionEnabled} theme={theme} modeControlsTarget={globeControlsHost} explorationControlsTarget={explorationControlsHost}
+          <DataGlobe suspended={loginPhase === 'open'} motionEnabled={motionEnabled} theme={theme} modeControlsTarget={globeControlsHost} explorationControlsTarget={explorationControlsHost}
             onModeChange={mode => { setGlobeMode(mode); setActive(null); }} showDetails={active === null}
-            genesis={genesisId === null ? undefined : { id: genesisId, host: genesisHost, onStarted: setStartedId, onComplete: finishGenesis }}
+            genesis={genesisId === null ? undefined : { id: genesisId, host: genesisHost, logo: genesisLogo, onStarted: setStartedId, onComplete: finishGenesis }}
             onExplore={() => setActive(null)} />
         </Suspense>
       </GlobeBoundary>
-      {concept && <section id="welcome-concept-panel" className="welcome-concept" aria-labelledby="welcome-concept-title">
-        <button type="button" aria-label={t('Close concept', 'Đóng chủ đề')} onClick={() => setActive(null)}><X size={16} /></button>
-        <p className="welcome-eyebrow">{t('THE DATA EXPLORATION LAB', 'KHÁM PHÁ DỮ LIỆU')}</p>
-        <h2 id="welcome-concept-title">{concept.name}</h2>
-        <p>{concept.text}</p>
-      </section>}
     </main>
     <footer className="welcome-footer"><WelcomeSettings theme={theme} onTheme={onTheme} /></footer>
     </div>
-    {login && <LoginPanel onClose={() => setLogin(false)} onSignIn={onSignIn} authOptions={authOptions} googleError={googleError} />}
+    {login && <div className="welcome-login-layer" inert={loginPhase === 'closing'} onAnimationEnd={event => {
+      if (event.target === event.currentTarget) finishLoginTransition();
+    }}>
+      <LoginPanel onClose={closeLogin} onSignIn={onSignIn} authOptions={authOptions} googleError={googleError} />
+    </div>}
   </div>;
 }
 

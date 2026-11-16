@@ -14,7 +14,7 @@ const Workspace = lazy(() => import('./App'));
 type EntrancePhase = 'idle' | 'covering' | 'revealing';
 type EntranceDirection = 'in' | 'out';
 
-const glassControlSelector = 'button:not(.workspace-scrim, .globe-capital-marker, .portal-signout, .theme-toggle, .welcome-primary, .login-visibility-toggle, .login-demo-action, .welcome-setting-control, .globe-mode-option, .genesis-start), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
+const glassControlSelector = 'button:not(.workspace-scrim, .globe-capital-marker, .portal-signout, .theme-toggle, .welcome-primary, .login-page button, .welcome-setting-control, .globe-mode-option, .genesis-start), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
 
 export function Entry() {
   const { tr, t } = useAppLanguage();

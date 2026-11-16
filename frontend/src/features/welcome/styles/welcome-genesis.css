@@ -14,39 +14,35 @@
   touch-action: none;
 }
 
+.welcome-page[data-genesis] { overflow: hidden; }
 .welcome-page[data-genesis] .globe-loading { opacity: 0; }
 .welcome-page[data-genesis-visited] > .data-atmosphere--welcome { animation: none; }
 .welcome-page[data-genesis] > .data-atmosphere--welcome { opacity: var(--genesis-atmosphere, 0); }
 .welcome-page[data-genesis] .globe-renderer { opacity: var(--genesis-silhouette, 0); }
 .welcome-page[data-genesis] .globe-renderer::before { opacity: var(--genesis-disk, .34); }
-.welcome-page[data-genesis] .welcome-header { opacity: var(--genesis-navigation, 0); }
-.welcome-page[data-genesis] :is(.welcome-footer, .globe-controls) { opacity: var(--genesis-controls, 0); }
-.welcome-page[data-genesis] .atlas-coordinate { opacity: var(--genesis-grid, 0); transition: none; }
-.welcome-page[data-genesis] .globe-capital-marker { opacity: var(--genesis-marker, 0); transition: none; }
+.welcome-page[data-genesis] :is(.welcome-copy, .welcome-concept-group, .welcome-globe-modes, .welcome-footer, .globe-controls, .atlas-coordinate, .globe-capital-marker) {
+  visibility: hidden;
+}
+.welcome-page[data-genesis] .welcome-brand .team-logo {
+  clip-path: inset(0 calc(100% * (1 - var(--genesis-logo, 0))) 0 0);
+  opacity: var(--genesis-logo, 0);
+}
 .welcome-page[data-genesis-visited] .atlas-origin-marker::after { animation-delay: 1.25s; opacity: 0; }
-.welcome-page[data-genesis] .atlas-origin-marker::after {
-  animation: none;
-  opacity: var(--genesis-pulse-alpha, 0);
-  transform: scale(calc(1 + 2.4 * var(--genesis-pulse, 0)));
-}
-.welcome-page[data-genesis] .welcome-copy .welcome-eyebrow { --reveal: var(--genesis-eyebrow, 0); }
-.welcome-page[data-genesis] .welcome-copy h1 { --reveal: var(--genesis-headline, 0); }
-.welcome-page[data-genesis] .welcome-description { --reveal: var(--genesis-description, 0); }
-.welcome-page[data-genesis] .welcome-actions { --reveal: var(--genesis-action, 0); }
-.welcome-page[data-genesis] .welcome-copy :is(.welcome-eyebrow, h1, .welcome-description, .welcome-actions) {
-  opacity: var(--reveal);
-  transform: translateY(calc(14px * (1 - var(--reveal))));
-}
 
 .welcome-page[data-genesis-visited][data-globe-mode=atlas] .welcome-title-line > span { animation: none !important; }
 .welcome-page[data-genesis-visited] .globe-viewport { animation: none; }
 
 @media (max-width: 599px) {
-  .welcome-page[data-genesis] .welcome-copy :is(.welcome-eyebrow, h1, .welcome-description, .welcome-actions) {
-    transform: translateY(calc(8px * (1 - var(--reveal))));
+  .welcome-page[data-genesis-visited] .globe-viewport { translate: 0 0; transition: translate 420ms ease-out; }
+  .welcome-page[data-genesis] .globe-viewport { translate: 0 var(--genesis-globe-shift, 0px); transition: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .welcome-page[data-genesis-visited]:not([data-genesis]) :is(.welcome-concept-group, .welcome-globe-modes, .welcome-footer, .globe-controls, .atlas-coordinate, .globe-capital-marker) {
+    animation: welcome-information-reveal 280ms ease-out backwards;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .welcome-page[data-genesis] .welcome-copy :is(.welcome-eyebrow, h1, .welcome-description, .welcome-actions) { transform: none; }
+@keyframes welcome-information-reveal {
+  from { opacity: 0; }
 }

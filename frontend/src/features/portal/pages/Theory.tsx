@@ -90,7 +90,7 @@ export function Theory() {
     const method = chapter.methods.find(item => item.id === selection.method.id) ?? chapter.methods[0];
     const nextChapter = chapters[(index + 1) % chapters.length];
     return <div className="theory-scope theory-reader">
-      <div className="portal-page-tools"><a className="theory-back-link" href="#/theory"><ArrowLeft size={15} aria-hidden="true" /> {tr("All chapters")}</a><ThemeToggle /></div>
+      <div className="portal-page-tools"><a className="back-control" href="#/theory"><ArrowLeft size={15} aria-hidden="true" /> {tr("All chapters")}</a><ThemeToggle /></div>
       <header className="theory-reader-heading portal-content-heading"><p className="theory-section-label"><span data-section-number>{chapter.number}</span> {tr("/ THE THEORY COLLECTION")}</p><h1 ref={readerTitle} tabIndex={-1}>{chapter.title}</h1><p>{chapter.subtitle}</p></header>
       <nav className="theory-method-nav" aria-label={tr("Algorithms in this chapter")}>{chapter.methods.map(item => <a key={item.id} href={theoryHref(chapter.id, item.id)} aria-current={method.id === item.id ? 'page' : undefined}>{item.name}<ArrowUpRight size={14} aria-hidden="true" /></a>)}</nav>
       <MethodContent method={method} chapterId={chapter.id} />
@@ -99,7 +99,7 @@ export function Theory() {
   }
 
   return <div className="theory-scope theory-catalog" ref={catalog}>
-    <div className="portal-page-tools"><a className="theory-back-link" href="#/overview"><ArrowLeft size={15} aria-hidden="true" /> {tr("Go back")}</a><ThemeToggle /></div>
+    <div className="portal-page-tools"><a className="back-control" href="#/overview"><ArrowLeft size={15} aria-hidden="true" /> {tr("Go back")}</a><ThemeToggle /></div>
     <header className="theory-catalog-heading portal-content-heading"><div className="theory-catalog-meta"><p className="theory-section-label"><span data-section-number>01</span> {tr("/ THEORY")}</p><p className="theory-section-label">{tr("04 CHAPTERS / 08 METHODS")}</p></div><h1>{tr("Theory")}</h1><p>{tr("Understand the algorithms.")}</p></header>
     <nav className="theory-books" aria-label={tr("Theory chapters")}>{chapters.map((chapter, index) => <div key={chapter.id} className="theory-book-slot"
       style={{ '--book-angle': coverAngles[index] + 'deg', '--book-order': index === 1 ? 4 : index === 2 ? 3 : 2, '--book-offset': index === 1 || index === 2 ? '-8px' : '12px' } as CSSProperties}><a

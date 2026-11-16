@@ -2,9 +2,8 @@
   --welcome-background:#fff; --welcome-control-bg:#efefec; --welcome-control-active:#d9ddd6; --welcome-control-hover:#e4e8e0;
   color-scheme:light;
 }
-.welcome-page .welcome-footer { justify-content:flex-end; min-height:68px; }
-.welcome-settings { display:flex; align-items:center; gap:8px; pointer-events:auto; letter-spacing:0; }
-.welcome-appearance { display:flex; align-items:center; gap:2px; padding:3px; border:1px solid var(--border-subtle); border-radius:999px; background:var(--welcome-control-bg); }
+.welcome-page .welcome-footer { justify-content:flex-end; min-height:68px; padding-inline-end:max(12px, env(safe-area-inset-right)); }
+.welcome-appearance { display:flex; align-items:center; gap:2px; padding:3px; border:1px solid var(--border-subtle); border-radius:999px; background:var(--welcome-control-bg); pointer-events:auto; }
 #root .welcome-page .welcome-setting-control { position:relative; background:var(--welcome-control-bg); color:var(--text-main); border:0; box-shadow:none; scale:1; transition:background-color 180ms ease,color 180ms ease; }
 #root .welcome-page .welcome-setting-control::after { content:none; }
 #root .welcome-page .welcome-setting-control:active { scale:1; }
@@ -12,18 +11,6 @@
 #root .welcome-page .welcome-appearance-option { display:grid; place-items:center; width:34px; height:34px; padding:0; border-radius:50%; }
 #root .welcome-page .welcome-appearance-option[aria-pressed=true] { background:var(--welcome-control-active); }
 #root .welcome-page .welcome-setting-control:hover { background:var(--welcome-control-hover); }
-.welcome-language { position:relative; display:block; }
-.welcome-language-options { position:absolute; bottom:calc(100% + 8px); right:0; padding:5px; min-width:130px; border:1px solid var(--border-subtle); border-radius:12px; background:var(--bg-panel); box-shadow:0 8px 24px #152d2022; }
-#root .welcome-language-options button { display:block; width:100%; text-align:left; min-height:38px; padding:6px 12px; border-radius:7px; background:transparent; font:13px var(--font-sans); }
-#root .welcome-language-options button[aria-pressed=true] { background:var(--welcome-control-active); }
-.welcome-page[lang=vi] .welcome-copy h1 { font-size:clamp(28px,4.1vw,84px); line-height:1.14; }
-.welcome-page[lang=vi] .welcome-title-line { padding-block:.28em .14em; margin-block:-.28em -.09em; }
-@media (max-width:599px) {
-  .welcome-page[lang=vi] .welcome-copy h1 { font-size:clamp(24px,7.8vw,46px); }
-  .welcome-page[lang=vi] .welcome-title-line > span { white-space:normal; }
-}
-.welcome-page[lang=vi] .welcome-eyebrow { line-height:1.8; letter-spacing:.08em; }
-.welcome-page[lang=vi] .welcome-eyebrow > span { flex-shrink:0; }
 .welcome-page[data-theme=dark] {
   --welcome-background:#101916; --text-main:#edf2ed; --text-muted:#b0c0b5; --explore-primary:#91d1bd; --accent-primary:#91d1bd;
   --bg-panel:#18251f; --bg-interactive:#203128; --border-subtle:#354a3e;
@@ -36,16 +23,7 @@
 .welcome-page[data-theme=dark] .welcome-concepts button::before { background:#536b5b; }
 .welcome-page[data-theme=dark] .welcome-concepts button:is(:hover,:focus-visible,[aria-pressed=true])::before { background:var(--explore-primary); }
 .welcome-page[data-theme=dark] .welcome-header nav button:is(:hover,:focus-visible,[aria-expanded=true]) { color:var(--explore-primary); }
-.welcome-page[data-theme=dark] .welcome-concept-label,
-.welcome-page[data-theme=dark] .login-panel { background:var(--bg-panel); color:var(--text-main); border-color:var(--border-subtle); }
-.welcome-page[data-theme=dark] .login-close { color:var(--text-muted); }
-.welcome-page[data-theme=dark] .login-panel input { background:#122017; color:var(--text-main); border-color:#536a5a; }
-.welcome-page[data-theme=dark] .login-panel input::placeholder { color:#98ad9f; }
-.welcome-page[data-theme=dark] .login-panel input:focus { border-color:var(--explore-primary); }
-#root .welcome-page[data-theme=dark] .login-demo-action { background:var(--bg-interactive); color:var(--text-muted); border-color:var(--border-subtle); }
-#root .welcome-page[data-theme=dark] .login-demo-action:is(:hover,:focus-visible),
-#root .welcome-page[data-theme=dark] .login-visibility-toggle:is(:hover,:focus-visible,:active) { color:var(--explore-primary); }
-.welcome-page[data-theme=dark] .login-error { color:#ffb7ac; }
+.welcome-page[data-theme=dark] .welcome-concept-label { background:var(--bg-panel); color:var(--text-main); border-color:var(--border-subtle); }
 .welcome-page[data-theme=dark] .globe-city-panel > p:not(.welcome-eyebrow) { color:var(--text-muted); }
 .welcome-page[data-theme=dark] .story-image-placeholder { background:var(--bg-interactive); }
 .welcome-page[data-theme=dark] :is(.globe-mode-switcher,.globe-directory > summary,.globe-directory-panel,.globe-capital-tooltip,.globe-city-panel,.globe-terrain-panel,.globe-story-panel,.story-marker-preview) { background:var(--bg-panel); color:var(--text-main); border-color:var(--border-subtle); box-shadow:0 6px 22px #0002; }

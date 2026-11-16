@@ -14,7 +14,7 @@ import { StoryMarkers } from './stories/StoryMarkers';
 import { filterStories, groupStories, loadStories, projectStoryGroups, type StoryFilter, type StoryGroup, type StoryRecord } from './stories/storyData';
 import './data-globe.css';
 import { localizedCountry, useWelcomeLanguage } from '../../../shared/providers/WelcomeLanguage';
-import { genesisEase, genesisFrame, genesisProjection, genesisScanEnd, type WelcomeGenesisRequest } from '../animations/welcomeGenesis';
+import { genesisBrandPath, genesisFrame, genesisProjection, type WelcomeGenesisRequest } from '../animations/welcomeGenesis';
 import { createAtlasIgnition } from '../animations/atlasIgnition';
 
 const home = { yaw: MathUtils.degToRad(-102), pitch: MathUtils.degToRad(20) };
@@ -300,6 +300,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     const glCanvas = renderer.kind === 'webgl' ? renderer.canvas : null;
     const surfaceStyle = mount.style;
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
+    const compactIntro = matchMedia('(max-width: 599px)');
     let width = 0, height = 0, radius = 0, raf = 0, lastTime = 0;
     let centerX = 0, baseRadius = 0, markerLeft = 8, markerTop = 8, markerBottom = 0;
     let visible = true, needsDraw = true;
@@ -321,6 +322,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     let introId = 0, introElapsed = 0;
     let lastIntroDraw = -Infinity;
     let introBounds: DOMRect | null = null;
+    let introBrandPath: ReturnType<typeof genesisBrandPath> | null = null;
     let ignition: ReturnType<typeof createAtlasIgnition> = null;
 
     function switchToCanvasFallback() {
@@ -379,12 +381,16 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     const visibilityObserver = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
     visibilityObserver.observe(frame);
     const refreshBounds = () => { frameBounds = frame!.getBoundingClientRect(); introBounds = null; };
+    const finishGlobeShift = (event: TransitionEvent) => {
+      if (event.target === frame && event.propertyName === 'translate') refreshBounds();
+    };
     const syncVisibility = () => {
       cancelAnimationFrame(raf);
       lastTime = 0;
       if (!document.hidden) raf = requestAnimationFrame(tick);
     };
     window.addEventListener('resize', refreshBounds);
+    frame.addEventListener('transitionend', finishGlobeShift);
     document.addEventListener('visibilitychange', syncVisibility);
     const trackPointer = (event: PointerEvent) => {
       if (event.pointerType !== 'mouse') return;
@@ -424,6 +430,8 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         introId = 0;
         ignition = null;
         introBounds = null;
+        introBrandPath = null;
+        refreshBounds();
         needsDraw = true;
       }
       if ((!visible && !genesisRef.current) || document.hidden || state.current.suspended || !width || !height) return;
@@ -457,19 +465,28 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         reveal = genesisFrame(introElapsed);
         const page = host.parentElement?.style;
         if (host.dataset.phase !== reveal.phase) host.dataset.phase = reveal.phase;
-        for (const key of ['silhouette', 'atmosphere', 'eyebrow', 'headline', 'description', 'action', 'navigation', 'controls', 'grid', 'disk'] as const) {
+        for (const key of ['silhouette', 'atmosphere', 'disk', 'logo'] as const) {
           page?.setProperty('--genesis-' + key, reveal[key].toFixed(4));
         }
-        page?.setProperty('--genesis-pulse', reveal.hanoiPulse.toFixed(4));
-        page?.setProperty('--genesis-pulse-alpha', (Math.sin(Math.PI * reveal.hanoiPulse) * .76).toFixed(4));
         if (!introBounds) {
           const box = host.getBoundingClientRect();
           if (box.width > 0 && box.height > 0) {
+            if (compactIntro.matches && frame!.parentElement) {
+              const unshiftedCenter = frame!.parentElement.getBoundingClientRect().top + frame!.offsetTop + height / 2;
+              const shift = Math.min(0, box.top + box.height * .52 - unshiftedCenter);
+              frame!.style.setProperty('--genesis-globe-shift', `${shift}px`);
+              frameBounds = frame!.getBoundingClientRect();
+            }
             introBounds = box;
             ignition?.resize(box.width, box.height, window.devicePixelRatio || 1);
+            const logo = request.logo.current?.getBoundingClientRect();
+            introBrandPath = logo && logo.width > 0
+              ? genesisBrandPath(box, genesisProjection(box, frameBounds, centerX, baseRadius), logo)
+              : null;
           }
         }
-        if (introBounds) ignition?.draw(reveal, genesisProjection(introBounds, frameBounds, centerX, baseRadius), theme === 'dark');
+        if (introBounds) ignition?.draw(reveal, genesisProjection(introBounds, frameBounds, centerX, baseRadius),
+          theme === 'dark', introBrandPath);
       } else if (request) {
         request.onComplete(request.id);
       }
@@ -629,10 +646,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         const markerVisible = rank < maxVisibleMarkers;
         if (marker.hidden === markerVisible) marker.hidden = !markerVisible;
         if (!markerVisible) continue;
-        if (reveal) {
-          const start = genesisScanEnd + .10 + rank * .024;
-          marker.style.setProperty('--genesis-marker', String(index === hanoiIndex ? reveal.hanoi : genesisEase(reveal.time, start, start + .51)));
-        }
         marker.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-50%)`;
         const label = marker.firstElementChild as HTMLElement | null;
         if (label) {
@@ -666,6 +679,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       sizeObserver.disconnect();
       visibilityObserver.disconnect();
       frame.removeEventListener('wheel', handleWheel);
+      frame.removeEventListener('transitionend', finishGlobeShift);
       glCanvas?.removeEventListener('webglcontextlost', contextLost);
       window.removeEventListener('resize', refreshBounds);
       document.removeEventListener('visibilitychange', syncVisibility);

@@ -17,6 +17,7 @@ export function Portal({ route, onSignOut, entering = false, interactive = true,
   const main = useRef<HTMLElement>(null);
   const overview = route === 'overview';
   const section = portalSections.find(section => section.id === route);
+  const sharedBack = route === 'library' || route === 'guide';
   useEffect(() => { document.title = tr(section?.title ?? 'Workspace'); }, [section?.title, tr]);
   useEffect(() => {
     if (!interactive) return;
@@ -33,7 +34,7 @@ export function Portal({ route, onSignOut, entering = false, interactive = true,
     </header>}
     <main ref={main} id="portal-main" tabIndex={-1} className={overview ? 'portal-overview' : 'portal-content' + (route === 'theory' ? ' portal-content--theory' : '')}>
       {overview ? <WorkspaceOverview active={interactive} onOpenSection={onOpenSection} openingId={openingId} /> : <>
-        {route !== 'theory' && <><div className="portal-page-tools"><a className="portal-back" href="#/overview"><ArrowLeft size={16} /> {tr("Go back")}</a><ThemeToggle /></div>
+        {route !== 'theory' && <><div className="portal-page-tools"><a className={sharedBack ? 'back-control' : 'portal-back'} href="#/overview"><ArrowLeft size={sharedBack ? 15 : 16} aria-hidden="true" /> {tr("Go back")}</a><ThemeToggle /></div>
         <div className="portal-content-heading"><p className="portal-eyebrow"><span data-section-number>{section?.number}</span></p><h1>{tr(section?.title ?? '')}</h1><p>{tr(section?.subtitle ?? '')}</p></div>
         </>}
         <PortalContent route={route} />

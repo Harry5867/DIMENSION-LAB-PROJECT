@@ -1,0 +1,16 @@
+.team-logo {
+  display: block;
+  width: var(--team-logo-width, 96px);
+  aspect-ratio: 1.72;
+  background: linear-gradient(108deg, #087c70, #005c55);
+  mask: url('../visuals/dimension-team-logo-sharp.png') center / 112% auto no-repeat alpha;
+}
+
+.welcome-page[data-theme=dark] .team-logo {
+  background: linear-gradient(108deg, #c4f8e7, #52cdb9);
+}
+
+@media (forced-colors: active) {
+  .team-logo { forced-color-adjust: none; background: CanvasText; }
+  .welcome-page[data-theme=dark] .team-logo { background: CanvasText; }
+}
