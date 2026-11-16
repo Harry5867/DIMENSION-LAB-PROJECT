@@ -14,6 +14,31 @@ export function isWelcomeRoute(hash: string) {
 }
 export function portalRoute(hash: string): PortalRoute {
   const value = hash.replace(/^#\//, '').split('?')[0];
+  if (hash.startsWith('#/about/')) return 'about';
   return ['overview', ...portalSections.filter(s => s.id !== 'model').map(s => s.id), ...modelRoutes].includes(value) ? value as PortalRoute : 'overview';
 }
 export function isModelRoute(route: PortalRoute): route is typeof modelRoutes[number] { return (modelRoutes as readonly string[]).includes(route); }
+
+export function aboutProfileSlug(hash: string): string | null | undefined {
+  const path = hash.split('?')[0];
+  if (!path.startsWith('#/about/')) return undefined;
+  try {
+    const slug = decodeURIComponent(path.slice('#/about/'.length));
+    return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ? slug : null;
+  } catch {
+    return null;
+  }
+}
+
+export function aboutTeamHref(slug: string) {
+  return '#/about?' + new URLSearchParams({ member: slug }).toString();
+}
+
+export function aboutTeamSelection(hash: string) {
+  const [path, query] = hash.split('?');
+  return path === '#/about' ? new URLSearchParams(query).get('member') : null;
+}
+
+export function signInDestination(hash: string) {
+  return hash.startsWith('#/about') && portalRoute(hash) === 'about' ? hash : '#/overview';
+}

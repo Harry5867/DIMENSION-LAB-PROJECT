@@ -5,7 +5,7 @@ import { Welcome } from '../features/welcome/Welcome';
 import { clearDemoSession, getAccessToken, hasDemoSession, saveDemoSession } from '../shared/api/demoSession';
 import { fetchWithTimeout, SESSION_EXPIRED_EVENT } from '../shared/api/network';
 import { Portal } from '../features/portal/Portal';
-import { isModelRoute, isWelcomeRoute, portalRoute, type PortalRoute, type PortalSection } from '../shared/navigation/portalNavigation';
+import { isModelRoute, isWelcomeRoute, portalRoute, signInDestination, type PortalRoute, type PortalSection } from '../shared/navigation/portalNavigation';
 import { captureSectionSource, shouldAnimateLink, type SectionNavigation } from '../features/portal/navigation/sectionTransition';
 import { WorkspaceEntrance } from '../features/portal/animations/WorkspaceEntrance';
 import { SectionTransition } from '../features/portal/animations/SectionTransition';
@@ -22,8 +22,9 @@ export function Entry() {
   const [authOptions, setAuthOptions] = useState<AuthOptions | null>(null);
   const [signOutError, setSignOutError] = useState(false);
   const signingOut = useRef(false);
-  const [atWelcome, setAtWelcome] = useState(() => isWelcomeRoute(window.location.hash));
-  const [route, setRoute] = useState(() => portalRoute(window.location.hash));
+  const [hash, setHash] = useState(() => window.location.hash);
+  const atWelcome = isWelcomeRoute(hash);
+  const route = portalRoute(hash);
   const [entrancePhase, setEntrancePhase] = useState<EntrancePhase>('idle');
   const entrancePhaseRef = useRef<EntrancePhase>('idle');
   const [entranceDirection, setEntranceDirection] = useState<EntranceDirection>('in');
@@ -43,11 +44,10 @@ export function Entry() {
     const navigate = () => {
       if (entranceDirectionRef.current === 'out' && entrancePhaseRef.current !== 'idle') return;
       const next = portalRoute(window.location.hash);
-      setAtWelcome(isWelcomeRoute(window.location.hash));
       if (navigationRef.current && navigationRef.current.route !== next) {
         navigationRef.current = null; setSectionNavigation(null); setArrivingRoute(null);
       }
-      setRoute(next);
+      setHash(window.location.hash);
     };
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
@@ -57,8 +57,9 @@ export function Entry() {
     const expire = () => {
       entrancePhaseRef.current = 'idle'; setEntrancePhase('idle');
       navigationRef.current = null; setSectionNavigation(null); setArrivingRoute(null);
-      setSignedIn(false); setModelVisited(false); setAtWelcome(true);
-      window.location.hash = '';
+      setSignedIn(false); setModelVisited(false);
+      if (signInDestination(window.location.hash) === '#/overview') window.location.hash = '';
+      setHash(window.location.hash);
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, expire);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
@@ -101,7 +102,8 @@ export function Entry() {
     if (!pending || pending.id !== id || pending.phase !== 'covering') return;
     const next: SectionNavigation = { ...pending, phase: 'revealing' };
     navigationRef.current = next; setSectionNavigation(next); setArrivingRoute(next.route);
-    setRoute(next.route); window.location.hash = '/' + next.route;
+    window.location.hash = '/' + next.route;
+    setHash(window.location.hash);
   }, []);
   const completeSection = useCallback((id: number) => {
     if (navigationRef.current?.id !== id) return;
@@ -117,7 +119,7 @@ export function Entry() {
     navigationRef.current = next; setWorkspaceEntering(false); setSectionNavigation(next);
   };
   const captureReturn = (event: MouseEvent<HTMLDivElement>) => {
-    if (!signedIn || route === 'overview' || !(event.target instanceof Element)) return;
+    if (!signedIn || route === 'overview' || route === 'about' || !(event.target instanceof Element)) return;
     const link = event.target.closest<HTMLAnchorElement>('a[href="#/overview"]');
     if (!link || window.matchMedia('(prefers-reduced-motion: reduce)').matches || !shouldAnimateLink(event, link.target, link.hasAttribute('download'))) return;
     event.preventDefault();
@@ -148,10 +150,11 @@ export function Entry() {
       // Switch screens only after the gateway is opaque in either direction.
       entrancePhaseRef.current = 'revealing';
       if (entranceDirectionRef.current === 'in') {
-        window.location.hash = '/overview';
-        setRoute('overview'); setAtWelcome(false); setWorkspaceEntering(true); setSignedIn(true); setHomeArrival(null);
+        const destination = signInDestination(window.location.hash);
+        window.location.hash = destination;
+        setHash(destination); setWorkspaceEntering(destination === '#/overview'); setSignedIn(true); setHomeArrival(null);
       } else {
-        setSignedIn(false); setModelVisited(false); setRoute('overview'); setAtWelcome(true); window.location.hash = '';
+        setSignedIn(false); setModelVisited(false); window.location.hash = ''; setHash('');
       }
       setEntrancePhase('revealing');
     } else if (entrancePhaseRef.current === 'revealing') {
@@ -238,7 +241,7 @@ export function Entry() {
       data-transition-phase={entrancePhase !== 'idle' ? entrancePhase : undefined}
       data-transition-motion={exitReducedMotion ? 'gentle' : 'full'}>
       {showPortal ? <>
-        {!modelActive && <Portal key={route} route={route} onSignOut={signOut} entering={workspaceEntering} interactive={!transitioning}
+        {!modelActive && <Portal key={route} route={route} hash={hash} onSignOut={signOut} entering={workspaceEntering} interactive={!transitioning}
           onOpenSection={openSection} openingId={sectionNavigation?.phase === 'covering' ? sectionNavigation.section?.id : undefined}
           sectionEntering={arrivingRoute === route && route !== 'overview'} returning={arrivingRoute === 'overview'}
           titleInTransit={Boolean(sectionNavigation?.source?.title && sectionNavigation.phase === 'revealing')} />}
