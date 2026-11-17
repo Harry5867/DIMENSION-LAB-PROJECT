@@ -1,19 +1,12 @@
 import type { DataPoint, ParsedDataset } from '@dimension-lab/contracts';
 import { extractFeatureMatrix } from '@dimension-lab/algorithms/dataParser';
-import { projectionSettingsError } from '@dimension-lab/algorithms/projection';
+import { projectionSettingsError, type ProjectionResult } from '@dimension-lab/algorithms/projection';
 import { fetchWithTimeout } from '../../shared/api/network';
 import { isComputeResult, isRecord } from '../../shared/api/typeGuards';
 import { makePoints, type AnalysisSnapshot } from './exploration';
 import { clusterInBrowser, projectInBrowser } from './workers/projectionWorker';
 
-type ReductionOutput = {
-  coordinates: [number, number, number][];
-  components?: number[][];
-  explainedVariance?: [number, number, number];
-  totalExplainedVariance?: number;
-};
-
-interface AnalysisInput extends Omit<ReductionOutput, 'coordinates'> {
+interface AnalysisInput extends Omit<ProjectionResult, 'coordinates'> {
   dataset: ParsedDataset;
   points: DataPoint[];
   run: AnalysisSnapshot;
@@ -35,7 +28,7 @@ export async function runAnalysis(input: AnalysisInput) {
     if (settingsError) throw new Error(settingsError);
     setLoadingMessage('Running ' + run.reduction.method + '…');
     matrix = extractFeatureMatrix(dataset.rawRows, run.features, run.reduction.normalization);
-    let output: ReductionOutput | undefined;
+    let output: ProjectionResult | undefined;
     const response = await fetchWithTimeout('/api/compute', { method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matrix,
           groundTruth: dataset.labelColumn ? dataset.rawRows.map(row => row[dataset.labelColumn!] ?? null) : [],

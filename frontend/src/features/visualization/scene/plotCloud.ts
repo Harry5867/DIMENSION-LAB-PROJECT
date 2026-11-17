@@ -12,7 +12,7 @@ export function makePlotColors(points: DataPoint[], mode: ColorMode, feature: st
     return '#' + color.getHexString();
   };
   const missing = tint('#7e8996'), noise = tint('#687783');
-  const clusters = clusterColors.map(tint), rules = ruleColors.map(tint);
+  const clusters = clusterColors.map(tint), rules = [tint(ruleColors[0]), tint(ruleColors[1])] as const;
   const low = tint('#4c75b4'), mid = tint('#438a73'), high = tint('#bd6554');
   const labels = [...new Set(points.map(point => String(point.label ?? '').trim()).filter(Boolean))].sort();
   const byLabel = new Map(labels.map((label, index) => [label,
@@ -36,7 +36,7 @@ export function makePlotColors(points: DataPoint[], mode: ColorMode, feature: st
       if (mode === 'ground-truth') return byLabel.get(String(point.label ?? '').trim()) ?? missing;
       if (mode === 'cluster') return point.cluster === -1 ? noise : clusters[point.cluster % clusters.length] ?? missing;
       if (!feature) return missing;
-      if (feature === '__rule_match') return rules[Number(Boolean(point.analysisMatch))];
+      if (feature === '__rule_match') return rules[point.analysisMatch ? 1 : 0];
       const value = point.originalFeatures[feature];
       if (value == null || !Number.isFinite(value)) return missing;
       const t = THREE.MathUtils.clamp((value - min) / (max - min || 1), 0, 1);
@@ -48,22 +48,26 @@ export function makePlotColors(points: DataPoint[], mode: ColorMode, feature: st
 
 export function normalizePlotPoints(dataPoints: DataPoint[]) {
   if (!dataPoints.length) return { points: [], groundY: -36 };
-  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
   for (const point of dataPoints) {
-    [point.x, point.y, point.z].forEach((value, axis) => {
+    const coordinates = [point.x, point.y, point.z] as const;
+    for (const axis of [0, 1, 2] as const) {
+      const value = coordinates[axis];
       const coordinate = Number.isFinite(value) ? value : 0;
       min[axis] = Math.min(min[axis], coordinate);
       max[axis] = Math.max(max[axis], coordinate);
-    });
+    }
   }
-  const [x, y, z] = min.map((value, axis) => value + (max[axis] - value) / 2);
-  const scale = 72 / (Math.max(...min.map((value, axis) => max[axis] - value)) || 1);
+  const [dx, dy, dz] = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+  const [x, y, z] = [min[0] + dx / 2, min[1] + dy / 2, min[2] + dz / 2];
+  const scale = 72 / (Math.max(dx, dy, dz) || 1);
   const points = dataPoints.map(point => ({
     ...point, x: ((Number.isFinite(point.x) ? point.x : 0) - x) * scale,
     y: ((Number.isFinite(point.y) ? point.y : 0) - y) * scale,
     z: ((Number.isFinite(point.z) ? point.z : 0) - z) * scale,
   }));
-  return { points, groundY: (min[1] - y) * scale - 3, center: [x, y, z], scale };
+  return { points, groundY: (min[1] - y) * scale - 3, center: [x, y, z] as const, scale };
 }
 
 /** Return target indices in the currently displayed order, using source row identity. */
@@ -138,17 +142,17 @@ export function createPlotCloud(scene: THREE.Scene) {
     destination?: DataPoint[], destinationColors = colors, t = 0) {
     const { mesh } = cloud;
     mesh.count = points.length;
-    for (let i = 0; i < points.length; i++) {
-      const point = points[i], next = destination?.[i] ?? point;
+    for (const [i, point] of points.entries()) {
+      const next = destination?.[i] ?? point;
       const isSelected = selected && (selected.rowIndex ?? selected.id) === (point.rowIndex ?? point.id);
       const r = scale * (isSelected ? 1.65 : 1);
       matrix.makeScale(r, r, r).setPosition(THREE.MathUtils.lerp(point.x, next.x, t),
         THREE.MathUtils.lerp(point.y, next.y, t), THREE.MathUtils.lerp(point.z, next.z, t));
       mesh.setMatrixAt(i, matrix);
       const k = i * 3;
-      color.setRGB(THREE.MathUtils.lerp(colors[k], destinationColors[k], t),
-        THREE.MathUtils.lerp(colors[k + 1], destinationColors[k + 1], t),
-        THREE.MathUtils.lerp(colors[k + 2], destinationColors[k + 2], t));
+      color.setRGB(THREE.MathUtils.lerp(colors[k]!, destinationColors[k]!, t),
+        THREE.MathUtils.lerp(colors[k + 1]!, destinationColors[k + 1]!, t),
+        THREE.MathUtils.lerp(colors[k + 2]!, destinationColors[k + 2]!, t));
       mesh.setColorAt(i, color);
     }
     mesh.instanceMatrix.needsUpdate = true;
@@ -181,8 +185,9 @@ export function createPlotCloud(scene: THREE.Scene) {
       const current = settled, source = primary;
       if (!source || !current?.points.length || signal.aborted) return Promise.resolve();
       const order = sameDataset ? matchPlotRows(current.points, points) : null;
-      const destination = order?.map(index => points[index]);
-      const destinationColors = packColors(order ? order.map(index => colors[index]) : colors);
+      // A successful row match only returns indices from this destination array.
+      const destination = order?.map(index => points[index]!);
+      const destinationColors = packColors(order ? order.map(index => colors[index]!) : colors);
       const next = order ? undefined : make(points.length);
       if (next) {
         write(next, points, destinationColors, current.scale, null);

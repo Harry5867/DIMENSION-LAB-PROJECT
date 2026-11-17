@@ -4,6 +4,7 @@ import { MongoServerError, ObjectId } from 'mongodb';
 import * as argon2 from 'argon2';
 import { atlasDatabase, atlasMode, type AtlasProfile } from '../database/atlas';
 import { AppError, BadRequestError, UnauthorizedError } from '../http/errors';
+import { isRecord } from '../http/validation';
 
 interface PasswordUser extends AtlasProfile {
   passwordHash: string;
@@ -32,7 +33,8 @@ function credentials(req: Request, action: 'login' | 'register') {
   // Limit expensive password operations across keys as well as per client.
   limit(action + ':global', 60);
   limit(action + ':ip:' + req.ip, action === 'register' ? 5 : 20);
-  const { email, password } = req.body ?? {};
+  const body: unknown = req.body;
+  const { email, password } = isRecord(body) ? body : {};
   const normalized = typeof email === 'string' ? email.trim().toLowerCase() : '';
   if (normalized.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
     || typeof password !== 'string' || [...password].length < 12 || Buffer.byteLength(password) > 512) {
@@ -46,7 +48,9 @@ function credentials(req: Request, action: 'login' | 'register') {
 export async function registerPasswordUser(req: Request) {
   if (!passwordRegistrationEnabled()) throw new AppError('Registration is unavailable.', 403, 'REGISTRATION_DISABLED');
   const { email, password } = credentials(req, 'register');
-  const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : '';
+  const body: unknown = req.body;
+  const name = isRecord(body) ? body.displayName : undefined;
+  const displayName = typeof name === 'string' ? name.trim() : '';
   if (!displayName || displayName.length > 80) throw new BadRequestError('Enter a display name of up to 80 characters.');
 
   const users = atlasDatabase().collection<PasswordUser>('password_users');

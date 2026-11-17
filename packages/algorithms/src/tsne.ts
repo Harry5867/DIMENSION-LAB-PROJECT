@@ -3,6 +3,8 @@
  * Pure TypeScript implementation optimized for client-side exploration.
  */
 
+import { validateMatrix } from './unsupervised';
+
 export interface TSNEConfig {
   perplexity: number;
   learningRate: number;
@@ -20,7 +22,7 @@ export function computeTSNE(
     return matrix.map(row => [row[0] || 0, row[1] || 0, row[2] || 0]);
   }
 
-  const d = matrix[0].length;
+  const d = validateMatrix(matrix, true);
   const perp = Math.min(config.perplexity || 30, Math.floor((n - 1) / 3));
   const eta = config.learningRate || 100;
   const maxIter = Math.min(config.iterations || 250, 500);
@@ -31,7 +33,7 @@ export function computeTSNE(
     for (let j = i + 1; j < n; j++) {
       let sum = 0;
       for (let k = 0; k < d; k++) {
-        const diff = matrix[i][k] - matrix[j][k];
+        const diff = matrix[i]![k]! - matrix[j]![k]!;
         sum += diff * diff;
       }
       distSq[i * n + j] = sum;
@@ -53,7 +55,7 @@ export function computeTSNE(
       let sumPi = 0;
       for (let j = 0; j < n; j++) {
         if (i === j) continue;
-        const p = Math.exp(-distSq[i * n + j] * beta);
+        const p = Math.exp(-distSq[i * n + j]! * beta);
         P[i * n + j] = p;
         sumPi += p;
       }
@@ -63,7 +65,7 @@ export function computeTSNE(
       let H = 0;
       for (let j = 0; j < n; j++) {
         if (i === j) continue;
-        const p = P[i * n + j] / sumPi;
+        const p = P[i * n + j]! / sumPi;
         P[i * n + j] = p;
         if (p > 1e-12) {
           H -= p * Math.log(p);
@@ -87,7 +89,7 @@ export function computeTSNE(
   const twoN = 2 * n;
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const pSym = Math.max((P[i * n + j] + P[j * n + i]) / twoN, 1e-12);
+      const pSym = Math.max((P[i * n + j]! + P[j * n + i]!) / twoN, 1e-12);
       P[i * n + j] = pSym;
       P[j * n + i] = pSym;
     }
@@ -118,9 +120,9 @@ export function computeTSNE(
       const i3 = i * 3;
       for (let j = i + 1; j < n; j++) {
         const j3 = j * 3;
-        const dx = Y[i3] - Y[j3];
-        const dy = Y[i3 + 1] - Y[j3 + 1];
-        const dz = Y[i3 + 2] - Y[j3 + 2];
+        const dx = Y[i3]! - Y[j3]!;
+        const dy = Y[i3 + 1]! - Y[j3 + 1]!;
+        const dz = Y[i3 + 2]! - Y[j3 + 2]!;
         const d2 = dx * dx + dy * dy + dz * dz;
         const q = 1 / (1 + d2);
         qDist[i * n + j] = q;
@@ -137,28 +139,28 @@ export function computeTSNE(
       for (let j = 0; j < n; j++) {
         if (i === j) continue;
         const j3 = j * 3;
-        const p = P[i * n + j] * exaggeration;
-        const q = qDist[i * n + j] / sumQ;
-        const mult = 4 * (p - q) * qDist[i * n + j];
+        const p = P[i * n + j]! * exaggeration;
+        const q = qDist[i * n + j]! / sumQ;
+        const mult = 4 * (p - q) * qDist[i * n + j]!;
 
-        grad[i3] += mult * (Y[i3] - Y[j3]);
-        grad[i3 + 1] += mult * (Y[i3 + 1] - Y[j3 + 1]);
-        grad[i3 + 2] += mult * (Y[i3 + 2] - Y[j3 + 2]);
+        grad[i3]! += mult * (Y[i3]! - Y[j3]!);
+        grad[i3 + 1]! += mult * (Y[i3 + 1]! - Y[j3 + 1]!);
+        grad[i3 + 2]! += mult * (Y[i3 + 2]! - Y[j3 + 2]!);
       }
     }
 
     // Adaptive gradient update with momentum (Jacobs method)
     for (let i = 0; i < n * 3; i++) {
-      const g = grad[i];
-      const u = uY[i];
+      const g = grad[i]!;
+      const u = uY[i]!;
       // Adapt gains
       if (Math.sign(g) !== Math.sign(u)) {
-        gains[i] += 0.2;
+        gains[i]! += 0.2;
       } else {
-        gains[i] = Math.max(gains[i] * 0.8, 0.01);
+        gains[i] = Math.max(gains[i]! * 0.8, 0.01);
       }
-      uY[i] = momentum * u - eta * gains[i] * g;
-      Y[i] += uY[i];
+      uY[i] = momentum * u - eta * gains[i]! * g;
+      Y[i]! += uY[i]!;
     }
 
     if (onProgress && iter % 25 === 0) {
@@ -169,7 +171,7 @@ export function computeTSNE(
   // Format result as array of [x, y, z]
   const result: [number, number, number][] = [];
   for (let i = 0; i < n; i++) {
-    result.push([Y[i * 3], Y[i * 3 + 1], Y[i * 3 + 2]]);
+    result.push([Y[i * 3]!, Y[i * 3 + 1]!, Y[i * 3 + 2]!]);
   }
 
   return result;

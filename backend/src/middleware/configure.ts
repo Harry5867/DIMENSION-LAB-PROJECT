@@ -28,7 +28,9 @@ export function configureMiddleware(app: Express) {
     if (!atlasMode) return authenticate(req, res, error => error ? next(error) : authorize());
     void Promise.resolve().then(async () => {
       protectCookieWrite(req);
-      req.user = await atlasSessionUser(req) ?? undefined;
+      const user = await atlasSessionUser(req);
+      if (user) req.user = user;
+      else delete req.user;
       if (req.method === 'POST' && req.path === '/auth/logout') return next();
       authorize();
     }).catch(next);

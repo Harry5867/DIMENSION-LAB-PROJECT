@@ -90,8 +90,8 @@ export function parseCSVString(csvContent: string, fileName: string = 'Uploaded 
     let validCount = 0;
     const uniqueValues = new Set<DataValue>();
 
-    for (let i = 0; i < rawRows.length; i++) {
-      const val = rawRows[i][col];
+    for (const row of rawRows) {
+      const val = row[col];
       if (val !== undefined && val !== null && val !== '') {
         validCount++;
         uniqueValues.add(val);
@@ -147,15 +147,14 @@ export function extractFeatureMatrix(
   const colSums = new Float64Array(d);
   const colValidCounts = new Int32Array(d);
 
-  for (let i = 0; i < n; i++) {
-    const row = rows[i];
-    const rowVec: number[] = new Array(d);
+  for (const row of rows) {
+    const rowVec = new Array<number>(d);
     for (let j = 0; j < d; j++) {
-      const val = numericValue(row[featureColumns[j]]);
+      const val = numericValue(row[featureColumns[j]!]);
       rowVec[j] = val ?? NaN;
       if (val !== null) {
-        colSums[j] += val;
-        colValidCounts[j]++;
+        colSums[j]! += val;
+        colValidCounts[j]!++;
       }
     }
     matrix.push(rowVec);
@@ -164,14 +163,14 @@ export function extractFeatureMatrix(
   // Calculate means for imputation
   const colMeans = new Float64Array(d);
   for (let j = 0; j < d; j++) {
-    colMeans[j] = colValidCounts[j] > 0 ? colSums[j] / colValidCounts[j] : 0;
+    colMeans[j] = colValidCounts[j]! > 0 ? colSums[j]! / colValidCounts[j]! : 0;
   }
 
   // Impute missing values
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < d; j++) {
-      if (Number.isNaN(matrix[i][j])) {
-        matrix[i][j] = colMeans[j];
+      if (Number.isNaN(matrix[i]![j])) {
+        matrix[i]![j] = colMeans[j]!;
       }
     }
   }
@@ -186,19 +185,19 @@ export function extractFeatureMatrix(
     const colStd = new Float64Array(d);
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < d; j++) {
-        const diff = matrix[i][j] - colMeans[j];
-        colStd[j] += diff * diff;
+        const diff = matrix[i]![j]! - colMeans[j]!;
+        colStd[j]! += diff * diff;
       }
     }
     for (let j = 0; j < d; j++) {
-      colStd[j] = Math.sqrt(colStd[j] / (n > 1 ? n - 1 : 1));
+      colStd[j] = Math.sqrt(colStd[j]! / (n > 1 ? n - 1 : 1));
       if (colStd[j] === 0) colStd[j] = 1; // Avoid divide by zero
     }
 
     // Standardize
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < d; j++) {
-        matrix[i][j] = (matrix[i][j] - colMeans[j]) / colStd[j];
+        matrix[i]![j] = (matrix[i]![j]! - colMeans[j]!) / colStd[j]!;
       }
     }
     return matrix;
@@ -210,16 +209,16 @@ export function extractFeatureMatrix(
 
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < d; j++) {
-        const v = matrix[i][j];
-        if (v < colMin[j]) colMin[j] = v;
-        if (v > colMax[j]) colMax[j] = v;
+        const v = matrix[i]![j]!;
+        if (v < colMin[j]!) colMin[j] = v;
+        if (v > colMax[j]!) colMax[j] = v;
       }
     }
 
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < d; j++) {
-        const range = colMax[j] - colMin[j];
-        matrix[i][j] = range === 0 ? 0 : (matrix[i][j] - colMin[j]) / range;
+        const range = colMax[j]! - colMin[j]!;
+        matrix[i]![j] = range === 0 ? 0 : (matrix[i]![j]! - colMin[j]!) / range;
       }
     }
     return matrix;

@@ -30,12 +30,15 @@ const atlasDefaults: AtlasLayers = { particles: true, grid: true, borders: true,
 const exhibitionBase: AtlasLayers = { ...atlasDefaults, borders: false, labels: false };
 const ease = (current: number, target: number, speed: number, dt: number) => current + (target - current) * (1 - Math.exp(-speed * dt));
 const featured = new Set(featuredCapitalIndices);
-const regionalCapitals = featuredCapitalIndices.map(anchor => capitalPositions
-  .map((position, index) => ({ index, distance: position.distanceToSquared(capitalPositions[anchor]) }))
-  .filter(({ index }) => !featured.has(index) && !capitalRole(capitals[index]))
-  .sort((a, b) => a.distance - b.distance)
-  .slice(0, 14)
-  .map(({ index }) => index));
+const regionalCapitals = featuredCapitalIndices.map(anchor => {
+  const origin = capitalPositions[anchor];
+  if (!origin) return [];
+  return capitals.flatMap((city, index) => {
+    const position = capitalPositions[index];
+    return position && !featured.has(index) && !capitalRole(city)
+      ? [{ index, distance: position.distanceToSquared(origin) }] : [];
+  }).sort((a, b) => a.distance - b.distance).slice(0, 14).map(({ index }) => index);
+});
 const coordinatesOnGrid = [
   { text: '0°', position: earthPosition(0, 0) },
   { text: '30° N', position: earthPosition(30, 90) },
@@ -49,10 +52,10 @@ const overlaps = (a: LabelRect, b: LabelRect) =>
   a.y < b.y + b.height + 4 && a.y + a.height + 4 > b.y;
 
 function capitalKind(city: Capital, vietnamese = false) {
-  switch (capitalRole(city)) {
+  switch (capitalRole(city) ?? 'primary') {
     case 'alternate': return vietnamese ? 'BẢN GHI THỦ ĐÔ KHÁC' : 'ALTERNATE CAPITAL RECORD';
     case 'regional': return vietnamese ? 'THỦ PHỦ KHU VỰC' : 'REGIONAL CAPITAL';
-    default: return vietnamese ? 'THỦ ĐÔ / QUỐC GIA' : 'CAPITAL / COUNTRY';
+    case 'primary': return vietnamese ? 'THỦ ĐÔ / QUỐC GIA' : 'CAPITAL / COUNTRY';
   }
 }
 
@@ -74,7 +77,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   genesis?: WelcomeGenesisRequest;
 }) {
   const { language, t } = useWelcomeLanguage();
-  const cityName = (city: Capital) => language === 'vi' && city.id === capitals[hanoiIndex].id ? 'Hà Nội' : city.city;
+  const cityName = (city: Capital) => language === 'vi' && city.id === capitals[hanoiIndex]?.id ? 'Hà Nội' : city.city;
   const countryName = (city: Capital) => localizedCountry(city.iso || '', city.country, language);
   const viewport = useRef<HTMLDivElement>(null);
   const canvasMount = useRef<HTMLDivElement>(null);
@@ -121,14 +124,17 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     const timer = window.setTimeout(() => setAtlasMounted(false), 550);
     return () => window.clearTimeout(timer);
   }, [isAtlas]);
-  const terrain = useMemo(() => mode === 'terrain' && terrainData
-    ? { data: terrainData, ...terrainSettings, highlight: terrainHovered ?? (terrainSelected === null ? null : sourceIndex(terrainData.grid, terrainData.points[terrainSelected].latitude, terrainData.points[terrainSelected].longitude)) }
-    : null, [mode, terrainData, terrainSettings, terrainHovered, terrainSelected]);
+  const terrain = useMemo(() => {
+    if (mode !== 'terrain' || !terrainData) return null;
+    const point = terrainSelected === null ? undefined : terrainData.points[terrainSelected];
+    const highlight = terrainHovered ?? (point ? sourceIndex(terrainData.grid, point.latitude, point.longitude) : null);
+    return { data: terrainData, ...terrainSettings, highlight };
+  }, [mode, terrainData, terrainSettings, terrainHovered, terrainSelected]);
   const terrainInspecting = mode === 'terrain' && (terrainHovered !== null || terrainSelected !== null);
   const active = isAtlas && showDetails ? selected : null;
   const markerIndices = useMemo(() => {
     const indices = new Set(featuredCapitalIndices);
-    if (regionalAnchor !== null) regionalCapitals[regionalAnchor].forEach(index => indices.add(index));
+    if (regionalAnchor !== null) regionalCapitals[regionalAnchor]?.forEach(index => indices.add(index));
     if (active !== null) indices.add(active);
     if (hovered !== null) indices.add(hovered);
     return [...indices];
@@ -196,7 +202,9 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   }
 
   function openStoryGroup(group: StoryGroup, trigger: HTMLButtonElement) {
-    if (group.members.length === 1) { selectStory(group.members[0].id, trigger); return; }
+    const [first] = group.members;
+    if (!first) return;
+    if (group.members.length === 1) { selectStory(first.id, trigger); return; }
     onExplore();
     setStoryHovered(null);
     setStoriesDetailed(true);
@@ -218,6 +226,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     terrainPointer.current = null;
     if (index === null || !terrainData) return;
     const point = terrainData.points[index];
+    if (!point) return;
     focusAt(MathUtils.degToRad(-point.longitude), MathUtils.degToRad(point.latitude), goal.current.zoom);
   }
 
@@ -234,6 +243,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
 
   function openCity(index: number, trigger: HTMLElement) {
     const city = capitals[index];
+    if (!city) return;
     opener.current = directory.current?.contains(trigger)
       ? directory.current.querySelector('summary')
       : trigger;
@@ -366,6 +376,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     }
 
     const sizeObserver = new ResizeObserver(([entry]) => {
+      if (!entry) return;
       width = entry.contentRect.width;
       height = entry.contentRect.height;
       if (!width || !height) return;
@@ -388,7 +399,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       needsDraw = true;
     });
     sizeObserver.observe(frame);
-    const visibilityObserver = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
+    const visibilityObserver = new IntersectionObserver(([entry]) => { if (entry) visible = entry.isIntersecting; });
     visibilityObserver.observe(frame);
     const refreshBounds = () => {
       frameBounds = frame!.getBoundingClientRect();
@@ -605,7 +616,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       lastTheme = theme; lastLanguage = language;
       const narrow = width < 520;
       const detailed = current.zoom >= 1.35 && !narrow;
-      renderer.draw(orientation, radius, highlight === null ? null : capitalPositions[highlight], layers, detailed, retainedTerrain, terrainBlend, hoverPoint, theme, isStories, reveal);
+      renderer.draw(orientation, radius, highlight === null ? null : capitalPositions[highlight] ?? null, layers, detailed, retainedTerrain, terrainBlend, hoverPoint, theme, isStories, reveal);
       if (reveal && renderer.failed()) {
         if (renderer.kind === 'webgl') switchToCanvasFallback();
         else if (request) request.onComplete(request.id);
@@ -655,7 +666,9 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         let best = -Infinity;
         let nextRegion = 0;
         featuredCapitalIndices.forEach((index, region) => {
-          projected.copy(capitalPositions[index]).applyQuaternion(orientation);
+          const position = capitalPositions[index];
+          if (!position) return;
+          projected.copy(position).applyQuaternion(orientation);
           const score = projected.z + (region === nearestRegion ? .025 : 0);
           if (score > best) {
             best = score;
@@ -670,7 +683,10 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
 
       const candidates = [];
       for (const [index, marker] of markers.current) {
-        projected.copy(capitalPositions[index]).applyQuaternion(orientation);
+        const position = capitalPositions[index];
+        const city = capitals[index];
+        if (!position || !city) { marker.hidden = true; continue; }
+        projected.copy(position).applyQuaternion(orientation);
         const x = centerX + projected.x * radius;
         const y = centerY - projected.y * radius;
         if (projected.z <= (index === hanoiIndex ? 0 : .13) || x <= markerLeft || x >= width - 8 || y <= markerTop || y >= markerBottom) {
@@ -678,12 +694,12 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
           continue;
         }
         const priority = index === active ? 5 : index === hovered ? 4 : index === hanoiIndex ? 3 : projected.z;
-        candidates.push({ index, marker, x, y, priority });
+        candidates.push({ index, marker, x, y, priority, name: city.city });
       }
       candidates.sort((a, b) => b.priority - a.priority);
       labelRects.length = 0;
       const maxVisibleMarkers = narrow ? (current.zoom >= 1.2 ? 8 : 6) : (detailed ? 14 : current.zoom >= 1.2 ? 12 : 10);
-      for (const [rank, { index, marker, x, y }] of candidates.entries()) {
+      for (const [rank, { index, marker, x, y, name }] of candidates.entries()) {
         const markerVisible = rank < maxVisibleMarkers;
         if (marker.hidden === markerVisible) marker.hidden = !markerVisible;
         if (!markerVisible) continue;
@@ -692,7 +708,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         if (label) {
           if (layers.labels) {
             const hanoi = index === hanoiIndex;
-            positionLabel(label, x, y, hanoi ? 127 : capitals[index].city.length * 6.4, hanoi ? 26 : 14);
+            positionLabel(label, x, y, hanoi ? 127 : name.length * 6.4, hanoi ? 26 : 14);
           } else if (!label.hidden) label.hidden = true;
         }
         if (index === hovered && tooltip.current) {
@@ -821,13 +837,16 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       <div ref={canvasMount} className="globe-renderer" aria-hidden="true" />
       {atlasMounted && coordinatesOnGrid.map(({ text }, index) => <span key={text} hidden aria-hidden="true" className="atlas-coordinate"
         ref={node => { gridLabels.current[index] = node; }}>{text}</span>)}
-      {atlasMounted && markerIndices.map(index => <button key={capitals[index].id}
+      {atlasMounted && markerIndices.map(index => {
+        const capital = capitals[index];
+        if (!capital) return null;
+        return <button key={capital.id}
         ref={node => {
           if (node) markers.current.set(index, node);
           else markers.current.delete(index);
         }} type="button" hidden
         className={`globe-capital-marker${index === hanoiIndex ? ' atlas-origin-marker' : ''}`}
-        aria-label={cityName(capitals[index]) + ', ' + countryName(capitals[index]) + (index === hanoiIndex ? t(' · My Origin', ' · Điểm khởi đầu') : '')}
+        aria-label={cityName(capital) + ', ' + countryName(capital) + (index === hanoiIndex ? t(' · My Origin', ' · Điểm khởi đầu') : '')}
         aria-pressed={active === index}
         aria-hidden={!isAtlas}
         tabIndex={isAtlas ? 0 : -1}
@@ -838,10 +857,11 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         onClick={event => openCity(index, event.currentTarget)}>
         <span className="atlas-city-label" hidden aria-hidden="true">{index === hanoiIndex
           ? <>{t('HANOI', 'HÀ NỘI')}<small>{t('MY ORIGIN · VIETNAM', 'KHỞI ĐẦU · VIỆT NAM')}</small></>
-          : capitals[index].city}</span>
-        {layers.flags && capitals[index].iso && <img className="atlas-capital-flag" alt="" loading="lazy" decoding="async"
-          src={`${import.meta.env.BASE_URL}atlas-flags/${capitals[index].iso.toLowerCase()}.svg`} />}
-      </button>)}
+          : capital.city}</span>
+        {layers.flags && capital.iso && <img className="atlas-capital-flag" alt="" loading="lazy" decoding="async"
+          src={`${import.meta.env.BASE_URL}atlas-flags/${capital.iso.toLowerCase()}.svg`} />}
+      </button>;
+      })}
       {isStories && <StoryMarkers groups={storyGroups} nodes={storyNodes} hovered={storyHovered} selected={selectedStory?.id ?? null}
         onHover={key => { if (!drag.current && !suspended) setStoryHovered(key); }} onOpen={openStoryGroup} />}
       {preview && <div ref={tooltip} className="globe-capital-tooltip" role="tooltip">

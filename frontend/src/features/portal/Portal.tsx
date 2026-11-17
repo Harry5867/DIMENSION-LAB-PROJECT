@@ -8,6 +8,7 @@ import { animateMemberProfile, canAnimateMembers, captureMemberCard, type Member
 import { PortalContent } from './PortalContent';
 import { WorkspaceOverview } from './WorkspaceOverview';
 import { ThemeToggle } from '../../shared/ui/ThemeToggle';
+import { isRecord } from '../../shared/api/typeGuards';
 import './styles/portal.css';
 
 const profileHistoryKey = 'dimensionLabMemberFromTeam';
@@ -84,7 +85,8 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
     event.preventDefault();
     if (returningToTeam.current || aboutProfileSlug(window.location.hash) !== member.slug) return;
     returningToTeam.current = true;
-    if (window.history.state?.[profileHistoryKey] === member.slug) window.history.back();
+      const state: unknown = window.history.state;
+      if (isRecord(state) && state[profileHistoryKey] === member.slug) window.history.back();
     else window.location.hash = link.hash;
   }
 
@@ -127,7 +129,7 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
 
   useEffect(() => { document.title = title; }, [title]);
   useLayoutEffect(() => {
-    if (!interactive) return;
+    if (!interactive) return undefined;
     returningToTeam.current = false;
     const selectedCard = teamSelection && main.current?.querySelector<HTMLAnchorElement>('.member-gallery-open');
     if (selectedCard) {
@@ -142,8 +144,9 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
     if (hasMember && main.current) {
       return animateMemberProfile(main.current, pending?.hash === hash ? pending.source : undefined);
     }
+    return undefined;
   }, [route, hash, teamPage, hasMember, teamSelection, interactive]);
-  const content = <PortalContent route={route} hash={hash} profile={profilePage ? member : undefined} onOpenMember={openMember} />;
+  const content = <PortalContent route={route} hash={hash} {...(profilePage && { profile: member })} onOpenMember={openMember} />;
   return <div data-opening-section={openingId} className={`portal-page${route === 'theory' ? ' portal-page--theory' : ''}${teamPage ? ' portal-page--team' : hasMember ? ' portal-page--profile' : ''}${overview ? ' portal-page--workspace' : ''}${overview && entering ? ' portal-page--entering' : ''}${openingId ? ' portal-page--opening' : ''}${sectionEntering ? ' portal-page--section-arriving' : ''}${titleInTransit ? ' portal-page--title-in-transit' : ''}${overview && returning ? ' portal-page--returning' : ''}`}>
     <a className="portal-skip" href="#portal-main" onClick={e => { e.preventDefault(); main.current?.focus(); }}>{tr("Skip to content")}</a>
     {overview && <header className="portal-header">
@@ -153,7 +156,8 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
       </div>
     </header>}
     <main ref={main} id="portal-main" tabIndex={-1} className={overview ? 'portal-overview' : 'portal-content' + (route === 'theory' ? ' portal-content--theory' : galleryPage ? ' portal-content--member' : '')}>
-      {overview ? <WorkspaceOverview active={interactive} onOpenSection={onOpenSection} openingId={openingId} /> : <>
+      {overview ? <WorkspaceOverview active={interactive}
+        {...(onOpenSection && { onOpenSection })} {...(openingId !== undefined && { openingId })} /> : <>
         {route !== 'theory' && <><div className="portal-page-tools"><a className={sharedBack ? 'back-control' : 'portal-back'} href={profilePage ? member ? aboutTeamHref(member.slug) : '#/about' : '#/overview'}
           onClick={teamPage ? backToOverview : profilePage ? backToTeam : undefined}><ArrowLeft size={sharedBack ? 15 : 16} aria-hidden="true" /> <span>{tr(profilePage ? 'Back to team' : 'Go back')}</span></a><ThemeToggle /></div>
         {!profilePage && !galleryPage && <div className="portal-content-heading"><p className="portal-eyebrow"><span data-section-number>{section?.number}</span></p><h1>{title}</h1><p>{tr(section?.subtitle ?? '')}</p></div>}

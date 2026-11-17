@@ -1,4 +1,5 @@
 import { computeGMM } from '@dimension-lab/algorithms/gmm';
+import type { DataValue } from '@dimension-lab/contracts';
 import { parseAnalysisTask, runAnalysisTask, AnalysisTaskResult } from '@dimension-lab/algorithms/analysisTasks';
 import crypto from 'crypto';
 import { MAX_CSV_COLUMNS, MAX_CSV_ROWS } from '@dimension-lab/algorithms/dataParser';
@@ -34,11 +35,12 @@ export async function computeAnalysis(body: unknown, ownerId?: string) {
     || !isClusteringConfig(body.clusteringConfig)) {
     throw new BadRequestError('Invalid feature matrix or analysis settings.');
   }
-  const { matrix, groundTruth, reductionConfig, clusteringConfig } = body;
+  const { matrix, reductionConfig, clusteringConfig } = body;
+  const groundTruth: unknown[] = body.groundTruth;
   if (matrix.length > MAX_CSV_ROWS || matrix[0].length > MAX_CSV_COLUMNS) {
     throw new BadRequestError(`The matrix limit is ${MAX_CSV_ROWS} rows and ${MAX_CSV_COLUMNS} columns.`);
   }
-  if ((groundTruth.length !== 0 && groundTruth.length !== matrix.length) || !groundTruth.every((value) => value === null
+  if ((groundTruth.length !== 0 && groundTruth.length !== matrix.length) || !groundTruth.every((value): value is DataValue => value === null
     || typeof value === 'string'
     || (typeof value === 'number' && Number.isFinite(value))
     || typeof value === 'boolean')) {

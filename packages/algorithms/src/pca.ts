@@ -4,6 +4,8 @@
  * to find the top 3 principal components and their explained variance ratios.
  */
 
+import { validateMatrix } from './unsupervised';
+
 export interface PCAResult {
   coordinates: [number, number, number][]; // 3D coordinates for each point
   explainedVariance: [number, number, number]; // Ratio for PC1, PC2, PC3
@@ -22,49 +24,49 @@ export function computePCA(matrix: number[][]): PCAResult {
     };
   }
 
-  const d = matrix[0].length;
+  const d = validateMatrix(matrix, true);
   const numComponents = Math.min(3, d);
 
   // 1. Center the data (mean = 0)
   const means = new Float64Array(d);
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < d; j++) {
-      means[j] += matrix[i][j];
+      means[j]! += matrix[i]![j]!;
     }
   }
   for (let j = 0; j < d; j++) {
-    means[j] /= n;
+    means[j]! /= n;
   }
 
   const centered: number[][] = [];
   for (let i = 0; i < n; i++) {
-    const row = new Array(d);
+    const row = new Array<number>(d);
     for (let j = 0; j < d; j++) {
-      row[j] = matrix[i][j] - means[j];
+      row[j] = matrix[i]![j]! - means[j]!;
     }
     centered.push(row);
   }
 
   // 2. Compute Covariance Matrix: C = (X^T * X) / (n - 1)
-  const cov: number[][] = Array.from({ length: d }, () => new Array(d).fill(0));
+  const cov = Array.from({ length: d }, () => new Array<number>(d).fill(0));
   const denom = n > 1 ? n - 1 : 1;
 
   for (let j1 = 0; j1 < d; j1++) {
     for (let j2 = j1; j2 < d; j2++) {
       let sum = 0;
       for (let i = 0; i < n; i++) {
-        sum += centered[i][j1] * centered[i][j2];
+        sum += centered[i]![j1]! * centered[i]![j2]!;
       }
       const val = sum / denom;
-      cov[j1][j2] = val;
-      cov[j2][j1] = val; // Symmetric
+      cov[j1]![j2] = val;
+      cov[j2]![j1] = val; // Symmetric
     }
   }
 
   // Total variance is the trace of the covariance matrix
   let totalVariance = 0;
   for (let j = 0; j < d; j++) {
-    totalVariance += cov[j][j];
+    totalVariance += cov[j]![j]!;
   }
   const rankTolerance = totalVariance * Number.EPSILON * d * 16;
 
@@ -84,7 +86,7 @@ export function computePCA(matrix: number[][]): PCAResult {
     // Normalize v
     let norm = Math.hypot(...v);
     if (norm === 0) norm = 1;
-    for (let j = 0; j < d; j++) v[j] /= norm;
+    for (let j = 0; j < d; j++) v[j]! /= norm;
 
     let lambda = 0;
     const maxIter = 100;
@@ -96,7 +98,7 @@ export function computePCA(matrix: number[][]): PCAResult {
       for (let r = 0; r < d; r++) {
         let s = 0;
         for (let c = 0; c < d; c++) {
-          s += deflatedCov[r][c] * v[c];
+          s += deflatedCov[r]![c]! * v[c]!;
         }
         vNext[r] = s;
       }
@@ -110,8 +112,8 @@ export function computePCA(matrix: number[][]): PCAResult {
       lambda = norm;
       let diff = 0;
       for (let j = 0; j < d; j++) {
-        const nextVal = vNext[j] / norm;
-        diff += Math.abs(nextVal - v[j]);
+        const nextVal = vNext[j]! / norm;
+        diff += Math.abs(nextVal - v[j]!);
         v[j] = nextVal;
       }
 
@@ -125,14 +127,14 @@ export function computePCA(matrix: number[][]): PCAResult {
     // Deflate: C_new = C - lambda * (v * v^T)
     for (let r = 0; r < d; r++) {
       for (let c = 0; c < d; c++) {
-        deflatedCov[r][c] -= lambda * v[r] * v[c];
+        deflatedCov[r]![c]! -= lambda * v[r]! * v[c]!;
       }
     }
   }
 
   // Pad null directions with zero vectors so their scores cannot change distances.
   while (eigenvectors.length < 3) {
-    const v = new Array(d).fill(0);
+    const v = new Array<number>(d).fill(0);
     eigenvectors.push(v);
     eigenvalues.push(0);
   }
@@ -144,18 +146,18 @@ export function computePCA(matrix: number[][]): PCAResult {
     let y = 0;
     let z = 0;
     for (let j = 0; j < d; j++) {
-      x += centered[i][j] * eigenvectors[0][j];
-      y += centered[i][j] * (d > 1 ? eigenvectors[1][j] : 0);
-      z += centered[i][j] * (d > 2 ? eigenvectors[2][j] : 0);
+      x += centered[i]![j]! * eigenvectors[0]![j]!;
+      y += centered[i]![j]! * (d > 1 ? eigenvectors[1]![j]! : 0);
+      z += centered[i]![j]! * (d > 2 ? eigenvectors[2]![j]! : 0);
     }
     coordinates.push([x, y, z]);
   }
 
   // Compute explained variance ratios
   const variance = totalVariance || 1;
-  const expVar1 = eigenvalues[0] / variance;
-  const expVar2 = eigenvalues[1] / variance;
-  const expVar3 = eigenvalues[2] / variance;
+  const expVar1 = eigenvalues[0]! / variance;
+  const expVar2 = eigenvalues[1]! / variance;
+  const expVar3 = eigenvalues[2]! / variance;
 
   return {
     coordinates,

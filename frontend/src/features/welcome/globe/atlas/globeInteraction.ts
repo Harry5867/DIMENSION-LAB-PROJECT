@@ -8,7 +8,7 @@ export function constellationGraph(samples: readonly { position: Vector3 }[], or
   if (!hover || radius <= 0 || hover.x * hover.x + hover.y * hover.y > 1.05) return { nodes, edges };
   const projected = new Vector3(), range = Math.min(76, radius * .35);
   for (let index = 0; index < Math.min(count, samples.length); index++) {
-    projected.copy(samples[index].position).applyQuaternion(orientation);
+    projected.copy(samples[index]!.position).applyQuaternion(orientation);
     if (projected.z < .12) continue;
     const distance = Math.hypot(projected.x - hover.x, projected.y - hover.y) * radius;
     if (distance > range) continue;

@@ -10,6 +10,13 @@
 .welcome-page[data-login-phase=closing] .welcome-login-layer {
   animation:welcome-login-return 160ms ease-out both;
 }
+.welcome-page[data-login-phase]:not([data-login-phase=welcome]) .welcome-surface :is(.welcome-header,.welcome-copy,.globe-controls) {
+  opacity:0; visibility:hidden; pointer-events:none;
+  transition:opacity 180ms ease,visibility 180ms ease;
+}
+.welcome-page[data-login-phase]:not([data-login-phase=welcome]) .welcome-main > .data-globe {
+  display:none;
+}
 .welcome-page[data-motion=full][data-login-phase=opening] .login-content {
   animation:welcome-login-rise var(--login-transition-duration) cubic-bezier(.2,.75,.25,1) both;
 }

@@ -4,17 +4,17 @@ import { ArrowRight, MoreHorizontal, Search, Upload } from 'lucide-react';
 import type { DatasetRow, DatasetSummary } from '@dimension-lab/contracts';
 import { useDialogFocus } from '../../../shared/hooks/useDialogFocus';
 import { fetchWithTimeout } from '../../../shared/api/network';
-import { getErrorMessage, isRecord } from '../../../shared/api/typeGuards';
+import { getApiDataRecord, getErrorMessage, isDatasetRow, isRecord } from '../../../shared/api/typeGuards';
 import { WorkspacePage } from '../../../shared/ui/WorkspacePage';
 import { RawDataModal } from './RawDataModal';
 
 interface Props {
   datasets: DatasetSummary[];
   activeDatasetId: string;
-  onSelect: (id: string) => void;
-  onRename: (id: string, name: string) => void;
-  onDelete: (id: string) => void;
-  onUpload: (file: File) => void;
+  onSelect: (id: string) => Promise<void>;
+  onRename: (id: string, name: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onUpload: (file: File) => Promise<void>;
   busy: boolean;
   activity: string;
   notice: { type: 'success' | 'error' | 'info'; message: string } | null;
@@ -41,13 +41,14 @@ export function DatasetsPage(props: Props) {
     try {
       const response = await fetchWithTimeout('/api/datasets/' + encodeURIComponent(dataset.id) + '/' + action);
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error?.message ?? 'Could not open the dataset (HTTP ' + response.status + ').');
+        const body: unknown = await response.json().catch(() => null);
+        const message = isRecord(body) && isRecord(body.error) ? body.error.message : undefined;
+        throw new Error(typeof message === 'string' ? message : 'Could not open the dataset (HTTP ' + response.status + ').');
       }
       if (action === 'preview') {
-        const { data } = await response.json();
-        if (!Array.isArray(data?.rows) || !data.rows.every(isRecord)) throw new Error('Invalid dataset preview.');
-        setPreview({ dataset, rows: data.rows });
+        const rows = getApiDataRecord(await response.json())?.rows;
+        if (!Array.isArray(rows) || !rows.every(isDatasetRow)) throw new Error('Invalid dataset preview.');
+        setPreview({ dataset, rows });
       } else {
         const url = URL.createObjectURL(await response.blob());
         const link = document.createElement('a');
@@ -68,7 +69,7 @@ export function DatasetsPage(props: Props) {
       <input ref={fileInput} type="file" accept=".csv,text/csv" hidden onChange={event => {
         const file = event.currentTarget.files?.[0];
         event.currentTarget.value = '';
-        if (file) props.onUpload(file);
+        if (file) void props.onUpload(file);
       }} />
     </>}>
     {props.busy && <div className="lab-page-state" role="status"><progress aria-label={props.activity || tr("Working")} /> {props.activity || tr("Working…")}</div>}
@@ -89,7 +90,7 @@ export function DatasetsPage(props: Props) {
                 {editing?.id === dataset.id ? <form className="lab-inline-form" onSubmit={event => {
                   event.preventDefault();
                   const name = editing.name.trim();
-                  if (name && !props.busy) { props.onRename(dataset.id, name); setEditing(null); }
+                  if (name && !props.busy) { void props.onRename(dataset.id, name); setEditing(null); }
                 }}>
                   <input autoFocus aria-label={tr("New dataset name")} value={editing.name} onChange={event => setEditing({ id: dataset.id, name: event.target.value })}
                     onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setEditing(null); } }} />
@@ -100,7 +101,7 @@ export function DatasetsPage(props: Props) {
               </div>
               <div className="lab-row-actions">
                 <button type="button" className="lab-action" disabled={props.busy}
-                  onClick={() => props.onSelect(dataset.id)}>{active ? tr("Open Explore") : tr("Use dataset")} <ArrowRight size={14} /></button>
+                  onClick={() => void props.onSelect(dataset.id)}>{active ? tr("Open Explore") : tr("Use dataset")} <ArrowRight size={14} /></button>
                 <details className="lab-row-menu" name={rowMenuName}>
                   <summary aria-label={t(`Actions for ${displayName(dataset)}`, `Thao tác với ${displayName(dataset)}`)}><MoreHorizontal size={18} /></summary>
                   <div>
@@ -134,7 +135,7 @@ export function DatasetsPage(props: Props) {
         <footer className="lab-modal-footer">
           <button type="button" data-cancel-delete onClick={() => setDeleting(null)}>{tr("Cancel")}</button>
           <button type="button" className="lab-action-danger" disabled={props.busy} onClick={() => {
-            props.onDelete(deleting.id);
+            void props.onDelete(deleting.id);
             setDeleting(null);
           }}>{tr("Delete dataset")}</button>
         </footer>

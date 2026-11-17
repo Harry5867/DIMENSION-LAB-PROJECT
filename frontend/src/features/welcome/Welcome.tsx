@@ -19,10 +19,10 @@ const reducedMotionQuery = '(prefers-reduced-motion: reduce)';
 let genesisStartedInPage = false;
 
 class GlobeBoundary extends Component<{ fallback: ReactNode; onFailure: () => void; children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
+  override state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
-  componentDidCatch() { this.props.onFailure(); }
-  render() { return this.state.failed ? this.props.fallback : this.props.children; }
+  override componentDidCatch() { this.props.onFailure(); }
+  override render() { return this.state.failed ? this.props.fallback : this.props.children; }
 }
 const concepts = [
   { name: 'Data', text: 'Every point holds a story. Start with the data you want to understand.' },
@@ -230,7 +230,7 @@ export function Welcome({ onSignIn, signedIn, arrival = null, authOptions = null
         <Suspense fallback={<div className="data-globe globe-loading" role="status" aria-hidden={genesisId !== null}>{t('Loading the data globe…', 'Đang tải quả cầu dữ liệu…')}</div>}>
           <DataGlobe suspended={loginPhase === 'open'} motionEnabled={motionEnabled} theme={theme} modeControlsTarget={globeControlsHost} explorationControlsTarget={explorationControlsHost}
             onModeChange={mode => { setGlobeMode(mode); setActive(null); }} showDetails={active === null}
-            genesis={genesisId === null ? undefined : { id: genesisId, host: genesisHost, logo: genesisLogo, onStarted: setStartedId, onComplete: finishGenesis }}
+            {...(genesisId !== null && { genesis: { id: genesisId, host: genesisHost, logo: genesisLogo, onStarted: setStartedId, onComplete: finishGenesis } })}
             onExplore={() => setActive(null)} />
         </Suspense>
       </GlobeBoundary>

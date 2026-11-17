@@ -33,7 +33,7 @@ function TeamAvatar({ member }: { member: TeamMember }) {
   const [failedSource, setFailedSource] = useState<string>();
   const { photo } = member;
   const names = member.name.trim().split(/\s+/);
-  const initials = names[0].slice(0, 1) + (names.length > 1 ? names.at(-1)!.slice(0, 1) : '');
+  const initials = (names[0]?.slice(0, 1) ?? '') + (names.length > 1 ? names.at(-1)?.slice(0, 1) ?? '' : '');
   const hasPhoto = Boolean(photo?.src && photo.src !== failedSource);
   return <div className="portal-team-avatar" data-photo={hasPhoto || undefined} aria-hidden="true">
     {hasPhoto && photo
@@ -121,6 +121,7 @@ export function TeamBrowser({ hash, onOpenMember }: {
 
   function save(position: number) {
     const member = teamMembers[wrap(position)];
+    if (!member) return;
     window.history.replaceState(window.history.state, '', aboutTeamHref(member.slug));
     setSelected(position);
   }
@@ -183,6 +184,7 @@ export function TeamBrowser({ hash, onOpenMember }: {
       }}>
       {slots.map(slot => {
         const member = teamMembers[wrap(slot)];
+        if (!member) return null;
         const distance = slot - position;
         const pose = memberPose(distance);
         const active = slot === selected;

@@ -12,10 +12,12 @@
     "preview": "vite preview",
     "test": "node --import tsx --test tests/unit/*.test.ts",
     "test:api": "node --import tsx --test tests/integration/system-api.integration.ts",
+    "test:e2e": "playwright test",
     "lint": "eslint ."
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.65.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.17",
