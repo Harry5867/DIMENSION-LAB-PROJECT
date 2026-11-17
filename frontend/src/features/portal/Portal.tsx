@@ -23,9 +23,9 @@ function centerMemberZoom(content: HTMLElement) {
   content.style.transformOrigin = `${center.left + center.width / 2 - bounds.left}px ${center.top + center.height / 2 - bounds.top}px`;
 }
 
-export function Portal({ route, hash, onSignOut, entering = false, interactive = true, onOpenSection, openingId,
+export function Portal({ route, hash, onReturnToWelcome, entering = false, interactive = true, onOpenSection, openingId,
   sectionEntering = false, titleInTransit = false, returning = false }: {
-  route: PortalRoute; hash: string; onSignOut: () => void; entering?: boolean; interactive?: boolean;
+  route: PortalRoute; hash: string; onReturnToWelcome: () => void; entering?: boolean; interactive?: boolean;
   onOpenSection?: (section: PortalSection, link: HTMLAnchorElement) => void; openingId?: PortalSection['id'];
   sectionEntering?: boolean; titleInTransit?: boolean; returning?: boolean;
 }) {
@@ -152,7 +152,7 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
     {overview && <header className="portal-header">
       <div className="portal-header-actions">
         <ThemeToggle />
-        <button className="portal-signout" onClick={onSignOut}>{tr("Sign out")}</button>
+        <button className="portal-return-home" onClick={onReturnToWelcome}>{tr("Back to welcome")}</button>
       </div>
     </header>}
     <main ref={main} id="portal-main" tabIndex={-1} className={overview ? 'portal-overview' : 'portal-content' + (route === 'theory' ? ' portal-content--theory' : galleryPage ? ' portal-content--member' : '')}>

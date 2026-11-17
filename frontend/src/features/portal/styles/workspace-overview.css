@@ -39,7 +39,7 @@ html[data-theme=dark] .portal-page.portal-page--workspace {
   gap:clamp(8px,1.3vw,18px);
   min-width:0;
 }
-.portal-page--workspace .portal-signout {
+.portal-page--workspace .portal-return-home {
   min-height:42px;
   flex:none;
   border:1px solid var(--portal-line);
@@ -48,8 +48,8 @@ html[data-theme=dark] .portal-page.portal-page--workspace {
   font-size:13px;
   transition:background-color .2s,border-color .2s,color .2s;
 }
-.portal-page--workspace .portal-signout::after { content:none; }
-.portal-page--workspace .portal-signout:is(:hover,:focus-visible) {
+.portal-page--workspace .portal-return-home::after { content:none; }
+.portal-page--workspace .portal-return-home:is(:hover,:focus-visible) {
   background:var(--workspace-glass);
   border-color:var(--workspace-glass-edge);
 }
@@ -138,7 +138,7 @@ html[data-theme=dark] .portal-page.portal-page--workspace {
 }
 @media(max-width:400px) {
   .portal-page--workspace .portal-header { min-height:64px; }
-  .portal-page--workspace .portal-signout { padding-inline:10px; font-size:12px; }
+  .portal-page--workspace .portal-return-home { padding-inline:10px; font-size:12px; }
   }
 @media(prefers-reduced-motion:reduce) {
   .workspace-directory-icon:is(:hover,:focus-visible) .workspace-directory-icon-surface { translate:none; }

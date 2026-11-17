@@ -31,6 +31,12 @@
 }
 .login-brand {
   position: relative;
+  grid-column: 1;
+  justify-self: center;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  margin-inline: auto;
   --team-logo-width: clamp(68px, 7vw, 92px);
 }
 .login-content {

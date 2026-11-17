@@ -15,7 +15,7 @@ const Workspace = lazy(() => import('./App'));
 type EntrancePhase = 'idle' | 'covering' | 'revealing';
 type EntranceDirection = 'in' | 'out';
 
-const glassControlSelector = 'button:not(.workspace-scrim, .globe-capital-marker, .portal-signout, .theme-toggle, .welcome-primary, .login-page button, .globe-mode-option), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
+const glassControlSelector = 'button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home, .theme-toggle, .welcome-primary, .login-page button, .globe-mode-option), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
 
 export function Entry() {
   const { tr, t } = useAppLanguage();
@@ -156,7 +156,8 @@ export function Entry() {
         window.location.hash = destination;
         setHash(destination); setWorkspaceEntering(destination === '#/overview'); setSignedIn(true); setHomeArrival(null);
       } else {
-        setSignedIn(false); setModelVisited(false); window.location.hash = ''; setHash('');
+        // Leaving the workspace returns to the welcome page without ending the session.
+        window.location.hash = ''; setHash('');
       }
       setEntrancePhase('revealing');
     } else if (entrancePhaseRef.current === 'revealing') {
@@ -169,19 +170,8 @@ export function Entry() {
     entranceDirectionRef.current = 'in'; setEntranceDirection('in');
     entrancePhaseRef.current = 'covering'; setEntrancePhase('covering');
   };
-  const signOut = async () => {
-    if (!signedIn || signingOut.current || entrancePhaseRef.current !== 'idle') return;
-    setSignOutError(false);
-    if (authOptions?.mode === 'atlas' || getAccessToken()) {
-      signingOut.current = true;
-      try {
-        const response = await fetchWithTimeout('/api/auth/logout', { method: 'POST' });
-        if (!response.ok && response.status !== 401) throw new Error('Sign-out failed.');
-      } catch {
-        setSignOutError(true);
-        return;
-      } finally { signingOut.current = false; }
-    }
+  const returnToWelcome = () => {
+    if (!signedIn || atWelcome || entrancePhaseRef.current !== 'idle') return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const bounds = document.querySelector('.workspace-directory')?.getBoundingClientRect();
     if (bounds?.width && bounds.height) setExitCenter({
@@ -193,12 +183,26 @@ export function Entry() {
     entranceDirectionRef.current = 'out'; setEntranceDirection('out');
     entrancePhaseRef.current = 'covering'; setEntrancePhase('covering'); setWorkspaceEntering(false);
     navigationRef.current = null; setSectionNavigation(null); setArrivingRoute(null);
-    // End the persisted session immediately; the old UI only remains for its exit.
-    clearDemoSession();
     void import('../features/welcome/globe/DataGlobe').catch(() => undefined);
   };
+  const signOut = async () => {
+    if (!signedIn || !atWelcome || signingOut.current || entrancePhaseRef.current !== 'idle') return;
+    setSignOutError(false);
+    if (authOptions?.mode === 'atlas' || getAccessToken()) {
+      signingOut.current = true;
+      try {
+        const response = await fetchWithTimeout('/api/auth/logout', { method: 'POST' });
+        if (!response.ok && response.status !== 401) throw new Error('Sign-out failed.');
+      } catch {
+        setSignOutError(true);
+        return;
+      } finally { signingOut.current = false; }
+    }
+    clearDemoSession();
+    setSignedIn(false); setModelVisited(false);
+  };
   useEffect(() => {
-    if (signedIn || entranceDirection !== 'out' || entrancePhase !== 'idle') return;
+    if (entranceDirection !== 'out' || entrancePhase !== 'idle') return;
     document.querySelector<HTMLButtonElement>('.welcome-actions .welcome-primary')?.focus({ preventScroll: true });
   }, [signedIn, entranceDirection, entrancePhase]);
   useEffect(() => {
@@ -243,11 +247,11 @@ export function Entry() {
       data-transition-phase={entrancePhase !== 'idle' ? entrancePhase : undefined}
       data-transition-motion={exitReducedMotion ? 'gentle' : 'full'}>
       {showPortal ? <>
-        {!modelActive && <Portal key={route} route={route} hash={hash} onSignOut={() => void signOut()} entering={workspaceEntering} interactive={!transitioning}
+        {!modelActive && <Portal key={route} route={route} hash={hash} onReturnToWelcome={returnToWelcome} entering={workspaceEntering} interactive={!transitioning}
           onOpenSection={openSection} {...(openingId !== undefined && { openingId })}
           sectionEntering={arrivingRoute === route && route !== 'overview'} returning={arrivingRoute === 'overview'}
           titleInTransit={Boolean(sectionNavigation?.source?.title && sectionNavigation.phase === 'revealing')} />}
-      </> : <Welcome onSignIn={signIn} signedIn={signedIn} arrival={homeArrival} authOptions={authOptions} />}
+      </> : <Welcome onSignIn={signIn} onSignOut={() => void signOut()} signedIn={signedIn} arrival={homeArrival} authOptions={authOptions} />}
       {signedIn && (modelVisited || modelActive) && <div className={'model-session' + (modelActive && arrivingRoute === route ? ' model-session--arriving' : '')} hidden={!modelActive}>
         <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} persistent={authOptions?.mode === 'atlas'} /></Suspense>
       </div>}
@@ -256,7 +260,7 @@ export function Entry() {
     {entrancePhase !== 'idle' && <>
       <WorkspaceEntrance phase={entrancePhase} onComplete={advanceEntrance} direction={entranceDirection}
         {...(entranceDirection === 'out' && { center: exitCenter })} reducedMotion={entranceDirection === 'out' && exitReducedMotion} />
-      <p className="entry-transition-status" role="status">{entranceDirection === 'out' ? tr("Signing out. Returning to Dimension Lab…") : tr("Entering Workspace…")}</p>
+      <p className="entry-transition-status" role="status">{entranceDirection === 'out' ? tr("Returning to the welcome page…") : tr("Entering Workspace…")}</p>
     </>}
     {sectionNavigation && <>
       <SectionTransition navigation={sectionNavigation} onCovered={coverSection} onComplete={completeSection} />

@@ -19,6 +19,7 @@
 .entry-curtain--revealing .entry-gateway-rays { animation:entry-rays-expand 1240ms ease-out both; animation-duration:1240ms !important; }
 .entry-gateway-nodes text { font:10px var(--font-mono); letter-spacing:.08em; }
 .entry-gateway-brand { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 5%; animation:entry-brand-arrive 360ms ease-out both; animation-duration:360ms !important; }
+.entry-curtain:not(.entry-curtain--out) .entry-gateway-brand { display:none; }
 .entry-gateway-eyebrow { display:flex; align-items:center; gap:16px; margin-bottom:26px; font:10px var(--font-mono); letter-spacing:.25em; }
 .entry-gateway-eyebrow svg { width:28px; height:34px; }
 .entry-gateway-wordmark { display:flex; align-items:baseline; gap:.2em; font:400 clamp(30px,7.7vw,128px)/1 var(--font-sans); letter-spacing:-.065em; white-space:nowrap; }

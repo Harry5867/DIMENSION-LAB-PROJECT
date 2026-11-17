@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { LogOut, X } from 'lucide-react';
 import type { AuthOptions } from '@dimension-lab/contracts';
 import { LoginPanel } from '../auth/components/LoginPanel';
 import { TeamLogo } from '../../shared/ui/TeamLogo';
@@ -39,8 +39,8 @@ const vietnameseConcepts = [
   { name: 'Khám phá', text: 'Xoay, xem xét và thử nghiệm. Để sự tò mò dẫn lối cho câu hỏi tiếp theo.' },
 ];
 
-type WelcomeProps = { onSignIn: (token?: string | null) => void; signedIn?: boolean; arrival?: 'full' | 'gentle' | null; authOptions?: AuthOptions | null };
-export function Welcome({ onSignIn, signedIn, arrival = null, authOptions = null }: WelcomeProps) {
+type WelcomeProps = { onSignIn: (token?: string | null) => void; onSignOut?: () => void; signedIn?: boolean; arrival?: 'full' | 'gentle' | null; authOptions?: AuthOptions | null };
+export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOptions = null }: WelcomeProps) {
   const { theme } = useAppTheme();
   const { language, t } = useWelcomeLanguage();
   const items = language === 'vi' ? vietnameseConcepts : concepts;
@@ -221,6 +221,9 @@ export function Welcome({ onSignIn, signedIn, arrival = null, authOptions = null
           <button ref={enterRef} className="welcome-primary welcome-enter" onClick={openLogin}>
             {t('ENTER THE LAB', 'VÀO PHÒNG LAB')}
           </button>
+          {signedIn && onSignOut && <button className="welcome-signout" type="button" onClick={onSignOut}>
+            <LogOut size={15} aria-hidden="true" /> {t('Sign out', 'Đăng xuất')}
+          </button>}
         </div>
       </section>
       <GlobeBoundary
