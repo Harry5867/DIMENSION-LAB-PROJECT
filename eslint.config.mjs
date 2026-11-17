@@ -34,6 +34,10 @@ export default defineConfig([
     rules: { '@typescript-eslint/no-explicit-any': 'warn' },
   },
   {
+    files: ['tests/performance/**/*.js'],
+    languageOptions: { globals: { __ENV: 'readonly' } },
+  },
+  {
     files: ['*.{js,mjs,ts}', '{backend,tests,scripts}/**/*.{js,mjs,ts}'],
     languageOptions: { globals: globals.node },
   },
