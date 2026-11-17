@@ -26,7 +26,7 @@ for (let row = 0; row < height; row++) for (let col = 0; col < width; col++) {
   if (present) { valid++; if (value === 0) zeros++; }
   output.writeFloatLE(present ? value : NaN, (row * width + col) * 4);
 }
-const directory = fileURLToPath(new URL('../src/data/', import.meta.url));
+const directory = fileURLToPath(new URL('../frontend/src/features/welcome/data/', import.meta.url));
 fs.writeFileSync(directory + 'worldpop-grid-2020.bin', output);
 const metadata = { year: 2020, width, height, stepDegrees: .5, west: -180, north: 90, unit: 'people/km²', source: 'WorldPop / CIESIN', sourceUrl: 'https://doi.org/10.5258/SOTON/WP00674', license: 'https://creativecommons.org/licenses/by/4.0/', valid, zeros, missing: width * height - valid, encoding: 'Float32 little-endian, row-major north to south; NaN means NoData; pixel-center samples', sampling: 'Nearest-neighbor samples every 0.5° from the 30 arc-second WorldPop density raster, requested for 2020-01-01 UTC. Not area averages.', inputSha256: crypto.createHash('sha256').update(bytes).digest('hex') };
 fs.writeFileSync(directory + 'worldpop-grid-2020.json', JSON.stringify(metadata, null, 2) + '\n');

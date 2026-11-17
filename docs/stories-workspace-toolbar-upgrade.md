@@ -11,12 +11,12 @@
 
 ## Files
 
-- `src/components/storyEarth.ts` (new), `globeScene.ts`, `DataGlobe.tsx`
-- `src/components/storyData.ts`, `StoryControls.tsx`, `StoryMarkers.tsx`, `data-globe.css`
-- `src/data/stories-demo.json`, `public/stories/*.webp`, photo-credit JSON files and README
+- `frontend/src/features/welcome/globe/stories/storyEarth.ts` (new), `globeScene.ts`, `DataGlobe.tsx`
+- `frontend/src/features/welcome/globe/stories/storyData.ts`, `StoryControls.tsx`, `StoryMarkers.tsx`, `data-globe.css`
+- `frontend/src/features/welcome/data/stories-demo.json`, `public/stories/*.webp`, photo-credit JSON files and README
 - `scripts/fetch-story-photos.py` (new, explicit preparation tool; Pillow required)
-- `src/visuals/dataMorph.ts`, `dataMorphRuntime.ts`, `src/components/workspace-data-morph.css`
-- `src/components/ThreeCanvas.tsx`, `src/App.tsx`, `src/index.css`
+- `frontend/src/features/portal/animations/dataMorph.ts`, `dataMorphRuntime.ts`, `frontend/src/features/portal/styles/workspace-data-morph.css`
+- `frontend/src/features/visualization/components/ThreeCanvas.tsx`, `frontend/src/app/App.tsx`, `frontend/src/shared/styles/index.css`
 - `tests/stories.test.ts`, `tests/dataMorph.test.ts`, `docs/portal.md`, design preview files
 
 No new JavaScript package or backend change is required for this revision. Existing unrelated work remains untouched.

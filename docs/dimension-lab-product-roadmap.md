@@ -1,5 +1,8 @@
 # Lộ trình hoàn thiện Dimension Lab
 
+> Tài liệu ghi nhận đề xuất và hiện trạng tại thời điểm khảo sát. Xem [kiến trúc hiện tại](architecture/system-overview.md) và [báo cáo kiểm thử](system-verification.md) để đối chiếu những vấn đề đã xử lý.
+
+
 Tài liệu theo dõi các việc cần làm để đưa Dimension Lab từ bản demo phân tích dữ liệu đến bản beta cho người dùng thật. Đánh dấu `[x]` khi một mục đạt tiêu chí kiểm tra. Ghi quyết định, người phụ trách và bằng chứng kiểm tra vào từng mục khi triển khai.
 
 ## Hiện trạng đã kiểm tra
@@ -7,9 +10,9 @@ Tài liệu theo dõi các việc cần làm để đưa Dimension Lab từ bả
 - [x] Có Welcome, Workspace, Theory, Guide, thư viện dữ liệu và Model. Model hỗ trợ nhập CSV, giảm chiều, phân cụm, khảo sát 3D và xuất kết quả. Isolation Forest và Apriori có dashboard riêng.
 - [x] Express có API cho dataset, tính toán, lịch sử và cache. Dự án có lớp kết nối MongoDB và cấu hình Nginx mẫu.
 - [x] Tại lần đánh giá ngày 09/11/2026, API cục bộ phản hồi, có hai dataset mẫu và 71 bài kiểm thử đạt.
-- [ ] Thay đăng nhập demo bằng phiên đăng nhập thật. Khi kiểm tra, `/api/auth/me` nhận yêu cầu không có thông tin đăng nhập và trả vai trò `admin`. Xem [middleware hiện tại](../server/auth.ts).
-- [ ] Thiết lập lưu bền vững. Phiên cục bộ khi đánh giá dùng RAM. Một số luồng ghi có thể trả thành công dù MongoDB ghi thất bại. Xem [lớp lưu trữ](../server/db.ts).
-- [ ] Thống nhất lịch sử. Experiments khôi phục cấu hình để chạy lại. Anomaly và Association lưu riêng trong trình duyệt. Xem [Model](../src/App.tsx) và [dashboard phân tích](../src/components/UnsupervisedPanel.tsx).
+- [ ] Thay đăng nhập demo bằng phiên đăng nhập thật. Khi kiểm tra, `/api/auth/me` nhận yêu cầu không có thông tin đăng nhập và trả vai trò `admin`. Xem [middleware hiện tại](../backend/src/auth/auth.ts).
+- [ ] Thiết lập lưu bền vững. Phiên cục bộ khi đánh giá dùng RAM. Một số luồng ghi có thể trả thành công dù MongoDB ghi thất bại. Xem [lớp lưu trữ](../backend/src/repositories/db.ts).
+- [ ] Thống nhất lịch sử. Experiments khôi phục cấu hình để chạy lại. Anomaly và Association lưu riêng trong trình duyệt. Xem [Model](../frontend/src/app/App.tsx) và [dashboard phân tích](../frontend/src/features/analysis/components/UnsupervisedPanel.tsx).
 
 ## P0 · Tài khoản và dữ liệu riêng tư
 

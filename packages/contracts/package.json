@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "type": "module",
+  "name": "@dimension-lab/contracts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./demo": "./src/demo.ts"
+  }
+}
