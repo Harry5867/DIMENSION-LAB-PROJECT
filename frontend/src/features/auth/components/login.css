@@ -12,7 +12,7 @@
   padding: 24px 20px 44px;
   box-sizing: border-box;
   color: var(--text-main);
-  background: var(--welcome-background);
+  background: color-mix(in srgb, var(--welcome-background, #fff) 78%, transparent);
 }
 
 .welcome-page[data-theme=dark] .login-page {
@@ -39,7 +39,7 @@
   padding: clamp(16px, 4vw, 36px);
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--welcome-background) 60%, var(--bg-interactive));
+  background: color-mix(in srgb, var(--welcome-background, #fff) 96%, var(--bg-interactive));
 }
 .login-content form { display: grid; gap: 14px; }
 .login-field { min-width: 0; }
