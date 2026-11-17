@@ -26,7 +26,7 @@ export type AnalysisTaskResult = ReturnType<typeof runAnalysisTask>;
 export function parseAnalysisTask(value: unknown): AnalysisTask {
   if (typeof value !== 'object' || value === null) throw new Error('Invalid task.');
   const v = value as Record<string, unknown>;
-  if (!Array.isArray(v.rows) || !v.rows.length || v.rows.length > 20000 || !v.rows.every(row => typeof row === 'object' && row !== null && !Array.isArray(row) && Object.values(row).every(x => x === null || (typeof x === 'number' ? Number.isFinite(x) : ['string', 'boolean'].includes(typeof x))))
+  if (!Array.isArray(v.rows) || !v.rows.length || v.rows.length > 20000 || !v.rows.every((row: unknown) => typeof row === 'object' && row !== null && !Array.isArray(row) && Object.values(row).every(x => x === null || (typeof x === 'number' ? Number.isFinite(x) : ['string', 'boolean'].includes(typeof x))))
     || !Array.isArray(v.features) || !v.features.length || v.features.length > 100 || !v.features.every(f => typeof f === 'string')
     || typeof v.options !== 'object' || v.options === null) throw new Error('Invalid rows, columns or options.');
   if (new Set(v.features).size !== v.features.length || !v.features.every(f => (v.rows as DatasetRow[]).some(row => Object.hasOwn(row, f)))) throw new Error('Select unique columns present in the dataset.');

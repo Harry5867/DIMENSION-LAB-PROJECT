@@ -13,9 +13,11 @@ export function earthPosition(latitude: number, longitude: number) {
 function segments(lines: number[][], scale: number) {
   const vertices: number[] = [];
   for (const line of lines) {
-    let previous = earthPosition(line[1] * scale, line[0] * scale);
-    for (let index = 2; index < line.length; index += 2) {
-      const next = earthPosition(line[index + 1] * scale, line[index] * scale);
+    const [longitude, latitude] = line;
+    if (longitude === undefined || latitude === undefined) continue;
+    let previous = earthPosition(latitude * scale, longitude * scale);
+    for (let index = 2; index + 1 < line.length; index += 2) {
+      const next = earthPosition(line[index + 1]! * scale, line[index]! * scale);
       vertices.push(previous.x, previous.y, previous.z, next.x, next.y, next.z);
       previous = next;
     }

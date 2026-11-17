@@ -7,7 +7,8 @@ const colors = ['var(--dataset-cluster-0,#1b6157)', 'var(--dataset-cluster-1,#a3
 export default function DatasetStories() {
   const { tr } = useAppLanguage();
   const [selected, setSelected] = useState(0);
-  const story = stories[selected];
+  const story = stories[selected] ?? stories[0];
+  if (!story) return null;
   const xs = story.points.map(p => p.x), ys = story.points.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const x = (value: number) => 52 + (value - minX) / (maxX - minX || 1) * 402;

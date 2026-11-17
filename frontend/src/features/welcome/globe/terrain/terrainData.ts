@@ -21,7 +21,7 @@ export function sourceCell(data: TerrainData, index: number): TerrainReading {
   const row = Math.floor(index / width), column = index % width;
   const value = values[index];
   return { latitude: 90 - (row + .5) * 180 / height, longitude: -180 + (column + .5) * 360 / width,
-    density: Number.isFinite(value) ? value : null, cell: index };
+    density: value !== undefined && Number.isFinite(value) ? value : null, cell: index };
 }
 export function sourceIndex(grid: DensityGrid, latitude: number, longitude: number) {
   const column = ((Math.floor((longitude + 180) / 360 * grid.width) % grid.width) + grid.width) % grid.width;
@@ -36,10 +36,10 @@ export function smoothDensity(grid: DensityGrid, passes = 12) {
     for (let row = 0; row < height; row++) for (let col = 0; col < width; col++) {
       const i = row * width + col;
       if (!Number.isFinite(values[i])) continue;
-      let sum = current[i] * 2, weight = 2;
+      let sum = current[i]! * 2, weight = 2;
       const neighbors = [row * width + (col + width - 1) % width, row * width + (col + 1) % width,
         row > 0 ? i - width : -1, row < height - 1 ? i + width : -1];
-      for (const n of neighbors) if (n >= 0 && Number.isFinite(values[n])) { sum += current[n]; weight++; }
+      for (const n of neighbors) if (n >= 0 && Number.isFinite(values[n])) { sum += current[n]!; weight++; }
       next[i] = sum / weight;
     }
     [current, next] = [next, current];
@@ -56,7 +56,7 @@ export function sampleDisplay(grid: DensityGrid, latitude: number, longitude: nu
     const col = ((x0 + dx) % width + width) % width, row = Math.min(height - 1, y0 + dy);
     const i = row * width + col, w = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy);
     if (!Number.isFinite(values[i])) continue;
-    raw += normalized[i] * edge[i] * w; smooth += smoothed[i] * edge[i] * w; weight += w;
+    raw += normalized[i]! * edge[i]! * w; smooth += smoothed[i]! * edge[i]! * w; weight += w;
   }
   // Coverage tapers the displayed shape at data boundaries; it does not create density values there.
   return { raw, smooth, valid: weight };
@@ -77,7 +77,7 @@ export async function loadTerrainData(binary?: ArrayBuffer): Promise<TerrainData
   }
   const positive = [...values].filter(value => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
   if (!positive.length) throw new Error('No positive population samples');
-  const heightCap = positive[Math.floor((positive.length - 1) * .98)];
+  const heightCap = positive[Math.floor((positive.length - 1) * .98)]!;
   const normalized = Float32Array.from(values, value => Number.isFinite(value) ? Math.log1p(Math.min(value, heightCap)) / Math.log1p(heightCap) : 0);
   const edge = new Float32Array(values.length);
   const { width, height } = metadata;
@@ -97,8 +97,9 @@ export async function loadTerrainData(binary?: ArrayBuffer): Promise<TerrainData
   grid.smoothed = smoothDensity(grid);
   const { default: sparse } = await import('../../data/worldpop-density-2020.json');
   const points = sparse.points.map(([latitude, longitude]) => {
+    if (latitude === undefined || longitude === undefined) throw new Error('Invalid featured sample coordinates');
     const density = values[sourceIndex(grid, latitude, longitude)];
-    if (!Number.isFinite(density)) throw new Error('Featured sample is missing in the restored raster');
+    if (density === undefined || !Number.isFinite(density)) throw new Error('Featured sample is missing in the restored raster');
     return { latitude, longitude, density,
       height: Math.log1p(Math.min(density, heightCap)) / Math.log1p(heightCap), position: earthPosition(latitude, longitude) };
   });

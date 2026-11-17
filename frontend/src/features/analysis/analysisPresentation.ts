@@ -6,6 +6,7 @@ export interface BinDescription { feature: string; range: { min: number; max: nu
 export function describeItem(item: string, binning: BinDescription[] = []): string {
   try {
     const [feature, value] = JSON.parse(item) as string[];
+    if (typeof feature !== 'string' || typeof value !== 'string') return item;
     const bin = /^bin (\d+)\/(\d+)$/.exec(value);
     const spec = binning.find(b => b.feature === feature);
     if (!bin || !spec?.range) return `${feature} = ${value}`;

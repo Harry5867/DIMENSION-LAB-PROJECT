@@ -1,4 +1,4 @@
-import { ObjectId, type Document } from 'mongodb';
+import { ObjectId } from 'mongodb';
 import { atlasDatabase, atlasMode, connectAtlas } from '../database/atlas';
 import { summarizeDataset } from './atlasDatasets';
 import path from 'path';
@@ -12,7 +12,8 @@ import {
 } from '@dimension-lab/contracts';
 import { parseCSVString } from '@dimension-lab/algorithms/dataParser';
 
-interface StoredExperiment extends Document {
+interface StoredExperiment {
+  id?: string | number;
   ownerId?: ObjectId;
   datasetId: string;
   datasetName: string;
@@ -83,18 +84,21 @@ export function deleteDemoDataset(id: string) {
 export async function getAllExperiments(ownerId: string): Promise<ExperimentRecord[]> {
   if (atlasMode) {
     const list = await atlasDatabase().collection<StoredExperiment>('experiments').find({ ownerId: new ObjectId(ownerId) }).sort({ createdAt: -1 }).limit(50).toArray();
-    return list.map(item => ({
-      id: item._id?.toString() || item.id,
-      dataset_id: item.datasetId,
-      dataset_name: item.datasetName,
-      reduction_method: item.reductionMethod,
-      clustering_method: item.clusteringMethod,
-      k: item.k,
-      silhouette_score: item.silhouetteScore,
-      ari: item.ari,
-      params: item.params,
-      created_at: item.createdAt,
-    }));
+    return list.flatMap(item => {
+      const id = item._id?.toString() || item.id;
+      if (id === undefined) return [];
+      return [{ id,
+        dataset_id: item.datasetId,
+        dataset_name: item.datasetName,
+        reduction_method: item.reductionMethod,
+        clustering_method: item.clusteringMethod,
+        k: item.k,
+        silhouette_score: item.silhouetteScore,
+        ari: item.ari,
+        params: item.params,
+        created_at: item.createdAt,
+      }];
+    });
   }
   return memoryStore.experiments.slice(-50).reverse();
 }
@@ -116,7 +120,9 @@ export async function saveExperiment(experiment: NewExperiment, ownerId: string)
     createdAt: new Date().toISOString(),
   };
   if (atlasMode) {
-    const result = await atlasDatabase().collection<StoredExperiment>('experiments').insertOne({ ...doc, ownerId: new ObjectId(ownerId) });
+    const result = await atlasDatabase().collection<StoredExperiment>('experiments').insertOne({
+      ...doc, _id: new ObjectId(), ownerId: new ObjectId(ownerId),
+    });
     return result.insertedId.toString();
   }
 
@@ -144,7 +150,7 @@ function findDatasetFilePath(filename: string): string {
     path.resolve(process.cwd(), 'data', 'raw', filename),
     path.resolve(process.cwd(), 'data', filename),
     path.resolve(process.cwd(), filename),
-  ];
+  ] as const;
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }

@@ -18,10 +18,11 @@ const readCookie = (req: Request, name: string) => req.headers.cookie?.split(';'
 function redirectUri() {
   try {
     const uri = new URL(process.env.GOOGLE_REDIRECT_URI ?? '');
-    if (uri.username || uri.password || uri.search || uri.hash || uri.pathname !== callbackPath) return;
+    if (uri.username || uri.password || uri.search || uri.hash || uri.pathname !== callbackPath) return undefined;
     if (uri.protocol === 'https:' || (uri.protocol === 'http:' && uri.hostname === 'localhost'
       && process.env.NODE_ENV !== 'production')) return uri;
   } catch { /* Invalid configuration. */ }
+  return undefined;
 }
 
 export const googleEnabled = () => Boolean(atlasMode && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && redirectUri());

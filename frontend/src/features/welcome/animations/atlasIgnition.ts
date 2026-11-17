@@ -74,7 +74,7 @@ export function createAtlasIgnition(canvas: HTMLCanvasElement) {
         }
         const count = compact ? 82 : particles.length;
         for (let i = 0; i < count; i++) {
-          const [lag, drift, spread, brightness] = particles[i];
+          const [lag, drift, spread, brightness] = particles[i]!;
           const start = genesisSignalStart + lag * .38;
           const p = Math.pow(genesisProgress(t, start, genesisImpact + .10 + lag * .45), 1.35);
           const point = signal(p);
@@ -117,7 +117,7 @@ export function createAtlasIgnition(canvas: HTMLCanvasElement) {
         ctx.setLineDash([]);
         const count = compact ? 54 : 82;
         for (let i = 0; i < count; i++) {
-          const [lag, drift, spread, brightness] = particles[i];
+          const [lag, drift, spread, brightness] = particles[i]!;
           const turns = frame.satelliteTurns - lag * .29;
           if (turns < 0) continue;
           const point = brand.satellite(turns);
@@ -155,7 +155,7 @@ export function createAtlasIgnition(canvas: HTMLCanvasElement) {
         ctx.stroke();
         const count = compact ? 82 : particles.length;
         for (let i = 0; i < count; i++) {
-          const [lag, drift, spread, brightness] = particles[i];
+          const [lag, drift, spread, brightness] = particles[i]!;
           const p = frame.returning - lag * .54;
           if (p < 0) continue;
           const point = brand.point(p);

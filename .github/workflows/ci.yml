@@ -40,3 +40,9 @@ jobs:
 
       - name: Run API tests
         run: npm run test:api
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Run browser tests
+        run: npm run test:e2e

@@ -77,7 +77,7 @@ export function createCanvasStoryEarth() {
           const u = Math.min(511, Math.floor((Math.atan2(point.x, point.z) / (2*Math.PI) + .5) * 512));
           const v = Math.min(255, Math.floor((.5 - Math.asin(Math.max(-1, Math.min(1, point.y))) / Math.PI) * 256));
           const source = (v * 512 + u) * 4;
-          for (let c = 0; c < 3; c++) output.data[k+c] = pixels[source+c];
+          for (let c = 0; c < 3; c++) output.data[k+c] = pixels[source+c]!;
           output.data[k+3] = Math.min(255, depth * 10000);
         }
         surfaceContext.putImageData(output, 0, 0);

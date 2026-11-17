@@ -55,8 +55,8 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
 
   // Find optimal K by highest Silhouette
   const bestKBySilhouette = useMemo(() => {
-    if (metricsList.length === 0) return 2;
     let best = metricsList[0];
+    if (!best) return 2;
     for (const m of metricsList) {
       if (m.silhouette > best.silhouette) {
         best = m;

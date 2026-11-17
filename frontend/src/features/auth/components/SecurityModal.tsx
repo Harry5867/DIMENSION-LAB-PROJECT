@@ -57,7 +57,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      fetchHealth();
+      void fetchHealth();
     }
   }, [isOpen]);
 
@@ -159,7 +159,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               </div>
 
               <button
-                onClick={handlePingTest}
+                onClick={() => void handlePingTest()}
                 disabled={isPinging}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-[var(--text-main)] transition-all shadow-md shadow-indigo-600/30 disabled:opacity-50"
               >
@@ -230,7 +230,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   {tr("Cache and compression are enabled.")}
                 </span>
                 <button
-                  onClick={handleClearCache}
+                  onClick={() => void handleClearCache()}
                   disabled={isClearingCache}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-interactive)] hover:bg-slate-700 text-rose-300 text-[11px] border border-rose-900/40 transition-colors"
                 >

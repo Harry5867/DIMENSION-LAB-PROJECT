@@ -68,13 +68,17 @@ export function makePoints(dataset: ParsedDataset, coordinates: [number, number,
   if (coordinates.length !== dataset.rawRows.length || coordinates.some(p => p.length !== 3 || p.some(v => !Number.isFinite(v)))) {
     throw new Error('The projection coordinates do not match the source data.');
   }
-  return dataset.rawRows.map((row, index) => ({
-    id: row[dataset.idColumn ?? ''] ?? index + 1,
-    rowIndex: index,
-    label: dataset.labelColumn ? row[dataset.labelColumn] : undefined,
-    originalFeatures: Object.fromEntries(dataset.featureColumns.map(name => [name, numericValue(row[name])])),
-    x: coordinates[index][0], y: coordinates[index][1], z: coordinates[index][2], cluster: 0,
-  }));
+  return dataset.rawRows.map((row, index) => {
+    const label = dataset.labelColumn ? row[dataset.labelColumn] : undefined;
+    const [x, y, z] = coordinates[index]!;
+    return {
+      id: row[dataset.idColumn ?? ''] ?? index + 1,
+      rowIndex: index,
+      ...(label !== undefined && { label }),
+      originalFeatures: Object.fromEntries(dataset.featureColumns.map(name => [name, numericValue(row[name])])),
+      x, y, z, cluster: 0,
+    };
+  });
 }
 
 export function focusPoints(points: DataPoint[], cluster: number | null): DataPoint[] {

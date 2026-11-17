@@ -13,14 +13,14 @@ export function isWelcomeRoute(hash: string) {
   return path === '' || path === '#' || path === '#/';
 }
 export function portalRoute(hash: string): PortalRoute {
-  const value = hash.replace(/^#\//, '').split('?')[0];
+  const [value = ''] = hash.replace(/^#\//, '').split('?');
   if (hash.startsWith('#/about/')) return 'about';
   return ['overview', ...portalSections.filter(s => s.id !== 'model').map(s => s.id), ...modelRoutes].includes(value) ? value as PortalRoute : 'overview';
 }
 export function isModelRoute(route: PortalRoute): route is typeof modelRoutes[number] { return (modelRoutes as readonly string[]).includes(route); }
 
 export function aboutProfileSlug(hash: string): string | null | undefined {
-  const path = hash.split('?')[0];
+  const [path = ''] = hash.split('?');
   if (!path.startsWith('#/about/')) return undefined;
   try {
     const slug = decodeURIComponent(path.slice('#/about/'.length));

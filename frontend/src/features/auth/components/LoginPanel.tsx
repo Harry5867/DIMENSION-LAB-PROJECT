@@ -4,6 +4,7 @@ import type { AuthOptions } from '@dimension-lab/contracts';
 import { DEMO_EMAIL, DEMO_PASSWORD, validDemoCredentials } from '@dimension-lab/contracts/demo';
 import { useWelcomeLanguage } from '../../../shared/providers/WelcomeLanguage';
 import { fetchWithTimeout } from '../../../shared/api/network';
+import { getApiDataRecord } from '../../../shared/api/typeGuards';
 import { TeamLogo } from '../../../shared/ui/TeamLogo';
 import { LoginBackdrop } from './LoginBackdrop';
 import './login.css';
@@ -47,9 +48,9 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
       }, atlas ? 15000 : 5000);
       if (atlas) {
         if (response.ok) {
-          const result = await response.json();
+          const data = getApiDataRecord(await response.json());
           if (request.signal.aborted) return;
-          if (registering && result.data?.registered === true) {
+          if (registering && data?.registered === true) {
             setRegistering(false);
             setRegistered(true);
             setPassword('');
@@ -57,7 +58,7 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
             setVisible(false);
             return;
           }
-          if (!registering && result.data?.authenticated === true) {
+          if (!registering && data?.authenticated === true) {
             onSignIn();
             return;
           }
@@ -70,9 +71,9 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
         return;
       }
       if (response.ok) {
-        const result = await response.json();
-        if (!request.signal.aborted && typeof result.data?.token === 'string') {
-          onSignIn(result.data.token);
+        const data = getApiDataRecord(await response.json());
+        if (!request.signal.aborted && typeof data?.token === 'string') {
+          onSignIn(data.token);
           return;
         }
       }
