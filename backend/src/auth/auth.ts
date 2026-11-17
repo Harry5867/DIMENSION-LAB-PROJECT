@@ -33,6 +33,10 @@ const DEMO_USERS: Record<UserRole, AuthUser> = {
   },
 };
 
+export function listDemoUsers() {
+  return Object.values(DEMO_USERS);
+}
+
 export interface AuthenticatedRequest extends Request {
   user?: AuthUser;
 }

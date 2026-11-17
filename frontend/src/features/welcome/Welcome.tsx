@@ -19,10 +19,10 @@ const reducedMotionQuery = '(prefers-reduced-motion: reduce)';
 let genesisStartedInPage = false;
 
 class GlobeBoundary extends Component<{ fallback: ReactNode; onFailure: () => void; children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
+  override state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
-  componentDidCatch() { this.props.onFailure(); }
-  render() { return this.state.failed ? this.props.fallback : this.props.children; }
+  override componentDidCatch() { this.props.onFailure(); }
+  override render() { return this.state.failed ? this.props.fallback : this.props.children; }
 }
 const concepts = [
   { name: 'Data', text: 'Every point holds a story. Start with the data you want to understand.' },

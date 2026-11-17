@@ -142,6 +142,7 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
     if (hasMember && main.current) {
       return animateMemberProfile(main.current, pending?.hash === hash ? pending.source : undefined);
     }
+    return undefined;
   }, [route, hash, teamPage, hasMember, teamSelection, interactive]);
   const content = <PortalContent route={route} hash={hash} profile={profilePage ? member : undefined} onOpenMember={openMember} />;
   return <div data-opening-section={openingId} className={`portal-page${route === 'theory' ? ' portal-page--theory' : ''}${teamPage ? ' portal-page--team' : hasMember ? ' portal-page--profile' : ''}${overview ? ' portal-page--workspace' : ''}${overview && entering ? ' portal-page--entering' : ''}${openingId ? ' portal-page--opening' : ''}${sectionEntering ? ' portal-page--section-arriving' : ''}${titleInTransit ? ' portal-page--title-in-transit' : ''}${overview && returning ? ' portal-page--returning' : ''}`}>

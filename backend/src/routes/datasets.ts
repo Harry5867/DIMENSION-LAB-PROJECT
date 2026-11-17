@@ -12,7 +12,7 @@ import { AppError, BadRequestError, NotFoundError, ForbiddenError } from '../htt
 import { requireRole, AuthenticatedRequest } from '../auth/auth';
 import type { Express } from 'express';
 
-export function registerDatasetRoutes(app: Express) {
+export function registerDatasetRoutes(app: Express, basePath = '/api') {
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_CSV_BYTES + 1, files: 1, fields: 0 },
@@ -29,7 +29,7 @@ export function registerDatasetRoutes(app: Express) {
   }
 
   // 7. Get list of datasets
-  app.get('/api/datasets', async (req: AuthenticatedRequest, res, next) => {
+  app.get(`${basePath}/datasets`, async (req: AuthenticatedRequest, res, next) => {
     try {
       const offset = Number(req.query.offset ?? 0), limit = Number(req.query.limit ?? 50);
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100_000
@@ -50,7 +50,7 @@ export function registerDatasetRoutes(app: Express) {
   const readDataset = (id: string, ownerId: string) => atlasMode && !isSampleDataset(id)
     ? loadOwnedDataset(id, ownerId) : getDemoDataset(id);
 
-  app.get('/api/datasets/:id/preview', async (req: AuthenticatedRequest, res, next) => {
+  app.get(`${basePath}/datasets/:id/preview`, async (req: AuthenticatedRequest, res, next) => {
     try {
       const data = await readDataset(String(req.params.id), req.user!.id);
       if (!data) throw new NotFoundError('Dataset');
@@ -59,7 +59,7 @@ export function registerDatasetRoutes(app: Express) {
     } catch (error) { next(error); }
   });
 
-  app.get('/api/datasets/:id/download', async (req: AuthenticatedRequest, res, next) => {
+  app.get(`${basePath}/datasets/:id/download`, async (req: AuthenticatedRequest, res, next) => {
     try {
       const id = String(req.params.id);
       const file = atlasMode && !isSampleDataset(id) ? await openOwnedFile(id, req.user!.id) : null;
@@ -73,7 +73,7 @@ export function registerDatasetRoutes(app: Express) {
   });
 
   // Explore needs every row for preprocessing and local analysis.
-  app.get('/api/datasets/:id', async (req: AuthenticatedRequest, res, next) => {
+  app.get(`${basePath}/datasets/:id`, async (req: AuthenticatedRequest, res, next) => {
     try {
       const id = String(req.params.id);
       const data = await readDataset(id, req.user!.id);
@@ -88,7 +88,7 @@ export function registerDatasetRoutes(app: Express) {
 
   // 9. Upload and parse new dataset to MongoDB (Yêu cầu quyền Admin hoặc Researcher)
   app.post(
-    '/api/datasets/upload',
+    [`${basePath}/datasets/upload`, `${basePath}/datasets`],
     requireRole(['admin', 'researcher']),
     upload.single('file'),
     async (req: AuthenticatedRequest, res, next) => {
@@ -120,7 +120,7 @@ export function registerDatasetRoutes(app: Express) {
   );
 
   // 10. Update dataset name / metadata (Yêu cầu quyền Admin hoặc Researcher)
-  app.patch('/api/datasets/:id', requireRole(['admin', 'researcher']), async (req: AuthenticatedRequest, res, next) => {
+  app.patch(`${basePath}/datasets/:id`, requireRole(['admin', 'researcher']), async (req: AuthenticatedRequest, res, next) => {
     try {
       const id = String(req.params.id);
       const { name } = req.body as { name?: string };
@@ -140,7 +140,7 @@ export function registerDatasetRoutes(app: Express) {
   });
 
   // 11. Delete dataset (Yêu cầu quyền Admin)
-  app.delete('/api/datasets/:id', requireRole(atlasMode ? ['researcher', 'admin'] : ['admin']), async (req: AuthenticatedRequest, res, next) => {
+  app.delete(`${basePath}/datasets/:id`, requireRole(atlasMode ? ['researcher', 'admin'] : ['admin']), async (req: AuthenticatedRequest, res, next) => {
     try {
       const id = String(req.params.id);
       if (id === 'cancer_wdbc' || id === 'wholesale_customers') throw new ForbiddenError('Sample datasets are read-only.');

@@ -153,7 +153,8 @@ export function SectionTransition({ navigation, onCovered, onComplete }: {
       window.removeEventListener('resize', finish);
       animations.forEach(animation => { animation.onfinish = null; animation.cancel(); });
     };
-  }, [navigation.id, navigation.phase, navigation.route, onCovered, onComplete, theme, theory]);
+  }, [navigation.id, navigation.kind, navigation.phase, navigation.route, navigation.section?.id,
+    navigation.source, onCovered, onComplete, theme, theory]);
 
   return <div ref={root} className={'section-transition section-transition--' + navigation.kind + (theory ? ' section-transition--theory' : '')} aria-hidden="true">
     <div ref={scrim} className="section-transition-wash" />

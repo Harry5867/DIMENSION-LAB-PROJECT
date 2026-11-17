@@ -22,6 +22,7 @@ function redirectUri() {
     if (uri.protocol === 'https:' || (uri.protocol === 'http:' && uri.hostname === 'localhost'
       && process.env.NODE_ENV !== 'production')) return uri;
   } catch { /* Invalid configuration. */ }
+  return undefined;
 }
 
 export const googleEnabled = () => Boolean(atlasMode && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && redirectUri());

@@ -11,6 +11,7 @@ Cảnh khoa học trong Model và thao tác camera, selection.
 - [Camera](scene/plotViewCamera.ts) — Điều chỉnh góc nhìn và hiệu ứng con trỏ.
 
 - [Inspector](components/DataInspector.tsx) — Hiển thị điểm đã chọn.
+- Nhãn điểm lấy từ cột nhãn của dataset: hiện trên mọi điểm khi dataset có tối đa 180 dòng; với dataset lớn hơn, chỉ hiện nhãn của điểm đang rê/chọn để tránh che biểu đồ.
 
 ## Luồng dữ liệu và trạng thái
 

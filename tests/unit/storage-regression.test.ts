@@ -4,6 +4,9 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { once } from 'node:events';
 import { Readable, Writable } from 'node:stream';
 import { GridFSBucket, MongoClient, MongoServerError, ObjectId } from 'mongodb';
+import { isRecord } from '../../backend/src/http/validation';
+
+type MockDocument = Record<string, unknown>;
 
 test('Atlas storage isolates owners, retains original bytes, and never acknowledges a failed publication', async t => {
   process.env.LAB_STORAGE_MODE = 'atlas';
@@ -12,50 +15,52 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   process.env.GOOGLE_CLIENT_ID = 'test-client';
   process.env.GOOGLE_CLIENT_SECRET = 'test-secret';
   process.env.GOOGLE_REDIRECT_URI = 'http://localhost:3000/api/auth/google/callback';
-  const collections = new Map<string, any[]>();
+  const collections = new Map<string, MockDocument[]>();
   const blobs = new Map<string, Buffer>();
   const indexes: Array<[string, object, unknown]> = [];
   let failCollection = '';
-  const documents = (name: string) => {
+  const documents = (name: string): MockDocument[] => {
     if (!collections.has(name)) collections.set(name, []);
     return collections.get(name)!;
   };
-  const matches = (doc: any, filter: any) => Object.entries(filter).every(([key, expected]: [string, any]) => {
-    if (expected?.$exists !== undefined) return (doc[key] !== undefined) === expected.$exists;
-    if (expected?.$type) return doc[key] instanceof ObjectId;
-    if (expected?.$gt) return doc[key] > expected.$gt;
+  const matches = (doc: MockDocument, filter: Record<string, unknown>) => Object.entries(filter).every(([key, expected]) => {
+    if (isRecord(expected) && expected.$exists !== undefined) return (doc[key] !== undefined) === expected.$exists;
+    if (isRecord(expected) && expected.$type) return doc[key] instanceof ObjectId;
+    if (isRecord(expected) && expected.$gt) return Number(doc[key]) > Number(expected.$gt);
     return String(doc[key]) === String(expected);
   });
   const database = { command: async () => ({ ok: 1 }), collection: (name: string) => ({
     createIndex: async (fields: object, options: unknown) => { indexes.push([name, fields, options]); },
-    find: (filter: object) => {
+    find: (filter: Record<string, unknown>) => {
       let rows = documents(name).filter(doc => matches(doc, filter));
       const cursor = { sort: () => cursor, skip: (offset: number) => { rows = rows.slice(offset); return cursor; },
         limit: (limit: number) => { rows = rows.slice(0, limit); return cursor; }, toArray: async () => rows };
       return cursor;
     },
-    findOne: async (filter: object) => documents(name).find(doc => matches(doc, filter)) ?? null,
-    findOneAndUpdate: async (filter: object, update: any, options?: { upsert?: boolean }) => {
+    findOne: async (filter: Record<string, unknown>) => documents(name).find(doc => matches(doc, filter)) ?? null,
+    findOneAndUpdate: async (filter: Record<string, unknown>, update: Record<string, unknown>, options?: { upsert?: boolean }) => {
+      const setOnInsert = isRecord(update.$setOnInsert) ? update.$setOnInsert : {};
+      const set = isRecord(update.$set) ? update.$set : {};
       let doc = documents(name).find(doc => matches(doc, filter));
       if (!doc && options?.upsert) {
-        doc = { _id: new ObjectId(), ...filter, ...update.$setOnInsert };
+        doc = { _id: new ObjectId(), ...filter, ...setOnInsert };
         documents(name).push(doc);
       }
-      return doc ? Object.assign(doc, update.$set) : null;
+      return doc ? Object.assign(doc, set) : null;
     },
-    findOneAndDelete: async (filter: object) => {
+    findOneAndDelete: async (filter: Record<string, unknown>) => {
       const index = documents(name).findIndex(doc => matches(doc, filter));
       return index < 0 ? null : documents(name).splice(index, 1)[0];
     },
-    insertOne: async (doc: any) => {
+    insertOne: async (doc: MockDocument) => {
       if (failCollection === name) throw new MongoServerError({ message: 'simulated storage failure' });
       if (name === 'password_users' && documents(name).some(user => user.email === doc.email)) {
         throw new MongoServerError({ message: 'duplicate password account', code: 11000 });
       }
       documents(name).push(doc);
-      return { insertedId: doc._id ?? new ObjectId() };
+      return { insertedId: doc._id instanceof ObjectId ? doc._id : new ObjectId() };
     },
-    deleteOne: async (filter: object) => {
+    deleteOne: async (filter: Record<string, unknown>) => {
       const index = documents(name).findIndex(doc => matches(doc, filter));
       if (index >= 0) documents(name).splice(index, 1);
     },
@@ -78,9 +83,11 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   const datasets = await import('../../backend/src/repositories/atlasDatasets');
   const { saveExperiment, getAllExperiments } = await import('../../backend/src/repositories/db');
   await connectAtlas();
-  assert.ok(indexes.some(([name, fields, options]) => name === 'users' && 'googleSub' in fields && (options as any).unique));
+  assert.ok(indexes.some(([name, fields, options]) => name === 'users' && 'googleSub' in fields
+    && (isRecord(options) ? options.unique : false)));
   assert.ok(indexes.some(([name, fields, options]) => name === 'password_users' && 'email' in fields && (options as { unique?: boolean }).unique));
-  assert.ok(indexes.some(([name, fields, options]) => name === 'sessions' && 'expiresAt' in fields && (options as any).expireAfterSeconds === 0));
+  assert.ok(indexes.some(([name, fields, options]) => name === 'sessions' && 'expiresAt' in fields
+    && (isRecord(options) ? options.expireAfterSeconds : undefined) === 0));
 
   await t.test('password accounts use Atlas sessions and can only access their own datasets', async () => {
     const { createApp } = await import('../../backend/src/app');
@@ -153,18 +160,18 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   const secret = 'a'.repeat(43);
   const session = { tokenHash: createHash('sha256').update(secret).digest('hex'), userId: user!._id, expiresAt: new Date(Date.now() + 5000) };
   documents('sessions').push(session);
-  const cookie = { headers: { cookie: 'lab_session=' + secret } } as any;
+  const cookie = { headers: { cookie: 'lab_session=' + secret } } as Parameters<typeof auth.atlasSessionUser>[0];
   assert.equal((await auth.atlasSessionUser(cookie))?.id, String(user!._id));
   session.expiresAt = new Date(0);
   assert.equal(await auth.atlasSessionUser(cookie), null);
   session.expiresAt = new Date(Date.now() + 5000);
-  await auth.revokeAtlasSession(cookie, { clearCookie() {} } as any);
+  await auth.revokeAtlasSession(cookie, { clearCookie() {} } as Parameters<typeof auth.revokeAtlasSession>[1]);
   assert.equal(await auth.atlasSessionUser(cookie), null);
-  assert.throws(() => auth.protectCookieWrite({ method: 'POST', headers: { origin: 'https://elsewhere.test' } } as any), /application origin/);
-  assert.doesNotThrow(() => auth.protectCookieWrite({ method: 'POST', headers: { origin: 'http://localhost:3000' } } as any));
+  assert.throws(() => auth.protectCookieWrite({ method: 'POST', headers: { origin: 'https://elsewhere.test' } } as Parameters<typeof auth.protectCookieWrite>[0]), /application origin/);
+  assert.doesNotThrow(() => auth.protectCookieWrite({ method: 'POST', headers: { origin: 'http://localhost:3000' } } as Parameters<typeof auth.protectCookieWrite>[0]));
   let rejectedCallback = '';
-  await auth.finishGoogleSignIn({ originalUrl: '/api/auth/google/callback?code=fake&state=bad', headers: {} } as any,
-    { clearCookie() {}, redirect(_status: number, url: string) { rejectedCallback = url; } } as any);
+  await auth.finishGoogleSignIn({ originalUrl: '/api/auth/google/callback?code=fake&state=bad', headers: {} } as Parameters<typeof auth.finishGoogleSignIn>[0],
+    { clearCookie() {}, redirect(_status: number, url: string) { rejectedCallback = url; } } as Parameters<typeof auth.finishGoogleSignIn>[1]);
   assert.match(rejectedCallback, /auth=google-error/);
   assert.equal(documents('sessions').length, 0);
 
@@ -192,10 +199,10 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
     }
   });
   let authorizationUrl = '', attemptKey = '', sessionKey = '', completedRedirect = '';
-  await auth.beginGoogleSignIn({} as any, {
+  await auth.beginGoogleSignIn({} as Parameters<typeof auth.beginGoogleSignIn>[0], {
     cookie(_name: string, key: string, options: { httpOnly: boolean }) { assert.equal(options.httpOnly, true); attemptKey = key; },
     redirect(url: string) { authorizationUrl = url; },
-  } as any);
+  } as Parameters<typeof auth.beginGoogleSignIn>[1]);
   const grant = new URL(authorizationUrl).searchParams;
   assert.equal(grant.get('scope'), 'openid email profile');
   assert.equal(grant.get('code_challenge_method'), 'S256');
@@ -206,11 +213,11 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   const reply = { clearCookie() {}, cookie(_name: string, key: string, options: { httpOnly: boolean; sameSite: string }) {
     assert.equal(options.httpOnly, true); assert.equal(options.sameSite, 'lax'); sessionKey = key;
   }, redirect(_status: number, url: string) { completedRedirect = url; } };
-  await auth.finishGoogleSignIn(callback as any, reply as any);
+  await auth.finishGoogleSignIn(callback as Parameters<typeof auth.finishGoogleSignIn>[0], reply as Parameters<typeof auth.finishGoogleSignIn>[1]);
   assert.match(completedRedirect, /#\/overview/);
-  assert.equal((await auth.atlasSessionUser({ headers: { cookie: 'lab_session=' + sessionKey } } as any))?.id, String(user!._id));
+  assert.equal((await auth.atlasSessionUser({ headers: { cookie: 'lab_session=' + sessionKey } } as Parameters<typeof auth.atlasSessionUser>[0]))?.id, String(user!._id));
   assert.equal(documents('users').length, 2);
-  await auth.finishGoogleSignIn(callback as any, reply as any);
+  await auth.finishGoogleSignIn(callback as Parameters<typeof auth.finishGoogleSignIn>[0], reply as Parameters<typeof auth.finishGoogleSignIn>[1]);
   assert.match(completedRedirect, /auth=google-error/);
 
   const a = String(user!._id), b = String(other!._id);

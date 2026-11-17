@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Layers, Search, X } from 'lucide-react';
 import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
@@ -74,8 +74,8 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   genesis?: WelcomeGenesisRequest;
 }) {
   const { language, t } = useWelcomeLanguage();
-  const cityName = (city: Capital) => language === 'vi' && city.id === capitals[hanoiIndex].id ? 'Hà Nội' : city.city;
-  const countryName = (city: Capital) => localizedCountry(city.iso || '', city.country, language);
+  const cityName = useCallback((city: Capital) => language === 'vi' && city.id === capitals[hanoiIndex].id ? 'Hà Nội' : city.city, [language]);
+  const countryName = useCallback((city: Capital) => localizedCountry(city.iso || '', city.country, language), [language]);
   const viewport = useRef<HTMLDivElement>(null);
   const canvasMount = useRef<HTMLDivElement>(null);
   const markers = useRef(new Map<number, HTMLButtonElement>());
@@ -143,6 +143,8 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   const drag = useRef<{ id: number; x: number; y: number; time: number } | null>(null);
   const genesisRef = useRef(genesis);
   genesisRef.current = genesis;
+  const genesisActive = genesis !== undefined;
+  const genesisId = genesis?.id;
 
   function selectMode(nextMode: GlobeMode) {
     if (nextMode === mode) return;
@@ -158,10 +160,12 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     terrainPointer.current = null;
     opener.current = null;
   }
+  const selectModeRef = useRef(selectMode);
+  selectModeRef.current = selectMode;
 
   useEffect(() => {
-    if (!genesis) return;
-    selectMode('atlas');
+    if (!genesisActive) return;
+    selectModeRef.current('atlas');
     setLayers(atlasDefaults);
     setSelected(null);
     setHovered(null);
@@ -170,7 +174,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     setRegionalAnchor(null);
     if (directory.current) directory.current.open = false;
     if (layersMenu.current) layersMenu.current.open = false;
-  }, [genesis?.id]);
+  }, [genesisActive, genesisId]);
 
   function selectStory(id: string | null, trigger: HTMLElement) {
     if (!id) { closeStory(); return; }
@@ -309,7 +313,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     let visible = true, needsDraw = true;
     let tiltX = 0, tiltY = 0;
     let lastHoverX = 2, lastHoverY = 2;
-    let lastTheme = theme, lastLanguage = language;
+    let lastTheme = state.current.theme, lastLanguage = state.current.language;
     let frameBounds = frame.getBoundingClientRect();
     let copyBounds = copy?.firstElementChild?.getBoundingClientRect();
     let lastYaw = NaN, lastPitch = NaN, lastRadius = NaN;
@@ -739,7 +743,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     return capitals.map((capital, index) => ({ capital, index }))
       .filter(({ capital }) => !search || [capital.city, capital.country, capital.region, capital.iso, cityName(capital), countryName(capital)]
         .some(value => value?.toLowerCase().includes(search)));
-  }, [query, language]);
+  }, [query, cityName, countryName]);
 
   const modeControls = <div className="globe-mode-switcher" role="group" aria-label={t('Visualization mode', 'Chế độ trực quan hóa')}>
     {globeModes.map(item => <button className="globe-mode-option" type="button" key={item.id} aria-pressed={mode === item.id} onClick={() => selectMode(item.id)}>

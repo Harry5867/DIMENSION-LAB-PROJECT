@@ -41,7 +41,7 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
     setSubmitting(true);
     setError(false);
     try {
-      const response = await fetchWithTimeout(registering ? '/api/auth/register' : '/api/auth/login', {
+      const response = await fetchWithTimeout(registering ? '/api/v1/auth/register' : '/api/v1/auth/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, ...(registering && { displayName }) }), signal: request.signal,
       }, atlas ? 15000 : 5000);
@@ -140,7 +140,7 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
       </div>}
       {authOptions.google && <>
         <p className="login-divider">{t('or', 'hoặc')}</p>
-        <a className="login-option" href="/api/auth/google" aria-disabled={submitting || undefined} onClick={event => {
+        <a className="login-option" href="/api/v1/auth/google" aria-disabled={submitting || undefined} onClick={event => {
           if (submitting) event.preventDefault();
         }}>
           <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">

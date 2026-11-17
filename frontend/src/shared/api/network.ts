@@ -11,12 +11,13 @@ export async function fetchWithTimeout(url: string, options: RequestInit = {}, t
   else options.signal?.addEventListener('abort', cancel, { once: true });
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
-    const token = url.startsWith('/api/') && url !== '/api/auth/login' ? getAccessToken() : null;
+    const apiRoute = url.replace(/^\/api\/v[12](?=\/|$)/, '/api');
+    const token = url.startsWith('/api/') && apiRoute !== '/api/auth/login' ? getAccessToken() : null;
     const headers = new Headers(options.headers);
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const response = await fetch(url, { ...options, headers, signal: controller.signal });
-    if (response.status === 401 && url.startsWith('/api/') && url !== '/api/auth/login'
-      && url !== '/api/auth/logout' && token === getAccessToken() && typeof window !== 'undefined') {
+    if (response.status === 401 && url.startsWith('/api/') && apiRoute !== '/api/auth/login'
+      && apiRoute !== '/api/auth/logout' && token === getAccessToken() && typeof window !== 'undefined') {
       clearDemoSession();
       window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     }

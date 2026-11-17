@@ -1,12 +1,11 @@
 import { numericValue } from '@dimension-lab/algorithms/numericValue';
 import { compareRow, describeItem, ruleRows } from '../../frontend/src/features/analysis/analysisPresentation';
-import { runAnalysisTask } from '@dimension-lab/algorithms/analysisTasks';
+import { parseAnalysisTask, runAnalysisTask } from '@dimension-lab/algorithms/analysisTasks';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { computeGMM } from '@dimension-lab/algorithms/gmm';
 import { computeIsolationForest } from '@dimension-lab/algorithms/isolationForest';
 import { computeApriori, transactionsFromRows } from '@dimension-lab/algorithms/apriori';
-import { parseAnalysisTask } from '@dimension-lab/algorithms/analysisTasks';
 import { clusterPoints } from '@dimension-lab/algorithms/clustering';
 import { clusteringKey } from '../../frontend/src/features/analysis/exploration';
 import { experimentConfiguration } from '../../frontend/src/features/experiments/history';

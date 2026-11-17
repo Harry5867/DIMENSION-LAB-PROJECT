@@ -20,6 +20,8 @@ interface KMetric {
   silhouette: number;
 }
 
+const kRange = [2, 3, 4, 5, 6, 7, 8];
+
 export const ElbowModal: React.FC<ElbowModalProps> = ({
   isOpen,
   onClose,
@@ -31,9 +33,6 @@ export const ElbowModal: React.FC<ElbowModalProps> = ({
   const { tr } = useAppLanguage();
   const isLight = theme === 'light';
   const [selectedK, setSelectedK] = useState<number>(currentK);
-
-  // Compute metrics for K = 2..8
-  const kRange = [2, 3, 4, 5, 6, 7, 8];
 
   const metricsList = useMemo<KMetric[]>(() => {
     if (!isOpen || !featureMatrix || featureMatrix.length === 0) return [];

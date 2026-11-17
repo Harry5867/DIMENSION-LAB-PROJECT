@@ -39,6 +39,7 @@ interface WorkspaceLayoutProps {
 /** Presentation shell; analysis state stays owned by App. Panels remain mounted. */
 export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const { tr } = useAppLanguage();
+  const { onRun, canRun, isComputing, isLiveAnimating } = props;
   const exploring = props.active !== false && props.page === 'explore';
   const pageRef = useRef<HTMLDivElement>(null);
   const previousPage = useRef(props.page);
@@ -133,7 +134,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
       setRightOpen(focusPanelsRef.current.right);
       focusPanelsRef.current = null;
     }
-  }, [props.focusedCluster, compact]);
+  }, [props.focusedCluster, compact, leftOpen, rightOpen]);
 
   const setupDialog = useDialogFocus(exploring && compact && leftOpen && !isFullscreen, () => setLeftOpen(false));
   const insightsDialog = useDialogFocus(exploring && compact && rightOpen && !isFullscreen, () => setRightOpen(false), '[role="tab"][aria-selected="true"]');
@@ -142,12 +143,12 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     const shortcut = (event: KeyboardEvent) => {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !document.querySelector('[role="dialog"][aria-modal="true"]')) {
         event.preventDefault();
-        if (props.canRun && !props.isComputing && !props.isLiveAnimating) props.onRun();
+        if (canRun && !isComputing && !isLiveAnimating) onRun();
       }
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [exploring, props.onRun, props.canRun, props.isComputing, props.isLiveAnimating]);
+  }, [exploring, onRun, canRun, isComputing, isLiveAnimating]);
 
   return (
     <div className={'workspace-layout' + (props.focusedCluster != null ? ' focus-active' : '')}>

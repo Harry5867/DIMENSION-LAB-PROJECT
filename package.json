@@ -8,14 +8,17 @@
     "server": "tsx watch backend/src/index.ts",
     "dev:all": "concurrently -k -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"tsx watch backend/src/index.ts\" \"vite\"",
     "dev:host": "concurrently -k -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"tsx backend/src/index.ts\" \"vite --host 0.0.0.0 --port 3000\"",
+    "worker": "tsx backend/src/worker.ts",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "node --import tsx --test tests/unit/*.test.ts",
     "test:api": "node --import tsx --test tests/integration/system-api.integration.ts",
-    "lint": "eslint ."
+    "test:e2e": "playwright test",
+    "lint": "eslint . --max-warnings=0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.17",
@@ -35,11 +38,16 @@
     "tsx": "^4.19.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.2",
-    "vite": "^5.4.8"
+    "vite": "^7.3.8"
   },
   "workspaces": [
     "frontend",
     "backend",
     "packages/*"
-  ]
+  ],
+  "allowScripts": {
+    "argon2@0.45.2": true,
+    "esbuild@0.21.5": true,
+    "esbuild@0.28.2": true
+  }
 }

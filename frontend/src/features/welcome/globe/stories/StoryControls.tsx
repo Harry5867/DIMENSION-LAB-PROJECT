@@ -18,15 +18,16 @@ export function StoryControls({ stories, filtered, category, selected: sourceSto
 }) {
   const { language, t } = useWelcomeLanguage();
   const selected = sourceStory && localizeStory(sourceStory, language);
+  const selectedId = selected?.id;
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!selected) return;
+    if (!selectedId) return;
     const frame = requestAnimationFrame(() => {
       close.current?.closest('.story-information')?.scrollIntoView({ block: 'nearest' });
       close.current?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [selected?.id]);
+  }, [selectedId]);
   return <aside className={`globe-story-panel${selected ? ' story-is-open' : ''}`} aria-label={t('Story controls', 'Điều khiển câu chuyện')}>
       <div className="story-controls-body">
         {error ? <div role="alert"><p>{t('Stories could not be loaded.', 'Không tải được các câu chuyện.')}</p><button type="button" onClick={onRetry}>{t('Try again', 'Thử lại')}</button></div>

@@ -104,6 +104,9 @@ export function parseCSVString(csvContent: string, fileName: string = 'Uploaded 
     const isNumeric = validCount > 0 && (numCount / validCount >= 0.85);
 
     if (col === labelColumn) continue;
+    if (isNumeric && numCount !== validCount) {
+      throw new Error(`Column "${col}" contains non-numeric values. Correct or mark them as missing before upload.`);
+    }
     if (!isNumeric && uniqueValues.size <= 30 && !labelColumn) {
       // Categorical with few classes -> candidate for label
       labelColumn = col;

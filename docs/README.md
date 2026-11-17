@@ -4,6 +4,7 @@
 - [Frontend](architecture/frontend-architecture.md)
 - [Backend và API](architecture/backend-architecture.md)
 - [Luồng dữ liệu](architecture/data-flow.md)
+- [Vận hành, xử lý phân tán và vòng đời API](architecture/operations-and-lifecycle.md)
 - [Hướng phụ thuộc](architecture/dependency-map.md)
 - [Thiết lập Google OAuth và Atlas](google-atlas.md)
 - [Nguồn Terrain](TERRAIN_SOURCE.md) và [Stories](EXHIBITION_HANDOFF.md)

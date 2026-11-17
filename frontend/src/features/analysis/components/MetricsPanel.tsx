@@ -1,8 +1,7 @@
 import { useAppLanguage } from "../../../shared/providers/WelcomeLanguage";
 import React, { useState } from 'react';
-import { EvaluationMetrics, ReductionMethod } from '@dimension-lab/contracts';
-import { Activity, Database, Save, ChevronUp, ChevronDown, CheckCircle2, Clock, Layers, HelpCircle, RotateCcw, Trash2, Filter, BarChart3, Target } from 'lucide-react';
-import { DataPoint } from '@dimension-lab/contracts';
+import { DataPoint, EvaluationMetrics, ReductionMethod } from '@dimension-lab/contracts';
+import { Activity, Database, Save, ChevronUp, ChevronDown, CheckCircle2, Clock, Layers, HelpCircle, RotateCcw, Trash2, Filter, BarChart3, Target, Sparkles } from 'lucide-react';
 
 const CLUSTER_COLORS = [
   '#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F',
@@ -37,6 +36,10 @@ interface MetricsPanelProps {
   dataPoints?: DataPoint[];
   onSelectPoint?: (point: DataPoint | null) => void;
   onDeletePoint?: (pointId: string | number | boolean, rowIndex?: number) => void;
+  advancedQuality?: { trustworthiness: number | null; daviesBouldinIndex: number | null };
+  onOptimize?: () => void;
+  isOptimizing?: boolean;
+  optimizationSummary?: { score: number; candidatesEvaluated: number } | null;
 }
 
 export const MetricsPanel: React.FC<MetricsPanelProps> = ({
@@ -66,6 +69,10 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
   dataPoints = [],
   onSelectPoint,
   onDeletePoint,
+  advancedQuality,
+  onOptimize,
+  isOptimizing = false,
+  optimizationSummary,
 }) => {
   const { tr } = useAppLanguage();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -119,8 +126,19 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
         <p className="insights-hint">{focusedCluster === null ? tr("Select a cluster to isolate it.") : tr("Metrics and CSV cover all result points.")}</p>
         {focusedCluster !== null && <button className="focus-exit" onClick={() => onFocusCluster?.(null)}>{tr("← Show all points")}</button>}
         <details className="insights-more"><summary>{tr("More insights")}</summary>
+        {advancedQuality && <section className="insights-facts" aria-label={tr("Advanced quality metrics")}>
+          <div><dt>{tr("Trustworthiness")}</dt><dd>{score(advancedQuality.trustworthiness)}</dd></div>
+          <div><dt>{tr("Davies–Bouldin index")}</dt><dd>{score(advancedQuality.daviesBouldinIndex)}</dd></div>
+        </section>}
         {reductionMethod === 'PCA' && explainedVariance && <section className="insights-variance"><p className="workspace-eyebrow">{tr("PCA VARIANCE")}</p>{explainedVariance.map((value, i) => <div key={i}><span>PC{i + 1}</span><progress max={1} value={value} aria-label={tr("Variance for PC") + (i + 1)} /><strong>{(value * 100).toFixed(1)}%</strong></div>)}</section>}
         <div className="insights-management"><button onClick={onSaveExperiment} disabled={!hasResults || isSaving || isComputing || resultsDirty}><Save size={13} />{isSaving ? tr("Saving…") : tr("Save experiment")}</button><button onClick={onOpenHistory}><Database size={13} />{tr("History")}</button></div>
+        {hasResults && onOptimize && <div className="insights-management">
+          <button onClick={onOptimize} disabled={isOptimizing || isComputing || resultsDirty || totalRows > 200}
+            title={totalRows > 200 ? tr("Automatic optimization is limited to 200 rows") : undefined}>
+            <Sparkles size={13} />{isOptimizing ? tr("Optimizing…") : tr("Optimize parameters")}
+          </button>
+          {optimizationSummary && <span aria-live="polite">{tr("Best score")} {optimizationSummary.score.toFixed(3)} · {optimizationSummary.candidatesEvaluated} {tr("candidates")}</span>}
+        </div>}
         {hasResults && <div className="insights-management">{isPruned ? <button onClick={onRestorePoints} disabled={!onRestorePoints || isComputing}><RotateCcw size={13} />{tr("Restore (")}{prunedCount})</button> : <button onClick={onPruneOutliers} disabled={outliers.length === 0 || isComputing || !onPruneOutliers}><Filter size={13} />{tr("Filter outliers (")}{outliers.length})</button>}</div>}
         {outliers.length > 0 && <details className="insights-outliers"><summary>{tr("Outliers ·")} {outliers.length}</summary>{outliers.slice(0, 15).map((point, index) => <div key={index}><button onClick={() => onSelectPoint?.(point)} disabled={!onSelectPoint || isComputing}>ID {String(point.id)} ↗</button><button onClick={() => onDeletePoint?.(point.id, point.rowIndex)} disabled={isComputing || !onDeletePoint} aria-label={tr("Remove point ") + String(point.id)}><Trash2 size={12} /></button></div>)}</details>}
         </details>

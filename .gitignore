@@ -6,6 +6,8 @@ node_modules/
 # Production build output
 dist/
 build/
+test-results/
+playwright-report/
 
 # Environment variables & secrets (Không bao giờ đẩy mật khẩu lên GitHub)
 .env

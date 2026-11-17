@@ -9,6 +9,9 @@ import { computeTSNE } from '@dimension-lab/algorithms/tsne';
 import { computeUMAP } from '@dimension-lab/algorithms/umap';
 import { randomSource } from '@dimension-lab/algorithms/unsupervised';
 import { extractFeatureMatrix, MAX_CSV_ROWS, parseCSVString } from '@dimension-lab/algorithms/dataParser';
+import type { DatasetDocument } from '@dimension-lab/contracts';
+import { isClusteringConfig, isJsonValue, isReductionConfig } from '../../backend/src/http/validation';
+import { inspectDatasetQuality } from '../../backend/src/services/dataQuality';
 import { makePoints } from '../../frontend/src/features/analysis/exploration';
 import { projectInBrowser } from '../../frontend/src/features/analysis/workers/projectionWorker';
 import { csvText, resultRows } from '../../frontend/src/features/experiments/exportData';
@@ -60,6 +63,61 @@ test('CSV preserves lexical IDs and explicit missing cells alongside true zero',
     .map(point => point.originalFeatures.a), [0, null, 2]);
   const oversized = 'a,b,c\n' + '1,2,3\n'.repeat(MAX_CSV_ROWS + 1);
   assert.throws(() => parseCSVString(oversized), /limit/);
+});
+
+test('CSV rejects mixed numeric feature types instead of silently treating malformed values as missing', () => {
+  const rows = Array.from({ length: 10 }, (_, index) =>
+    `${index + 1},${index + 2},${index + 3}`).join('\n');
+  const malformed = rows.replace('5,6,7', 'not-a-number,6,7');
+  assert.throws(() => parseCSVString('a,b,c\n' + malformed), /non-numeric values/);
+});
+
+test('quality checks distinguish invalid business data from reviewable quality issues', () => {
+  const parsed = parseCSVString([
+    'id,label,a,b,c',
+    '1,A,1,1,1',
+    '2,A,2,2,2',
+    '3,B,3,3,3',
+    '4,B,4,4,4',
+    '5,B,100,5,5',
+    '5,B,100,5,5',
+    '7,A,,3,2',
+  ].join('\n'));
+  const dataset: DatasetDocument = {
+    id: 'quality-test',
+    name: parsed.name,
+    filename: 'quality-test.csv',
+    totalRows: parsed.totalRows,
+    features: parsed.featureColumns,
+    labelColumn: parsed.labelColumn,
+    idColumn: parsed.idColumn,
+    rawRows: parsed.rawRows,
+    createdAt: new Date().toISOString(),
+  };
+  const quality = inspectDatasetQuality(dataset);
+  assert.equal(quality.status, 'review');
+  assert.equal(quality.duplicateRows, 1);
+  assert.ok(quality.recommendations.some(item => item.code === 'MISSING_VALUES'
+    && item.suggestedThreshold.includes('5%') && item.rationale.length > 20));
+  assert.ok(quality.recommendations.some(item => item.code === 'POTENTIAL_OUTLIERS'
+    && item.suggestedThreshold.includes('1.5×IQR')));
+  assert.ok(quality.recommendations.some(item => item.code === 'DUPLICATE_ROWS'));
+});
+
+test('API validators reject unknown settings, invalid ranges, and non-JSON numbers', () => {
+  const reduction = { method: 'PCA', normalization: 'none', perplexity: 30, learningRate: 100,
+    iterations: 250, nNeighbors: 15, minDist: 0.1 };
+  const clustering = { method: 'K-Means', k: 3, epsilon: 0.5, minPts: 5 };
+  assert.equal(isReductionConfig(reduction), true);
+  assert.equal(isReductionConfig({ ...reduction, iteration: 250 }), false);
+  assert.equal(isReductionConfig({ ...reduction, minDist: Number.NaN }), false);
+  assert.equal(isClusteringConfig(clustering), true);
+  assert.equal(isClusteringConfig({ ...clustering, k: 1.5 }), false);
+  assert.equal(isJsonValue(new Date()), false);
+  assert.equal(isJsonValue({ value: Number.POSITIVE_INFINITY }), false);
+  let deepValue: unknown = 'leaf';
+  for (let depth = 0; depth < 66; depth++) deepValue = [deepValue];
+  assert.equal(isJsonValue(deepValue), false);
 });
 
 test('CSV preserves class codes and ISO timestamps through export', () => {

@@ -7,9 +7,9 @@ import { requireRole, AuthenticatedRequest } from '../auth/auth';
 import type { Express } from 'express';
 import { isJsonValue, isRecord } from '../http/validation';
 
-export function registerExperimentRoutes(app: Express) {
+export function registerExperimentRoutes(app: Express, basePath = '/api') {
   // 13. Experiments History in MongoDB
-  app.get('/api/experiments', async (req: AuthenticatedRequest, res, next) => {
+  app.get(`${basePath}/experiments`, async (req: AuthenticatedRequest, res, next) => {
     try {
       const list = await getAllExperiments(req.user!.id);
       sendSuccess(res, list);
@@ -18,7 +18,7 @@ export function registerExperimentRoutes(app: Express) {
     }
   });
 
-  app.post('/api/experiments', requireRole(['admin', 'researcher']), async (req: AuthenticatedRequest, res, next) => {
+  app.post(`${basePath}/experiments`, requireRole(['admin', 'researcher']), async (req: AuthenticatedRequest, res, next) => {
     try {
       const body: unknown = req.body;
       if (!isRecord(body)

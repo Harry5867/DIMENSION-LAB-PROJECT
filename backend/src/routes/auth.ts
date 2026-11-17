@@ -8,8 +8,8 @@ import { BadRequestError, UnauthorizedError } from '../http/errors';
 import { AuthenticatedRequest, issueSession, revokeSession } from '../auth/auth';
 import type { Express } from 'express';
 
-export function registerAuthRoutes(app: Express) {
-  app.post('/api/auth/register', async (req, res, next) => {
+export function registerAuthRoutes(app: Express, basePath = '/api') {
+  app.post(`${basePath}/auth/register`, async (req, res, next) => {
     try {
       protectCookieWrite(req);
       await registerPasswordUser(req);
@@ -17,7 +17,7 @@ export function registerAuthRoutes(app: Express) {
     } catch (error) { next(error); }
   });
 
-  app.post('/api/auth/login', async (req, res, next) => {
+  app.post(`${basePath}/auth/login`, async (req, res, next) => {
     try {
       if (atlasMode) {
         protectCookieWrite(req);
@@ -48,20 +48,20 @@ export function registerAuthRoutes(app: Express) {
     }
   });
 
-  app.get('/api/auth/options', (_req, res) => sendSuccess(res, {
+  app.get(`${basePath}/auth/options`, (_req, res) => sendSuccess(res, {
     mode: atlasMode ? 'atlas' : 'demo', google: googleEnabled(), registration: passwordRegistrationEnabled(),
   }));
-  app.get('/api/auth/google', (req, res, next) => {
+  app.get(`${basePath}/auth/google`, (req, res, next) => {
     res.setHeader('Referrer-Policy', 'no-referrer');
     void beginGoogleSignIn(req, res).catch(next);
   });
-  app.get('/api/auth/google/callback', (req, res, next) => {
+  app.get(`${basePath}/auth/google/callback`, (req, res, next) => {
     res.setHeader('Referrer-Policy', 'no-referrer');
     void finishGoogleSignIn(req, res).catch(next);
   });
 
   // Lấy thông tin phiên đăng nhập hiện tại
-  app.get('/api/auth/me', (req: AuthenticatedRequest, res) => {
+  app.get(`${basePath}/auth/me`, (req: AuthenticatedRequest, res) => {
     res.setHeader('Cache-Control', 'no-store');
     sendSuccess(res, {
       authenticated: Boolean(req.user),
@@ -69,7 +69,7 @@ export function registerAuthRoutes(app: Express) {
     });
   });
 
-  app.post('/api/auth/logout', async (req, res, next) => {
+  app.post(`${basePath}/auth/logout`, async (req, res, next) => {
     try {
       if (atlasMode) await revokeAtlasSession(req, res);
       else revokeSession(req);

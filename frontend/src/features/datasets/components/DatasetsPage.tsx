@@ -39,7 +39,7 @@ export function DatasetsPage(props: Props) {
   const requestDataset = async (dataset: DatasetSummary, action: 'preview' | 'download') => {
     setRequesting(true); setRequestError('');
     try {
-      const response = await fetchWithTimeout('/api/datasets/' + encodeURIComponent(dataset.id) + '/' + action);
+      const response = await fetchWithTimeout('/api/v1/datasets/' + encodeURIComponent(dataset.id) + '/' + action);
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         throw new Error(body?.error?.message ?? 'Could not open the dataset (HTTP ' + response.status + ').');

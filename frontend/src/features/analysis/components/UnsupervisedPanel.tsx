@@ -35,8 +35,8 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [status, setStatus] = useState('');
   const [selectedRule, setSelectedRule] = useState<AssociationRule | null>(null), [minimumScore, setMinimumScore] = useState(0), [onlyAnomalies, setOnlyAnomalies] = useState(true), [sort, setSort] = useState<'lift' | 'confidence' | 'support'>('lift');
   const detailRef = useRef<HTMLDivElement>(null), rowRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (dashboardOpen && selectedRule) detailRef.current?.scrollIntoView({ block: 'nearest' }); }, [selectedRule]);
-  useEffect(() => { if (dashboardOpen && inspectedRow !== null) rowRef.current?.scrollIntoView({ block: 'nearest' }); }, [inspectedRow]);
+  useEffect(() => { if (dashboardOpen && selectedRule) detailRef.current?.scrollIntoView({ block: 'nearest' }); }, [dashboardOpen, selectedRule]);
+  useEffect(() => { if (dashboardOpen && inspectedRow !== null) rowRef.current?.scrollIntoView({ block: 'nearest' }); }, [dashboardOpen, inspectedRow]);
   useEffect(() => { setQuery(''); setInspectedRow(null); setSelectedRule(null); setRuleSupport(0); setRuleConfidence(0); setRuleLift(0); }, [kind]);
   const [saved, setSaved] = useState<SavedRun[]>([]);
   const generation = useRef(0);

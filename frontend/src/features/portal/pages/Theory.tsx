@@ -68,9 +68,10 @@ export function Theory() {
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
   const chapterId = selection?.chapter.id, methodId = selection?.method.id;
+  const methodName = selection?.method.name;
   useEffect(() => {
-    document.title = tr('Theory') + (selection ? ' · ' + selection.method.name : '');
-  }, [methodId, selection?.method.name, tr]);
+    document.title = tr('Theory') + (methodName ? ' · ' + methodName : '');
+  }, [methodName, tr]);
   useEffect(() => {
     const page = document.querySelector<HTMLElement>('.portal-page--theory');
     if (chapterId) {

@@ -1,5 +1,5 @@
 import { ObjectId, type Document } from 'mongodb';
-import { atlasDatabase, atlasMode, connectAtlas } from '../database/atlas';
+import { atlasDatabase, atlasMode, connectAtlas, isAtlasConnected } from '../database/atlas';
 import { summarizeDataset } from './atlasDatasets';
 import path from 'path';
 import fs from 'fs';
@@ -29,6 +29,14 @@ export let isMongoConnected = false;
 const memoryStore = {
   datasets: new Map<string, DatasetDocument>(),
   files: new Map<string, Buffer>(),
+  datasetVersions: new Map<string, Array<{
+    version: number;
+    dataset: DatasetDocument;
+    content: Buffer;
+    createdAt: string;
+    parentVersion?: number;
+    transformations?: Record<string, unknown>;
+  }>>(),
   experiments: [] as ExperimentRecord[],
   computeCache: new Map<string, { result: ComputeResult; createdAt: number }>(),
 };
@@ -37,7 +45,7 @@ export async function initDatabase() {
   await seedInitialDatasetMemory();
   if (!atlasMode) return;
   await connectAtlas();
-  try { atlasDatabase(); isMongoConnected = true; } catch { /* Health and private routes return 503. */ }
+  isMongoConnected = isAtlasConnected();
 }
 
 export function isSampleDataset(id: string) {
@@ -64,6 +72,64 @@ export function getDemoFile(id: string) {
 export function saveDemoDataset(dataset: DatasetDocument, content: Buffer) {
   memoryStore.datasets.set(dataset.id, dataset);
   memoryStore.files.set(dataset.id, content);
+  if (!memoryStore.datasetVersions.has(dataset.id)) {
+    memoryStore.datasetVersions.set(dataset.id, [{
+      version: 1,
+      dataset,
+      content: Buffer.from(content),
+      createdAt: dataset.createdAt,
+    }]);
+  }
+}
+
+export function createDemoDatasetVersion(
+  dataset: DatasetDocument,
+  content: Buffer,
+  parentVersion: number,
+  transformations?: Record<string, unknown>,
+) {
+  const history = memoryStore.datasetVersions.get(dataset.id) ?? [];
+  const version = Math.max(0, ...history.map(item => item.version)) + 1;
+  const entry = {
+    version,
+    dataset: structuredClone(dataset),
+    content: Buffer.from(content),
+    createdAt: new Date().toISOString(),
+    parentVersion,
+    ...(transformations && { transformations }),
+  };
+  history.push(entry);
+  memoryStore.datasetVersions.set(dataset.id, history);
+  memoryStore.datasets.set(dataset.id, dataset);
+  memoryStore.files.set(dataset.id, Buffer.from(content));
+  return entry;
+}
+
+export function getDemoDatasetVersion(id: string, version: number) {
+  const versioned = memoryStore.datasetVersions.get(id)?.find(item => item.version === version);
+  if (versioned) return versioned;
+  const dataset = getDemoDataset(id);
+  if (dataset && version === 1) {
+    const content = memoryStore.files.get(id);
+    if (content) return { version: 1, dataset, content: Buffer.from(content), createdAt: dataset.createdAt };
+  }
+  return null;
+}
+
+export function listDemoDatasetVersions(id: string) {
+  const history = memoryStore.datasetVersions.get(id);
+  if (history) return history.map(({ version, dataset, createdAt, parentVersion, transformations }) => ({
+    version,
+    totalRows: dataset.totalRows,
+    filename: dataset.filename,
+    features: dataset.features,
+    createdAt,
+    ...(parentVersion !== undefined && { parentVersion }),
+    ...(transformations && { transformations }),
+  })).sort((a, b) => b.version - a.version);
+  const dataset = getDemoDataset(id);
+  return dataset ? [{ version: 1, totalRows: dataset.totalRows, filename: dataset.filename,
+    features: dataset.features, createdAt: dataset.createdAt }] : [];
 }
 
 export function renameDemoDataset(id: string, name: string) {
@@ -76,6 +142,7 @@ export function renameDemoDataset(id: string, name: string) {
 
 export function deleteDemoDataset(id: string) {
   memoryStore.files.delete(id);
+  memoryStore.datasetVersions.delete(id);
   return memoryStore.datasets.delete(id);
 }
 
@@ -168,6 +235,12 @@ async function seedInitialDatasetMemory() {
       rawRows: parsed.rawRows,
       createdAt: new Date('2024-01-01T00:00:00.000Z').toISOString(),
     });
+    memoryStore.datasetVersions.set('cancer_wdbc', [{
+      version: 1,
+      dataset: memoryStore.datasets.get('cancer_wdbc')!,
+      content: Buffer.from(csvContent),
+      createdAt: new Date('2024-01-01T00:00:00.000Z').toISOString(),
+    }]);
   }
 
   const wholesaleCsvPath = findDatasetFilePath('wholesale.csv');
@@ -186,6 +259,12 @@ async function seedInitialDatasetMemory() {
       rawRows: parsed.rawRows,
       createdAt: new Date('2024-01-02T00:00:00.000Z').toISOString(),
     });
+    memoryStore.datasetVersions.set('wholesale_customers', [{
+      version: 1,
+      dataset: memoryStore.datasets.get('wholesale_customers')!,
+      content: Buffer.from(csvContent),
+      createdAt: new Date('2024-01-02T00:00:00.000Z').toISOString(),
+    }]);
   }
 }
 

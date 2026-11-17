@@ -68,7 +68,7 @@ export function Entry() {
     const controller = new AbortController();
     const signal = controller.signal;
     void (async () => {
-      const response = await fetchWithTimeout('/api/auth/options', { signal }, 5000);
+      const response = await fetchWithTimeout('/api/v1/auth/options', { signal }, 5000);
       if (!response.ok) throw new Error('Could not read sign-in options.');
       const { data } = await response.json();
       if (signal.aborted) return;
@@ -85,7 +85,7 @@ export function Entry() {
         setSignedIn(hasDemoSession());
         return;
       }
-      const session = await fetchWithTimeout('/api/auth/me', { signal });
+      const session = await fetchWithTimeout('/api/v1/auth/me', { signal });
       if (!session.ok) return;
       const { data: current } = await session.json();
       if (!signal.aborted) setSignedIn(current?.authenticated === true);
@@ -173,7 +173,7 @@ export function Entry() {
     if (authOptions?.mode === 'atlas' || getAccessToken()) {
       signingOut.current = true;
       try {
-        const response = await fetchWithTimeout('/api/auth/logout', { method: 'POST' });
+        const response = await fetchWithTimeout('/api/v1/auth/logout', { method: 'POST' });
         if (!response.ok && response.status !== 401) throw new Error('Sign-out failed.');
       } catch {
         setSignOutError(true);

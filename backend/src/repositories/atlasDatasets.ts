@@ -4,11 +4,13 @@ import { pipeline } from 'node:stream/promises';
 import { MAX_CSV_BYTES, parseCSVString } from '@dimension-lab/algorithms/dataParser';
 import type { DatasetDocument, DatasetSummary } from '@dimension-lab/contracts';
 import { atlasDatabase, storageUnavailable } from '../database/atlas';
+import { AppError } from '../http/errors';
 
 type DatasetMetadata = Omit<DatasetDocument, 'rawRows'>;
 type OwnedDataset = DatasetMetadata & { ownerId: ObjectId; visibility: 'private'; currentVersionId: ObjectId; updatedAt: string; deletedAt?: Date };
 type DatasetVersion = { _id: ObjectId; datasetId: string; version: number; fileId: ObjectId; rowCount: number;
-  features: string[]; headers: string[]; labelColumn: string | null; idColumn: string | null; createdAt: Date };
+  filename?: string; features: string[]; headers: string[]; labelColumn: string | null; idColumn: string | null; createdAt: Date;
+  parentVersion?: number; transformations?: Record<string, unknown> };
 const bucket = () => new GridFSBucket(atlasDatabase(), { bucketName: 'dataset_files' });
 const datasets = () => atlasDatabase().collection<OwnedDataset>('datasets');
 const versions = () => atlasDatabase().collection<DatasetVersion>('dataset_versions');
@@ -38,6 +40,7 @@ export async function publishDataset(dataset: DatasetDocument, content: Buffer, 
     await pipeline(Readable.from([content]), files.openUploadStreamWithId(fileId, dataset.filename,
       { metadata: { datasetId: dataset.id, version: 1 } }));
     await versions().insertOne({ _id: versionId, datasetId: dataset.id, version: 1, fileId, rowCount: dataset.totalRows,
+      filename: dataset.filename,
       features: dataset.features, headers, labelColumn: dataset.labelColumn, idColumn: dataset.idColumn, createdAt: new Date() });
     publishing = true;
     await datasets().insertOne(record);
@@ -46,6 +49,104 @@ export async function publishDataset(dataset: DatasetDocument, content: Buffer, 
     if (!publishing) {
       await Promise.allSettled([versions().deleteOne({ _id: versionId }), files.delete(fileId)]);
     }
+    throw error;
+  }
+}
+
+export async function listOwnedDatasetVersions(id: string, ownerId: string) {
+  const record = await datasets().findOne(owned(id, ownerId), { projection: { _id: 1, filename: 1 } });
+  if (!record) return null;
+  const history = await versions().find({ datasetId: id }).sort({ version: -1 }).toArray();
+  return history.map(item => ({
+    version: item.version,
+    totalRows: item.rowCount,
+    filename: item.filename ?? record.filename,
+    features: item.features,
+    createdAt: item.createdAt.toISOString(),
+    ...(item.parentVersion !== undefined && { parentVersion: item.parentVersion }),
+    ...(item.transformations && { transformations: item.transformations }),
+  }));
+}
+
+export async function loadOwnedDatasetVersion(id: string, version: number, ownerId: string): Promise<DatasetDocument | null> {
+  const record = await datasets().findOne(owned(id, ownerId));
+  if (!record) return null;
+  const versionRecord = await versions().findOne({ datasetId: id, version });
+  if (!versionRecord) return null;
+  const files = bucket();
+  if (!(await files.find({ _id: versionRecord.fileId }).limit(1).next())) throw storageUnavailable();
+  try {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of files.openDownloadStream(versionRecord.fileId)) {
+      size += chunk.length;
+      if (size > MAX_CSV_BYTES) throw storageUnavailable();
+      chunks.push(chunk);
+    }
+    const parsed = parseCSVString(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)), record.name);
+    if (parsed.totalRows !== versionRecord.rowCount) throw storageUnavailable();
+    return {
+      id,
+      name: record.name,
+      filename: versionRecord.filename ?? record.filename,
+      features: versionRecord.features,
+      labelColumn: versionRecord.labelColumn,
+      idColumn: versionRecord.idColumn,
+      createdAt: versionRecord.createdAt.toISOString(),
+      totalRows: versionRecord.rowCount,
+      rawRows: parsed.rawRows,
+    };
+  } catch {
+    throw storageUnavailable();
+  }
+}
+
+export async function publishOwnedDatasetVersion(
+  id: string,
+  dataset: DatasetDocument,
+  content: Buffer,
+  ownerId: string,
+  headers: string[],
+  transformations?: Record<string, unknown>,
+  sourceVersion?: number,
+) {
+  const current = await datasets().findOne(owned(id, ownerId));
+  if (!current) return null;
+  const latest = await versions().find({ datasetId: id }).sort({ version: -1 }).limit(1).next();
+  if (!latest) throw storageUnavailable();
+  const version = latest.version + 1;
+  const fileId = new ObjectId(), versionId = new ObjectId(), files = bucket();
+  let versionSaved = false;
+  try {
+    await pipeline(Readable.from([content]), files.openUploadStreamWithId(fileId, dataset.filename,
+      { metadata: { datasetId: id, version } }));
+    await versions().insertOne({
+      _id: versionId,
+      datasetId: id,
+      version,
+      fileId,
+      rowCount: dataset.totalRows,
+      filename: dataset.filename,
+      features: dataset.features,
+      headers,
+      labelColumn: dataset.labelColumn,
+      idColumn: dataset.idColumn,
+      createdAt: new Date(),
+      parentVersion: sourceVersion ?? latest.version,
+      ...(transformations && { transformations }),
+    });
+    versionSaved = true;
+    const updated = await datasets().updateOne(
+      { ...owned(id, ownerId), currentVersionId: current.currentVersionId },
+      { $set: { currentVersionId: versionId, filename: dataset.filename, totalRows: dataset.totalRows,
+        features: dataset.features, labelColumn: dataset.labelColumn, idColumn: dataset.idColumn,
+        updatedAt: new Date().toISOString() } },
+    );
+    if (!updated.matchedCount) throw new AppError('The dataset changed while creating a version. Retry the request.', 409, 'VERSION_CONFLICT');
+    return { version, parentVersion: sourceVersion ?? latest.version, createdAt: new Date().toISOString() };
+  } catch (error) {
+    if (versionSaved) await versions().deleteOne({ _id: versionId });
+    await files.delete(fileId).catch(() => undefined);
     throw error;
   }
 }

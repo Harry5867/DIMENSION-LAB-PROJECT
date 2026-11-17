@@ -5,6 +5,7 @@ import type { UserRole } from '../auth/auth';
 
 export const atlasMode = process.env.LAB_STORAGE_MODE === 'atlas';
 let database: Db | undefined;
+let client: MongoClient | undefined;
 
 export function storageUnavailable() {
   return new AppError('Persistent storage is unavailable. Please try again later.', 503, 'STORAGE_UNAVAILABLE');
@@ -15,10 +16,16 @@ export function atlasDatabase() {
   return database;
 }
 
+export function isAtlasConnected() {
+  return database !== undefined;
+}
+
 export async function connectAtlas() {
   const uri = process.env.MONGODB_URI, name = process.env.MONGODB_DB;
-  if (!uri || !name) return;
-  let client: MongoClient | undefined;
+  if (!uri || !name) {
+    console.warn(JSON.stringify({ event: 'atlas_configuration_missing', message: 'Persistent storage is not configured.' }));
+    return;
+  }
   try {
     client = new MongoClient(uri, { serverSelectionTimeoutMS: 4000, timeoutMS: 12000, writeConcern: { w: 'majority' } });
     await client.connect();
@@ -36,12 +43,40 @@ export async function connectAtlas() {
       db.collection('experiments').createIndex({ ownerId: 1, createdAt: -1 }),
       db.collection('compute_cache').createIndex({ cacheKey: 1 }, { unique: true }),
       db.collection('compute_cache').createIndex({ createdAt: 1 }, { expireAfterSeconds: 604800 }),
+      db.collection('api_jobs').createIndex({ id: 1 }, { unique: true }),
+      db.collection('api_jobs').createIndex({ ownerId: 1, type: 1, createdAtDate: -1 }),
+      db.collection('api_jobs').createIndex({ ownerId: 1, status: 1 }),
+      db.collection('api_jobs').createIndex({ status: 1, runAt: 1, createdAtDate: 1, attempts: 1 }),
+      db.collection('api_jobs').createIndex({ status: 1, leaseUntil: 1, attempts: 1 }),
+      db.collection('api_jobs').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      db.collection('api_jobs').createIndex(
+        { ownerId: 1, idempotencyKey: 1 },
+        { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } },
+      ),
     ]);
     database = db;
-  } catch {
-    await client?.close().catch(() => {});
-    console.warn('Atlas initialization failed. Persistent operations will return 503 until a successful restart.');
+  } catch (error) {
+    database = undefined;
+    const failedClient = client;
+    client = undefined;
+    try {
+      await failedClient?.close();
+    } catch (closeError) {
+      console.error(JSON.stringify({ event: 'atlas_cleanup_failed', errorName: closeError instanceof Error ? closeError.name : 'UnknownError' }));
+    }
+    console.warn(JSON.stringify({
+      event: 'atlas_initialization_failed',
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      message: 'Persistent operations will return 503 until storage is available.',
+    }));
   }
+}
+
+export async function closeAtlas() {
+  database = undefined;
+  const activeClient = client;
+  client = undefined;
+  await activeClient?.close();
 }
 
 export interface AtlasProfile {

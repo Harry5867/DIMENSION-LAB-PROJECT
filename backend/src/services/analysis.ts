@@ -97,11 +97,13 @@ export async function computeAnalysis(body: unknown, ownerId?: string) {
 
   // Step B: Clustering
   let clusterAssignments: number[] = [];
+  let gmmResult: ReturnType<typeof computeGMM> | undefined;
   if (clusteringConfig.method === 'K-Means') {
     const kmeansRes = computeKMeans(coordinates, clusteringConfig.k);
     clusterAssignments = kmeansRes.clusters;
   } else if (clusteringConfig.method === 'GMM') {
-    clusterAssignments = computeGMM(coordinates, { k: clusteringConfig.k, maxIterations: clusteringConfig.gmmIterations, tolerance: clusteringConfig.gmmTolerance, seed: clusteringConfig.seed }).clusters;
+    gmmResult = computeGMM(coordinates, { k: clusteringConfig.k, maxIterations: clusteringConfig.gmmIterations, tolerance: clusteringConfig.gmmTolerance, seed: clusteringConfig.seed });
+    clusterAssignments = gmmResult.clusters;
   } else if (clusteringConfig.method === 'DBSCAN') {
     const dbscanRes = computeDBSCAN(
       coordinates,
@@ -120,6 +122,7 @@ export async function computeAnalysis(body: unknown, ownerId?: string) {
     ...projection,
     clusterAssignments,
     ...clusterMetrics,
+    ...(gmmResult && { gmm: gmmResult }),
   };
 
   // Asynchronously write to Cache

@@ -4,12 +4,13 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState
 import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { DataPoint, ColorMode } from '@dimension-lab/contracts';
+import type { DataPoint, ColorMode } from '@dimension-lab/contracts';
 import { getErrorMessage } from '../../../shared/api/typeGuards';
-import { Orbit, ScanEye, Crosshair, CircleDot, Palette, Maximize, Minimize } from 'lucide-react';
+import { Orbit, ScanEye, Crosshair, CircleDot, Palette, Maximize, Minimize, Tag } from 'lucide-react';
 import { createPlotGrid } from '../scene/plotGrid';
 import { createPlotCloud, makePlotColors, normalizePlotPoints, type PlotTransition } from '../scene/plotCloud';
 import { createPlotViewCamera } from '../scene/plotViewCamera';
+import { MAX_STATIC_POINT_LABELS, visiblePointLabels } from '../scene/pointLabels';
 
 interface ThreeCanvasProps {
   gmm?: GMMResult;
@@ -73,9 +74,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const [isAutoRotating, setIsAutoRotating] = useState(false);
   const viewMenuName = useId();
   const [pointScale, setPointScale] = useState(0.4);
+  const [showPointLabels, setShowPointLabels] = useState(true);
   const [centroidsVisible, setCentroidsVisible] = useState(showCentroids);
   const [biplotVisible, setBiplotVisible] = useState(showBiplot);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [hoveredPoint, setHoveredPoint] = useState<{ point: DataPoint; left: number; top: number } | null>(null);
+  const pointLabelCanvasRef = useRef<HTMLCanvasElement>(null);
   const [internalSpotlight, setInternalSpotlight] = useState(true);
   const isSpotlightActive = showOutliersSpotlight !== undefined ? showOutliersSpotlight : internalSpotlight;
   const isSpotlightActiveRef = useRef(isSpotlightActive);
@@ -98,7 +102,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const plotColors = useMemo(() => makePlotColors(dataPoints, colorMode, selectedFeature, theme === 'dark'),
     [dataPoints, colorMode, selectedFeature, theme]);
   const colors = useMemo(() => dataPoints.map(plotColors.forPoint), [dataPoints, plotColors]);
-
+  const hasPointLabels = dataPoints.some(point => point.label !== undefined && point.label !== null && String(point.label).trim().length > 0);
   const legendGroups = useMemo(() => {
     const counts = new Map<number | string, number>();
     for (const point of dataPoints) {
@@ -113,6 +117,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       setBiplotVisible(showBiplot);
     }
   }, [showBiplot]);
+
+  useEffect(() => {
+    setHoveredPoint(null);
+  }, [active, dataPoints]);
 
   // Refs for callbacks to prevent destroying Three.js scene on prop changes
   const onSelectPointRef = useRef(onSelectPoint);
@@ -138,6 +146,17 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const { points: normalizedPoints, groundY } = plot;
   const pointsRef = useRef(dataPoints);
   pointsRef.current = dataPoints;
+  const hoveredLabelPoint = hoveredPoint?.point ?? null;
+  const pointLabels = useMemo(
+    () => visiblePointLabels(normalizedPoints, hoveredLabelPoint, selectedPoint),
+    [normalizedPoints, hoveredLabelPoint, selectedPoint],
+  );
+  const pointLabelStateRef = useRef({
+    enabled: showPointLabels, hasLabels: hasPointLabels, points: pointLabels, colors: plotColors.byLabel, theme,
+  });
+  pointLabelStateRef.current = {
+    enabled: showPointLabels, hasLabels: hasPointLabels, points: pointLabels, colors: plotColors.byLabel, theme,
+  };
 
   // 1. INITIALIZE THREE.JS SCENE (Mount Once)
   useEffect(() => {
@@ -205,6 +224,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       interactingRef.current = true;
       controls.autoRotate = false;
       view.setPointer(0, 0);
+      setHoveredPoint(null);
       dom.style.cursor = 'grabbing';
     };
     const endInteraction = () => {
@@ -248,9 +268,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     let press: { id: number; x: number; y: number } | undefined;
     let lastHoverCheck = -Infinity;
+    const clearHoveredPoint = () => {
+      setHoveredPoint(null);
+    };
     const handlePointerDown = (e: PointerEvent) => {
       if (e.isPrimary && e.button === 0) press = { id: e.pointerId, x: e.clientX, y: e.clientY };
       else press = undefined;
+      clearHoveredPoint();
     };
 
     const handlePointerUp = (e: PointerEvent) => {
@@ -277,12 +301,29 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       if (e.timeStamp - lastHoverCheck < 40) return;
       lastHoverCheck = e.timeStamp;
       const mesh = cloud.pickMesh;
-      if (!mesh) return;
+      if (!mesh) {
+        clearHoveredPoint();
+        dom.style.cursor = 'grab';
+        return;
+      }
       raycaster.setFromCamera(pointer, view.camera);
-      dom.style.cursor = raycaster.intersectObject(mesh)[0]?.instanceId !== undefined ? 'pointer' : 'grab';
+      const index = raycaster.intersectObject(mesh)[0]?.instanceId;
+      const point = index === undefined ? undefined : pointsRef.current[index];
+      if (!point) {
+        clearHoveredPoint();
+        dom.style.cursor = 'grab';
+        return;
+      }
+      const bounds = container.getBoundingClientRect();
+      const x = e.clientX - bounds.left, y = e.clientY - bounds.top;
+      const left = x + 310 < bounds.width ? x + 14 : Math.max(8, x - 310);
+      const top = y + 280 < bounds.height ? y + 14 : Math.max(8, y - 280);
+      setHoveredPoint({ point, left, top });
+      dom.style.cursor = 'pointer';
     };
     const handlePointerLeave = () => {
       view.setPointer(0, 0);
+      clearHoveredPoint();
       if (!interactingRef.current) dom.style.cursor = 'grab';
     };
     const handlePointerCancel = () => {
@@ -338,6 +379,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       grid.position.x = view.camera.position.x;
       grid.position.z = view.camera.position.z;
       renderer.render(scene, view.camera);
+      const labelCanvas = pointLabelCanvasRef.current;
+      if (labelCanvas) {
+        const labelState = pointLabelStateRef.current;
+        drawPointLabels(labelCanvas, view.camera, labelState.points, labelState.colors,
+          labelState.enabled && labelState.hasLabels && !cloud.transitioning, labelState.theme);
+      }
     };
     animate();
     setSceneReady(true);
@@ -535,7 +582,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       sprite.position.copy(dir).multiplyScalar(biplotScale + 4);
       biplotGroupRef.current?.add(sprite);
     });
-  }, [sceneReady, biplotVisible, reductionMethod, pcaComponents, featureNames, biplotTopK]);
+  }, [sceneReady, biplotVisible, reductionMethod, pcaComponents, featureNames, biplotTopK, theme]);
 
   // 4. Render axis guides in local coordinates. The group follows the grid in Y.
   useLayoutEffect(() => {
@@ -645,11 +692,17 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   fitRef.current = handleFitToData;
 
   const legendTitle = tr(selectedFeature === '__anomaly_score' ? 'Isolation Forest score' : selectedFeature === '__rule_match' ? 'Rule membership' : colorMode === 'cluster' ? 'Predicted clusters' : colorMode === 'feature' ? 'Feature scale' : 'Original labels');
+  const pointLabelTitle = !hasPointLabels ? tr('No label column detected')
+    : showPointLabels ? dataPoints.length <= MAX_STATIC_POINT_LABELS
+      ? tr('Hide point labels') : tr('Point labels appear on hover for large datasets')
+      : tr('Show point labels');
   const toolbar = (
     <div className="view-toolbar view-toolbar--analysis" role="group" aria-label={tr("3D view controls")}>
       <button type="button" title={isAutoRotating && selectedPoint ? tr("Auto-rotate paused while inspecting a point") : tr("Auto-rotate")} aria-label={tr("Auto-rotate")} aria-pressed={isAutoRotating} onClick={() => setIsAutoRotating(value => !value)}><Orbit size={17} /><span>{tr("Auto-rotate")}</span></button>
       <button type="button" title={hasOutliers ? tr("Highlight marked outliers in the current view") : tr("No marked outliers in the current view")} aria-label={tr("Highlight outliers")} disabled={!hasOutliers} aria-pressed={hasOutliers && isSpotlightActive} onClick={handleToggleSpotlight}><ScanEye size={17} /><span>{tr("Highlight outliers")}</span></button>
       <button type="button" title={canShowCentroids ? tr("Show cluster centroids") : tr("Run clustering to show centroids")} aria-label={tr("Show centroids")} disabled={!canShowCentroids} aria-pressed={canShowCentroids && centroidsVisible} onClick={() => setCentroidsVisible(value => !value)}><Crosshair size={17} /><span>{tr("Show centroids")}</span></button>
+      <button type="button" title={pointLabelTitle} aria-label={tr("Point labels")} aria-pressed={showPointLabels}
+        disabled={!hasPointLabels} onClick={() => setShowPointLabels(value => !value)}><Tag size={17} /><span>{tr("Point labels")}</span></button>
       <details className="view-point-size" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); event.stopPropagation(); } }}>
         <summary aria-label={tr("Point size")} title={tr("Point size")}><CircleDot size={17} /><span>{tr("Point size")}</span></summary>
         <div className="view-point-size-panel"><label htmlFor={`${viewMenuName}-size`}>{tr("Point size")} <output>{pointScale.toFixed(1)}×</output></label><input id={`${viewMenuName}-size`} aria-label={tr("Point size scale")} type="range" min="0.3" max="2.9" step="0.1" value={pointScale} onChange={event => setPointScale(Number(event.target.value))} /></div>
@@ -671,6 +724,43 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       <div className="relative flex-1 h-full overflow-hidden">
         {/* Dedicated 3D Canvas Mount Point */}
         <div ref={canvasMountRef} className="absolute inset-0 w-full h-full" style={{ touchAction: 'none' }} />
+        <canvas ref={pointLabelCanvasRef} className="view-point-label-overlay" aria-hidden="true" />
+
+        {hoveredPoint && (
+          <div
+            className="view-point-tooltip"
+            role="tooltip"
+            style={{ left: hoveredPoint.left, top: hoveredPoint.top }}
+          >
+            <div className="view-point-tooltip__header">
+              <strong>{tr("Point ID")} {String(hoveredPoint.point.id)}</strong>
+              {hoveredPoint.point.rowIndex !== undefined && (
+                <span>{tr("Row")} {hoveredPoint.point.rowIndex + 1}</span>
+              )}
+            </div>
+            <div className="view-point-tooltip__facts">
+              {hoveredPoint.point.label !== undefined && hoveredPoint.point.label !== null && (
+                <span>{tr("Label:")} <strong>{String(hoveredPoint.point.label)}</strong></span>
+              )}
+              <span>{tr("Cluster:")} <strong>{!hasClustering ? tr("Not clustered")
+                : hoveredPoint.point.cluster === -1 ? tr("Noise (−1)") : hoveredPoint.point.cluster}</strong></span>
+              <span className="view-point-tooltip__coordinates">
+                {tr("3D:")} ({hoveredPoint.point.x.toFixed(2)}, {hoveredPoint.point.y.toFixed(2)}, {hoveredPoint.point.z.toFixed(2)})
+              </span>
+              {hoveredPoint.point.isOutlier && <strong>{tr("Outlier")}</strong>}
+              {hoveredPoint.point.anomalyScore !== undefined && Number.isFinite(hoveredPoint.point.anomalyScore)
+                && <span>{tr("Anomaly score:")} {hoveredPoint.point.anomalyScore.toFixed(4)}</span>}
+            </div>
+            <div className="view-point-tooltip__features">
+              {Object.entries(hoveredPoint.point.originalFeatures).filter(([key]) => !key.startsWith('__'))
+                .slice(0, 8).map(([key, value]) => (
+                  <div key={key}><span title={key}>{key}</span><strong>{value ?? '—'}</strong></div>
+                ))}
+            </div>
+            {Object.keys(hoveredPoint.point.originalFeatures).filter(key => !key.startsWith('__')).length > 8
+              && <p className="view-point-tooltip__hint">{tr("Click the point for full details.")}</p>}
+          </div>
+        )}
 
         {/* Error Notification */}
         {snapshotError && (
@@ -780,4 +870,49 @@ function createTextLabelSprite(text: string, strokeColor: string = '#8B9CFB', th
   sprite.userData.label = text; sprite.userData.stroke = strokeColor;
   sprite.scale.set(12, 3, 1);
   return sprite;
+}
+
+function drawPointLabels(
+  canvas: HTMLCanvasElement,
+  camera: THREE.Camera,
+  points: DataPoint[],
+  labelColors: Map<string, string>,
+  enabled: boolean,
+  theme: 'dark' | 'light',
+) {
+  const width = canvas.clientWidth, height = canvas.clientHeight;
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const pixelWidth = Math.round(width * pixelRatio), pixelHeight = Math.round(height * pixelRatio);
+  if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+  if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  if (!enabled || width === 0 || height === 0) return;
+
+  const position = new THREE.Vector3();
+  context.font = '600 10px Inter, sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  for (const point of points) {
+    const label = String(point.label).trim();
+    position.set(point.x, point.y, point.z).project(camera);
+    if (position.z < -1 || position.z > 1) continue;
+    const x = (position.x * .5 + .5) * width;
+    const y = (-position.y * .5 + .5) * height - 12;
+    if (x < -36 || x > width + 36 || y < -12 || y > height + 12) continue;
+
+    const color = labelColors.get(label) ?? (theme === 'dark' ? '#e8ede4' : '#344438');
+    const badgeWidth = Math.min(64, Math.max(18, context.measureText(label).width + 8));
+    context.beginPath();
+    context.roundRect(x - badgeWidth / 2, y - 8, badgeWidth, 16, 5);
+    context.fillStyle = theme === 'dark' ? 'rgba(24, 37, 30, 0.9)' : 'rgba(250, 250, 247, 0.92)';
+    context.fill();
+    context.strokeStyle = color;
+    context.lineWidth = 1;
+    context.stroke();
+    context.fillStyle = color;
+    context.fillText(label, x, y, 56);
+  }
 }

@@ -1,5 +1,6 @@
 import { projectionSettingsError } from '@dimension-lab/algorithms/projection';
 import { runAnalysis } from '../features/analysis/runAnalysis';
+import { optimizeAnalysis, type OptimizationResult } from '../features/analysis/runOptimization';
 import { useAppLanguage } from "../shared/providers/WelcomeLanguage";
 import { UnsupervisedPanel, AnalysisOverlay } from '../features/analysis/components/UnsupervisedPanel';
 import { GMMResult } from '@dimension-lab/algorithms/gmm';
@@ -18,6 +19,7 @@ import {
   EvaluationMetrics,
   MIN_NUMERIC_FEATURES,
   DatasetSummary,
+  ExperimentRecord,
 } from '@dimension-lab/contracts';
 import { MAX_CSV_BYTES, parseCSVString, extractFeatureMatrix } from '@dimension-lab/algorithms/dataParser';
 import { initLiveTSNE, stepLiveTSNE, LiveTSNEState } from '../features/analysis/liveOptimization';
@@ -25,15 +27,13 @@ import { ControlSidebar, type SetupMethod } from '../features/analysis/component
 import { AnalysisSnapshot, reductionKey, describeRun, normalizationLabels, pendingAnalysisChanges, makePoints, focusPoints, evaluatePointSet } from '../features/analysis/exploration';
 import type { PlotTransition } from '../features/visualization/scene/plotCloud';
 import { ClusterFocus } from '../features/visualization/components/ClusterFocus';
-import { WorkspaceLayout } from './layout/WorkspaceLayout';
+import { WorkspaceLayout, type WorkspacePage as WorkspaceRoute } from './layout/WorkspaceLayout';
 import { isModelRoute, portalRoute } from '../shared/navigation/portalNavigation';
-import type { WorkspacePage as WorkspaceRoute } from './layout/WorkspaceLayout';
 import { WorkspacePage } from '../shared/ui/WorkspacePage';
 import { MetricsPanel } from '../features/analysis/components/MetricsPanel';
 import { DataInspector } from '../features/visualization/components/DataInspector';
 import { RawDataModal } from '../features/datasets/components/RawDataModal';
 import { DatasetsPage } from '../features/datasets/components/DatasetsPage';
-import { ExperimentRecord } from '@dimension-lab/contracts';
 import {
   getErrorMessage,
   isDatasetDocument,
@@ -71,6 +71,11 @@ function openWorkspacePage(page: WorkspaceRoute) {
   window.location.hash = '/' + page;
 }
 
+const BUILTIN_DATASETS: DatasetSummary[] = [
+  { id: 'cancer_wdbc', name: 'Wisconsin Breast Cancer', filename: 'data.csv', total_rows: 569, features_count: 30, label_column: 'diagnosis', id_column: 'id', created_at: '2024-01-01', is_preloaded: true },
+  { id: 'wholesale_customers', name: 'Wholesale Customers', filename: 'wholesale.csv', total_rows: 440, features_count: 7, label_column: 'Channel', id_column: null, created_at: '2024-01-02', is_preloaded: true },
+];
+
 export function App({ active = true, persistent = false }: { active?: boolean; persistent?: boolean }) {
   const [openSetupMethod, setOpenSetupMethod] = useState<SetupMethod | null>(null);
   const { tr } = useAppLanguage();
@@ -94,6 +99,10 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
   const [analyzingRun, setAnalyzingRun] = useState<AnalysisSnapshot | null>(null);
   const [livePreview, setLivePreview] = useState<DataPoint[] | null>(null);
   const [completedRun, setCompletedRun] = useState<AnalysisSnapshot | null>(null);
+  const [serverAnalysisId, setServerAnalysisId] = useState<string | null>(null);
+  const [advancedQuality, setAdvancedQuality] = useState<{ trustworthiness: number | null; daviesBouldinIndex: number | null } | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizationSummary, setOptimizationSummary] = useState<Pick<OptimizationResult, 'score' | 'candidatesEvaluated'> | null>(null);
   const [focusedCluster, setFocusedCluster] = useState<number | null>(null);
   const operationRef = useRef(0);
   const computingRef = useRef(false);
@@ -195,7 +204,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     if (!active) return;
     const checkDbHealth = async () => {
       try {
-        const res = await fetchWithTimeout('/api/health');
+        const res = await fetchWithTimeout('/api/v1/health');
         if (res.ok) {
           const data: unknown = await res.json();
           setDbStatus(isRecord(data) && typeof data.database === 'string' ? data.database : 'Online');
@@ -213,7 +222,8 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
   const resetComputationState = useCallback(() => {
     operationRef.current++; computeAbortRef.current?.abort(); computingRef.current = false;
     setAnalysisError(null); setAnalyzingRun(null); setIsExportModalOpen(false); setLivePreview(null);
-    setCompletedRun(null); setFocusedCluster(null); setIsPruned(false); setPrunedCount(0); backupPointsRef.current = null;
+    setCompletedRun(null); setServerAnalysisId(null); setAdvancedQuality(null); setOptimizationSummary(null);
+    setFocusedCluster(null); setIsPruned(false); setPrunedCount(0); backupPointsRef.current = null;
     setAnalysisOverlay(null); setGmmResult(null);
     setDataPoints([]);
     handleSelectPoint(null);
@@ -232,18 +242,13 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     liveStateRef.current = null;
   }, [handleSelectPoint]);
 
-  // Datasets kept in this tab remain selectable even when the server is unavailable.
-  const builtinDatasets: DatasetSummary[] = [
-    { id: 'cancer_wdbc', name: 'Wisconsin Breast Cancer', filename: 'data.csv', total_rows: 569, features_count: 30, label_column: 'diagnosis', id_column: 'id', created_at: '2024-01-01', is_preloaded: true },
-    { id: 'wholesale_customers', name: 'Wholesale Customers', filename: 'wholesale.csv', total_rows: 440, features_count: 7, label_column: 'Channel', id_column: null, created_at: '2024-01-02', is_preloaded: true },
-  ];
   const [nextDatasetOffset, setNextDatasetOffset] = useState<number | null>(null);
   const datasetListRequest = useRef(0);
   const fetchDatasetList = useCallback(async (offset = 0) => {
     const request = ++datasetListRequest.current;
     let list: DatasetSummary[] = [];
     try {
-      const res = await fetchWithTimeout('/api/datasets?offset=' + offset);
+      const res = await fetchWithTimeout('/api/v1/datasets?offset=' + offset);
       if (res.ok) {
         const response: unknown = await res.json();
         if (request !== datasetListRequest.current) return;
@@ -259,7 +264,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
       if (persistent) setNotice({ type: 'error', message: getErrorMessage(error) });
       if (offset > 0) return;
     }
-    const merged = new Map(builtinDatasets.map(item => [item.id, item]));
+    const merged = new Map(BUILTIN_DATASETS.map(item => [item.id, item]));
     list.forEach(item => merged.set(item.id, item));
     localDatasets.current.forEach((item, id) => merged.set(id, { id, name: item.name, filename: item.name,
       total_rows: item.totalRows, features_count: item.featureColumns.length, label_column: item.labelColumn,
@@ -301,7 +306,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
       let parsed = localDatasets.current.get(id);
       if (!parsed) {
         try {
-          const response = await fetchWithTimeout('/api/datasets/' + encodeURIComponent(id));
+          const response = await fetchWithTimeout('/api/v1/datasets/' + encodeURIComponent(id));
           if (response.ok) {
             const body: unknown = await response.json();
             const data = isRecord(body) && 'data' in body ? body.data : body;
@@ -322,11 +327,12 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
         parsed = parseCSVString(await response.text(), cancer ? 'Wisconsin Breast Cancer' : 'Wholesale Customers');
       }
       if (!parsed) throw new Error('This dataset is no longer available.');
-      if (request !== datasetRequestRef.current) return;
+      if (request !== datasetRequestRef.current) return false;
       return await activateDataset(parsed, id, request);
 
     } catch (error) {
       if (request === datasetRequestRef.current) setNotice({ type: 'error', message: getErrorMessage(error) });
+      return false;
     } finally {
       if (request === datasetRequestRef.current) { setIsComputing(false); setLoadingMessage(''); }
     }
@@ -341,7 +347,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
         setDataset(prev => prev?.id === id ? { ...prev, name: newName } : prev);
         await fetchDatasetList(); return;
       }
-      const res = await fetchWithTimeout(`/api/datasets/${id}`, {
+      const res = await fetchWithTimeout(`/api/v1/datasets/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName }),
@@ -369,7 +375,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
         await openSampleIfDeleted();
         return;
       }
-      const res = await fetchWithTimeout(`/api/datasets/${id}`, {
+      const res = await fetchWithTimeout(`/api/v1/datasets/${id}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -412,7 +418,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
       };
       const form = new FormData(); form.append('file', file);
       let response: Response;
-      try { response = await fetchWithTimeout('/api/datasets/upload', { method: 'POST', body: form }); }
+      try { response = await fetchWithTimeout('/api/v1/datasets', { method: 'POST', body: form }); }
       catch (error) { if (persistent) throw error; await openLocally(); return; }
       if (!persistent && ([502, 503, 504].includes(response.status)
         || (response.status === 500 && !response.headers.get('content-type')?.includes('application/json')))) { await openLocally(); return; }
@@ -473,14 +479,14 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     try {
       if (token !== operationRef.current) return;
       const computed = await runAnalysis({
-        dataset, run, points: backupPointsRef.current ?? dataPoints,
+        dataset, datasetId: activeDatasetId, run, points: backupPointsRef.current ?? dataPoints,
         components: pcaComponents, explainedVariance: metrics.explainedVariance,
         totalExplainedVariance: metrics.totalVarianceExplained,
         reuseEmbedding: reuseEmbedding && !reductionDirty,
         signal: controller.signal, isCurrent: () => token === operationRef.current, setLoadingMessage,
       });
       if (!computed || token !== operationRef.current) return;
-      const { result, matrix, components, explainedVariance, totalVariance } = computed;
+      const { result, matrix, components, explainedVariance, totalVariance, serverAnalysisId, advancedQuality } = computed;
       const executionTimeMs = Math.round(performance.now() - started);
       const nextColorMode = run.clustering.method === 'None' ? 'ground-truth' : 'cluster';
       if (plotTransitionRef.current) {
@@ -497,6 +503,8 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
       const selectedRow = selectionRef.current?.rowIndex;
       handleSelectPoint(selectedRow === undefined ? null : result.points.find(point => point.rowIndex === selectedRow) ?? null);
       setAnalysisOverlay(null); setGmmResult(result.gmm ?? null);
+      setServerAnalysisId(serverAnalysisId ?? null); setAdvancedQuality(advancedQuality ?? null);
+      setOptimizationSummary(null);
       setDataPoints(result.points);
       setMetrics({ ...result.metrics, explainedVariance, totalVarianceExplained: totalVariance,
         executionTimeMs });
@@ -618,21 +626,53 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     setDataPoints(points); handleSelectPoint(null); setFocusedCluster(null);
     setMetrics(previous => ({ ...previous, ...evaluatePointSet(points, hasClustering, Boolean(dataset?.labelColumn)) }));
   };
-  const handlePruneOutliers = () => {
+  const handlePruneOutliers = async () => {
     if (isComputing || isLiveAnimating || dataPoints.length === 0) return;
     const filtered = dataPoints.filter(point => !point.isOutlier && point.cluster !== -1);
     if (filtered.length === dataPoints.length) return;
+    if (serverAnalysisId) {
+      try {
+        const response = await fetchWithTimeout(`/api/v2/analyses/${encodeURIComponent(serverAnalysisId)}/points/filter`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'exclude-outliers-and-noise' }),
+        });
+        if (!response.ok) throw new Error(`The server could not exclude outliers and noise (HTTP ${response.status}).`);
+      } catch (error) {
+        setNotice({ type: 'error', message: 'Could not filter points: ' + getErrorMessage(error) });
+        return;
+      }
+    }
     backupPointsRef.current ??= [...dataPoints];
     setIsPruned(true); setPrunedCount(backupPointsRef.current.length - filtered.length);
     updatePointSet(filtered);
   };
-  const handleRestorePoints = () => {
+  const handleRestorePoints = async () => {
     if (!backupPointsRef.current || isComputing || isLiveAnimating) return;
+    if (serverAnalysisId) {
+      try {
+        const response = await fetchWithTimeout(`/api/v2/analyses/${encodeURIComponent(serverAnalysisId)}/points/filter`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'restore-all' }),
+        });
+        if (!response.ok) throw new Error(`The server could not restore excluded points (HTTP ${response.status}).`);
+      } catch (error) {
+        setNotice({ type: 'error', message: 'Could not restore points: ' + getErrorMessage(error) });
+        return;
+      }
+    }
     updatePointSet(backupPointsRef.current);
     backupPointsRef.current = null; setIsPruned(false); setPrunedCount(0);
   };
-  const handleDeleteSinglePoint = (pointId: string | number | boolean, rowIndex?: number) => {
+  const handleDeleteSinglePoint = async (pointId: string | number | boolean, rowIndex?: number) => {
     if (dataPoints.length === 0 || isComputing || isLiveAnimating) return;
+    if (serverAnalysisId && rowIndex !== undefined) {
+      try {
+        const response = await fetchWithTimeout(`/api/v2/analyses/${encodeURIComponent(serverAnalysisId)}/points/${rowIndex}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error(`The server could not exclude this point (HTTP ${response.status}).`);
+      } catch (error) {
+        setNotice({ type: 'error', message: 'Could not remove point: ' + getErrorMessage(error) });
+        return;
+      }
+    }
     backupPointsRef.current ??= [...dataPoints];
     const keep = (point: DataPoint) => rowIndex === undefined ? point.id !== pointId : point.rowIndex !== rowIndex;
     const filtered = dataPoints.filter(keep);
@@ -640,12 +680,27 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     updatePointSet(filtered);
   };
 
+  const handleOptimizeAnalysis = async () => {
+    if (!dataset || !completedRun || isComputing || resultsDirty || dataset.totalRows > 200 || isOptimizing) return;
+    setIsOptimizing(true);
+    setOptimizationSummary(null);
+    try {
+      const result = await optimizeAnalysis(completedRun, dataset.totalRows);
+      setReductionConfig(result.reduction);
+      setClusteringConfig(result.clustering);
+      setOptimizationSummary({ score: result.score, candidatesEvaluated: result.candidatesEvaluated });
+      setNotice({ type: 'success', message: `Best of ${result.candidatesEvaluated} configurations applied. Run the analysis to compare results.` });
+    } catch (error) {
+      setNotice({ type: 'error', message: 'Could not optimize parameters: ' + getErrorMessage(error) });
+    } finally { setIsOptimizing(false); }
+  };
+
   // 6. Save Experiment to MongoDB
   const handleSaveExperiment = async () => {
     if (!dataset || !completedRun || resultsDirty || isComputing) return;
     try {
       setIsSavingExperiment(true);
-      const res = await fetchWithTimeout('/api/experiments', {
+      const res = await fetchWithTimeout('/api/v1/experiments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -679,7 +734,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     const request = ++historyRequestRef.current;
     setHistoryLoading(true); setHistoryError(null);
     try {
-      const res = await fetchWithTimeout('/api/experiments');
+      const res = await fetchWithTimeout('/api/v1/experiments');
       if (!res.ok) throw new Error('Could not load experiment history (HTTP ' + res.status + ').');
       const response: unknown = await res.json();
       const data = isRecord(response) && 'data' in response ? response.data : response;
@@ -927,6 +982,10 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
             dataPoints={dataPoints}
             onSelectPoint={livePreview ? undefined : handleSelectPoint}
             onDeletePoint={!livePreview && dataPoints.length > 0 ? handleDeleteSinglePoint : undefined}
+            advancedQuality={advancedQuality ?? undefined}
+            onOptimize={dataset && !activeDatasetId.startsWith('local_') ? handleOptimizeAnalysis : undefined}
+            isOptimizing={isOptimizing}
+            optimizationSummary={optimizationSummary ?? undefined}
             onSaveExperiment={handleSaveExperiment}
             onOpenHistory={() => openWorkspacePage('experiments')}
             isSaving={isSavingExperiment}
@@ -980,7 +1039,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
             dbStatus={dbStatus}
             onRefreshDb={async () => {
               try {
-                const res = await fetchWithTimeout('/api/health');
+                const res = await fetchWithTimeout('/api/v1/health');
                 if (res.ok) {
                   const data = await res.json();
                   setDbStatus(data.database || 'Online');
