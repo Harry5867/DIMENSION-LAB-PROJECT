@@ -28,7 +28,7 @@
 }
 .welcome-header { position:relative; z-index:5; display:flex; align-items:center; margin-inline:clamp(20px,4.5vw,90px) max(clamp(16px,2.5vw,40px),env(safe-area-inset-right)); min-height:clamp(76px,10dvh,100px); gap:18px; flex-shrink:0; pointer-events:none; }
 .welcome-header .welcome-brand, .welcome-header nav { pointer-events:auto; }
-.welcome-brand { display:grid; align-items:center; flex:none; min-height:44px; --team-logo-width:clamp(68px,6.5vw,104px); }
+.welcome-brand { display:grid; align-items:center; flex:none; min-height:44px; --team-logo-width:clamp(48px,4.5vw,72px); }
 .welcome-header nav { display:flex; align-items:center; }
 .welcome-header nav button { position:relative; display:flex; align-items:center; justify-content:center; min-height:44px; font:10px var(--font-mono); letter-spacing:.1em; color:#4a5568; white-space:nowrap; }
 .welcome-header nav button::after { display:none; }
