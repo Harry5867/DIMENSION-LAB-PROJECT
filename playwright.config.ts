@@ -1,7 +1,9 @@
 import { defineConfig } from '@playwright/test';
 import { DEMO_EMAIL, DEMO_PASSWORD } from './packages/contracts/src/demo';
 
-const baseURL = 'http://127.0.0.1:3000';
+const apiPort = process.env.LAB_E2E_API_PORT || '5000';
+const webPort = process.env.LAB_E2E_WEB_PORT || '3000';
+const baseURL = `http://127.0.0.1:${webPort}`;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -20,11 +22,11 @@ export default defineConfig({
     {
       name: 'Demo API',
       command: 'npm exec -- tsx backend/src/index.ts',
-      url: 'http://127.0.0.1:5000/api/health',
+      url: `http://127.0.0.1:${apiPort}/api/health`,
       reuseExistingServer: false,
       env: {
         NODE_ENV: 'test',
-        PORT: '5000',
+        PORT: apiPort,
         LAB_BIND_HOST: '127.0.0.1',
         LAB_STORAGE_MODE: 'demo',
         LAB_AUTH_EMAIL: DEMO_EMAIL,
@@ -33,8 +35,9 @@ export default defineConfig({
     },
     {
       name: 'Vite',
-      command: 'npm run dev -- --host 127.0.0.1 --strictPort',
+      command: `npm run dev -- --host 127.0.0.1 --port ${webPort} --strictPort`,
       url: baseURL,
+      env: { LAB_API_PORT: apiPort },
       reuseExistingServer: false,
     },
   ],

@@ -43,5 +43,8 @@
     "frontend",
     "backend",
     "packages/*"
-  ]
+  ],
+  "scarfSettings": {
+    "enabled": false
+  }
 }

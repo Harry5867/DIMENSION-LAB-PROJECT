@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 // https://vitejs.dev/config/
 const fromRepository = (path: string) => fileURLToPath(new URL(path, import.meta.url));
+const apiPort = process.env.LAB_API_PORT || '5000';
 
 export default defineConfig({
   root: fromRepository('./frontend'),
@@ -34,7 +35,7 @@ export default defineConfig({
     open: false,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5000',
+        target: `http://127.0.0.1:${apiPort}`,
         changeOrigin: true,
       },
     },

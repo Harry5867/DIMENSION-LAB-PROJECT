@@ -8,10 +8,12 @@ import { registerHealthRoutes } from './routes/health';
 import { registerDatasetRoutes } from './routes/datasets';
 import { registerAnalysisRoutes } from './routes/analysis';
 import { registerExperimentRoutes } from './routes/experiments';
+import { registerDocsRoutes } from './routes/docs';
 
 export function createApp() {
   const app = express();
   configureMiddleware(app);
+  registerDocsRoutes(app);
   registerAuthRoutes(app);
   registerHealthRoutes(app);
   registerDatasetRoutes(app);

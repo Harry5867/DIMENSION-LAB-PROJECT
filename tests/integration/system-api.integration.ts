@@ -11,7 +11,8 @@ import { computeDBSCAN } from '@dimension-lab/algorithms/dbscan';
 
 test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract', { timeout: 45_000 }, async () => {
   const port = process.env.LAB_TEST_PORT || '5318';
-  const api = 'http://127.0.0.1:' + port + '/api';
+  const origin = 'http://127.0.0.1:' + port;
+  const api = origin + '/api';
   const server = spawn(process.execPath, ['--import', 'tsx', 'backend/src/index.ts'], {
     env: { ...process.env, NODE_ENV: 'test', LAB_STORAGE_MODE: 'demo', PORT: port, LAB_BIND_HOST: '127.0.0.1',
       MONGODB_URI: 'mongodb://127.0.0.1:1/dimension_lab_test', LAB_AUTH_EMAIL: DEMO_EMAIL, LAB_AUTH_PASSWORD: DEMO_PASSWORD },
@@ -41,6 +42,18 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
       assert.ok(i < 80 && server.exitCode === null, 'Isolated server failed to start: ' + logs);
       await delay(100);
     }
+    const openApiResponse = await fetch(origin + '/openapi.json');
+    assert.equal(openApiResponse.status, 200);
+    const openApi = await openApiResponse.json() as { openapi: string; paths: Record<string, unknown> };
+    assert.equal(openApi.openapi, '3.0.3');
+    assert.ok(openApi.paths['/api/compute']);
+    assert.ok(openApi.paths['/api/datasets/upload']);
+    assert.equal(openApi.paths['/api/v1/analyses'], undefined, 'docs must not describe unmounted branch APIs');
+    const docsResponse = await fetch(origin + '/docs/');
+    assert.equal(docsResponse.status, 200);
+    assert.match(docsResponse.headers.get('content-type') || '', /text\/html/);
+    assert.match(await docsResponse.text(), /swagger-ui/);
+
     const health = await call('/health');
     assert.match(health.data.database, /In-Memory/);
     const crossOrigin = await fetch(api + '/auth/login', {
