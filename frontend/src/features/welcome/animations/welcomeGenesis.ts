@@ -4,8 +4,8 @@ export const genesisImpact = 1.98;
 export const genesisScanEnd = 3.64;
 export const genesisSatelliteEnd = genesisScanEnd + 1.05;
 export const genesisReturnEnd = genesisSatelliteEnd + 1.3;
-export const genesisLogoOrbitEnd = genesisReturnEnd + .36;
-export const genesisGrowthStart = genesisLogoOrbitEnd + .52;
+export const genesisLogoFormationEnd = genesisReturnEnd + .68;
+export const genesisGrowthStart = genesisLogoFormationEnd + .20;
 export const genesisDuration = genesisGrowthStart + .92;
 
 // A tilted plane sweeps through the globe. The curve and the Atlas shaders
@@ -46,8 +46,9 @@ export function genesisFrame(elapsed: number) {
     borders: ramp(genesisImpact + .20, genesisScanEnd - .09),
     satelliteTurns: genesisProgress(time, genesisScanEnd, genesisSatelliteEnd),
     returning: departure * (2 - departure),
-    logoOrbit: genesisProgress(time, genesisReturnEnd, genesisLogoOrbitEnd),
-    logo: ramp(genesisLogoOrbitEnd, genesisGrowthStart - .08),
+    logoSegments: Array.from({ length: 6 }, (_, index) =>
+      genesisEase(time, genesisReturnEnd + index * .065, genesisReturnEnd + index * .065 + .28)),
+    logo: genesisEase(time, genesisLogoFormationEnd - .12, genesisLogoFormationEnd + .06),
     growth: ramp(genesisGrowthStart, genesisDuration),
   };
 }
@@ -80,13 +81,7 @@ export function genesisBrandPath(
 ) {
   const left = logo.left - host.left;
   const top = logo.top - host.top;
-  const rotation = -.43;
-  // Fit the traced ellipse to the orbit already in the team's mark.
-  const orbit = {
-    x: left + logo.width * .55, y: top + logo.height * .58,
-    rx: logo.width * .45, ry: logo.width * .075, rotation,
-  };
-  const entry = { x: orbit.x - orbit.rx * Math.cos(rotation), y: orbit.y - orbit.rx * Math.sin(rotation) };
+  const target = { x: left + logo.width * .5, y: top + logo.height * .5 };
   const bottom = host.height - Math.min(44, host.height * .075);
   const satelliteTilt = .43;
   const cosTilt = Math.cos(satelliteTilt);
@@ -124,7 +119,6 @@ export function genesisBrandPath(
   const leftEdge = Math.max(8, left * .48);
   const turn = { x: Math.max(leftEdge + 8, Math.min(start.x - 12, host.width * .18)), y: bottom };
   return {
-    orbit,
     satellite,
     signal: (t: number) => cubic(source, signalFirst, signalLast, impact, t),
     scan: (t: number) => cubic(impact, scanFirst, scanLast, start, t),
@@ -133,8 +127,8 @@ export function genesisBrandPath(
       if (t <= split) {
         return cubic(start, departureFirst, { x: Math.max(turn.x, Math.min(start.x, host.width * .48)), y: bottom }, turn, t / split);
       }
-      return cubic(turn, { x: leftEdge, y: bottom }, { x: leftEdge, y: entry.y + host.height * .13 },
-        entry, (t - split) / (1 - split));
+      return cubic(turn, { x: leftEdge, y: bottom }, { x: leftEdge, y: target.y + host.height * .13 },
+        target, (t - split) / (1 - split));
     },
   };
 }

@@ -51,6 +51,15 @@ test('rejects incorrect credentials, restores a valid session, and signs out', a
   await page.getByRole('button', { name: 'Back to welcome', exact: true }).click();
   await expect(enter).toBeVisible();
   await signOut.click();
+  const confirm = page.getByRole('alertdialog', { name: 'Sign out?' });
+  const cancel = confirm.getByRole('button', { name: 'Cancel', exact: true });
+  await expect(cancel).toBeFocused();
+  await cancel.click();
+  await expect(confirm).toBeHidden();
+  await expect(signOut).toBeVisible();
+  await signOut.click();
+  await confirm.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(confirm).toBeHidden();
   await expect(signOut).toHaveCount(0);
   await page.goto('/#/datasets');
   await expect(enter).toBeVisible();

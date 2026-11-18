@@ -7,6 +7,7 @@ import { ThemeToggle } from '../../shared/ui/ThemeToggle';
 import { DataAtmosphere } from './animations/DataAtmosphere';
 import { useAppTheme } from '../../shared/providers/ThemeProvider';
 import { useWelcomeLanguage } from '../../shared/providers/WelcomeLanguage';
+import { useDialogFocus } from '../../shared/hooks/useDialogFocus';
 import { shouldPlayGenesis } from './animations/welcomeGenesis';
 import './styles/welcome.css';
 import './styles/welcome-settings.css';
@@ -38,6 +39,9 @@ export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOpt
   const [googleError] = useState(() => new URLSearchParams(window.location.search).get('auth') === 'google-error');
   const [loginPhase, setLoginPhase] = useState<'welcome' | 'opening' | 'open' | 'closing'>(googleError ? 'open' : 'welcome');
   const login = loginPhase !== 'welcome';
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
+  const closeSignOutConfirm = useCallback(() => setSignOutConfirmOpen(false), []);
+  const signOutDialogRef = useDialogFocus(signOutConfirmOpen, closeSignOutConfirm, '.welcome-signout-cancel');
   useEffect(() => {
     if (googleError) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
   }, [googleError]);
@@ -128,14 +132,14 @@ export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOpt
       <div className="genesis-pointer-guard" aria-hidden="true" />
     </>}
     <DataAtmosphere variant="welcome" active={loginPhase !== 'open' && genesisId === null} />
-    <div className="welcome-surface" inert={login || genesisId !== null}>
+    <div className="welcome-surface" inert={login || genesisId !== null || signOutConfirmOpen}>
     <header className="welcome-header">
       <a href="#/" className="welcome-brand" aria-label={t('Dimension Lab welcome', 'Trang chủ Dimension Lab')}>
-        <TeamLogo ref={genesisLogo} />
+        <TeamLogo ref={genesisLogo} formation={genesisId !== null} />
       </a>
       <div className="welcome-header-actions">
         <div className="welcome-theme-toggle"><ThemeToggle /></div>
-        {signedIn && onSignOut && <button className="welcome-signout" type="button" onClick={onSignOut}>
+        {signedIn && onSignOut && <button className="welcome-signout" type="button" onClick={() => setSignOutConfirmOpen(true)}>
           <LogOut size={15} aria-hidden="true" /> {t('Sign out', 'Đăng xuất')}
         </button>}
       </div>
@@ -165,6 +169,23 @@ export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOpt
       </GlobeBoundary>
     </main>
     </div>
+    {signOutConfirmOpen && <div className="welcome-signout-confirm-backdrop" onMouseDown={event => {
+      if (event.target === event.currentTarget) closeSignOutConfirm();
+    }}>
+      <section ref={signOutDialogRef} className="welcome-signout-confirm-dialog" role="alertdialog" aria-modal="true"
+        aria-labelledby="welcome-signout-title" aria-describedby="welcome-signout-description" tabIndex={-1}>
+        <TeamLogo label={t('Dimension Lab logo', 'Logo Dimension Lab')} />
+        <h2 id="welcome-signout-title">{t('Sign out?', 'Đăng xuất?')}</h2>
+        <p id="welcome-signout-description">{t('Are you sure you want to sign out of Dimension Lab?', 'Bạn có chắc muốn đăng xuất khỏi Dimension Lab không?')}</p>
+        <div className="welcome-signout-confirm-actions">
+          <button className="welcome-signout-cancel" type="button" onClick={closeSignOutConfirm}>{t('Cancel', 'Hủy')}</button>
+          <button className="welcome-signout-confirm-button" type="button" onClick={() => {
+            closeSignOutConfirm();
+            onSignOut?.();
+          }}>{t('Sign out', 'Đăng xuất')}</button>
+        </div>
+      </section>
+    </div>}
     {login && <div className="welcome-login-layer" inert={loginPhase === 'closing'} onAnimationEnd={event => {
       if (event.target === event.currentTarget) finishLoginTransition();
     }}>

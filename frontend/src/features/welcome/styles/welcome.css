@@ -46,6 +46,19 @@
 .welcome-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:28px; align-items:center; }
 .welcome-signout { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:42px; padding:0 14px; border:1px solid var(--border-subtle); border-radius:8px; background:transparent; color:var(--text-muted); font:500 12px var(--font-sans); transition:color 160ms ease,border-color 160ms ease,background-color 160ms ease; }
 .welcome-signout:is(:hover,:focus-visible) { color:var(--explore-primary); border-color:var(--explore-primary); background:var(--bg-interactive); }
+.welcome-signout-confirm-backdrop { position:fixed; inset:0; z-index:30; display:grid; place-items:center; padding:20px; background:rgb(2 9 7 / .58); backdrop-filter:blur(5px); animation:welcome-signout-backdrop-in 180ms ease-out both; }
+.welcome-signout-confirm-dialog { width:min(100%,426px); max-height:min(90dvh,560px); overflow:auto; padding:clamp(24px,4vw,36px); border:1px solid var(--border-subtle); border-radius:12px; background:color-mix(in srgb,var(--welcome-background,#fff) 96%,var(--bg-interactive)); color:var(--text-main); box-shadow:0 24px 80px rgb(0 0 0 / .3); text-align:center; animation:welcome-signout-dialog-in 240ms cubic-bezier(.2,.75,.25,1) both; }
+.welcome-signout-confirm-dialog > .team-logo { width:58px; margin:0 auto 16px; }
+.welcome-signout-confirm-dialog h2 { margin:0; color:var(--text-main); font-size:24px; font-weight:650; letter-spacing:-.04em; }
+.welcome-signout-confirm-dialog > p { margin:10px 0 24px; color:var(--text-muted); font-size:14px; line-height:1.6; }
+.welcome-signout-confirm-actions { display:flex; justify-content:center; gap:10px; }
+#root .welcome-page .welcome-signout-confirm-actions button { display:flex; flex:1 1 0; align-items:center; justify-content:center; min-width:0; min-height:44px; padding:10px 14px; border:1px solid var(--border-subtle); border-radius:8px; color:var(--text-main); background:transparent; font:600 13px var(--font-sans); box-shadow:none; scale:1; }
+#root .welcome-page .welcome-signout-confirm-actions button::after { display:none; content:none; }
+#root .welcome-page .welcome-signout-confirm-actions .welcome-signout-cancel:hover { background:var(--bg-interactive); }
+#root .welcome-page .welcome-signout-confirm-actions .welcome-signout-confirm-button { border-color:var(--accent-primary); background:var(--accent-primary); color:var(--welcome-background,#fff); }
+#root .welcome-page .welcome-signout-confirm-actions button:focus-visible { outline:2px solid var(--explore-primary); outline-offset:3px; }
+@keyframes welcome-signout-backdrop-in { from { opacity:0; } to { opacity:1; } }
+@keyframes welcome-signout-dialog-in { from { opacity:0; transform:translateY(8px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
 .welcome-page[data-globe-mode=atlas] .welcome-copy { padding-inline-start:clamp(24px,6.5vw,120px); }
 .welcome-page[data-globe-mode=atlas] .welcome-intro { container-type:inline-size; }
 .welcome-page[data-globe-mode=atlas] .welcome-copy h1 {
@@ -139,6 +152,9 @@
  .welcome-header { margin-inline:14px; gap:8px; min-height:76px; }
  .welcome-header-actions { gap:7px; }
  .welcome-signout { gap:6px; min-height:38px; padding-inline:10px; font-size:11px; }
+ .welcome-signout-confirm-dialog { padding:24px; }
+ .welcome-signout-confirm-actions { gap:8px; }
+ #root .welcome-page .welcome-signout-confirm-actions button { padding-inline:10px; font-size:12px; }
  .welcome-main { display:flex; flex-direction:column; align-items:stretch; flex:none; min-height:auto; }
  .welcome-copy { padding:28px 24px 16px; }.welcome-copy h1 { font-size:clamp(26px,8.5vw,50px); margin:20px 0 16px; }.welcome-description { font-size:12px; max-width:320px; }.welcome-actions { margin-top:24px; }
  .welcome-page[data-globe-mode=atlas] .welcome-copy h1 { font-size:clamp(32px,10vw,56px); }
@@ -154,6 +170,9 @@
 .welcome-page[data-motion=gentle] .welcome-title-line > span { animation:none; }
 #root .welcome-page[data-motion=gentle] .welcome-primary { transition:none; }
 #root .welcome-page[data-motion=gentle] .welcome-primary::before, #root .welcome-page[data-motion=gentle] .welcome-primary::after { transition:none; animation:none; }
+@media(prefers-reduced-motion:reduce) {
+ .welcome-signout-confirm-backdrop, .welcome-signout-confirm-dialog { animation:none; }
+}
 @media (forced-colors:active) {
  #root .welcome-page .welcome-primary { border:1px solid ButtonText; background:ButtonFace; color:ButtonText; box-shadow:none; }
  #root .welcome-page .welcome-primary::before, #root .welcome-page .welcome-primary::after { display:none; }

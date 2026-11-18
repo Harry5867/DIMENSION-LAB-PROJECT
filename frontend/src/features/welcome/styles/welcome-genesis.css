@@ -23,10 +23,26 @@
 .welcome-page[data-genesis] :is(.welcome-copy, .welcome-header-actions, .globe-controls, .atlas-coordinate, .globe-capital-marker) {
   visibility: hidden;
 }
-.welcome-page[data-genesis] .welcome-brand .team-logo {
-  clip-path: inset(0 calc(100% * (1 - var(--genesis-logo, 0))) 0 0);
-  opacity: var(--genesis-logo, 0);
+.welcome-page[data-genesis] .welcome-brand .team-logo { position: relative; }
+.welcome-page[data-genesis] .welcome-brand .team-logo > img { opacity: var(--genesis-logo, 0); }
+.welcome-page[data-genesis] .team-logo-formation { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.welcome-page[data-genesis] .team-logo-ribbon {
+  position: absolute;
+  inset: 0;
+  display: block;
+  opacity: var(--genesis-logo-ribbon-opacity, 0);
+  transform: scale(var(--genesis-logo-ribbon-scale, .72));
+  transform-origin: center;
+  -webkit-mask-image: conic-gradient(from var(--genesis-logo-ribbon-angle, -30deg), #000 0deg 58deg, transparent 58deg 360deg);
+  mask-image: conic-gradient(from var(--genesis-logo-ribbon-angle, -30deg), #000 0deg 58deg, transparent 58deg 360deg);
 }
+.welcome-page[data-genesis] .team-logo-ribbon img { width: 100%; height: 100%; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="0"] { --genesis-logo-ribbon-angle: -30deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-0, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-0, .72); z-index: 1; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="1"] { --genesis-logo-ribbon-angle: 30deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-1, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-1, .72); z-index: 3; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="2"] { --genesis-logo-ribbon-angle: 90deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-2, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-2, .72); z-index: 5; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="3"] { --genesis-logo-ribbon-angle: 150deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-3, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-3, .72); z-index: 2; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="4"] { --genesis-logo-ribbon-angle: 210deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-4, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-4, .72); z-index: 4; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="5"] { --genesis-logo-ribbon-angle: 270deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-5, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-5, .72); z-index: 6; }
 .welcome-page[data-genesis-visited] .atlas-origin-marker::after { animation-delay: 1.25s; opacity: 0; }
 
 .welcome-page[data-genesis-visited][data-globe-mode=atlas] .welcome-title-line > span { animation: none !important; }
