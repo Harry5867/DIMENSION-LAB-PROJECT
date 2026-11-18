@@ -1,5 +1,28 @@
 .entry-screen { display:contents; }
-.welcome-signout-veil { position:fixed; inset:0; z-index:200; background:var(--welcome-background); opacity:0; pointer-events:none; }
+.welcome-signout-veil {
+  position:fixed; inset:0; z-index:200; display:grid; place-items:center;
+  background:var(--welcome-background); opacity:0; visibility:hidden; pointer-events:none;
+}
+.welcome-signout-veil[data-active="true"] { visibility:visible; opacity:1; pointer-events:auto; }
+.welcome-signout-mark { position:relative; --team-logo-width:clamp(68px,8vw,96px); }
+.welcome-signout-mark .team-logo { opacity:.38; }
+.welcome-signout-mark > span:last-child {
+  position:absolute; inset:0;
+  mask:url('../../../shared/visuals/dimension-interwoven-logo.png') center / contain no-repeat;
+  background:linear-gradient(110deg, transparent 40%, #b5ffdd 50%, transparent 60%) 100% center / 300% 100% no-repeat;
+}
+@keyframes signout-logo-sweep {
+  from { background-position:100% center; }
+  to { background-position:0% center; }
+}
+@media (prefers-reduced-motion:no-preference) {
+  .welcome-signout-veil[data-active="true"] .welcome-signout-mark > span:last-child {
+    animation:signout-logo-sweep 1.2s ease-in-out infinite;
+  }
+}
+@media (prefers-reduced-motion:reduce) {
+  .welcome-signout-mark > span:last-child { display:none; }
+}
 /* Full motion was explicitly chosen for this entrance. Duration overrides are
    restricted to these temporary layers; other reduced-motion rules stay intact. */
 .entry-curtain {

@@ -66,6 +66,7 @@ export function registerAuthRoutes(app: Express) {
     sendSuccess(res, {
       authenticated: Boolean(req.user),
       user: req.user || null,
+      ...(req.user && { email: atlasMode ? req.user.username : process.env.LAB_AUTH_EMAIL || DEMO_EMAIL }),
     });
   });
 

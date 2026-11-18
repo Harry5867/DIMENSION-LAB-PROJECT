@@ -1,5 +1,9 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { LogOut } from 'lucide-react';
+import { DEMO_EMAIL } from '@dimension-lab/contracts/demo';
+import { fetchWithTimeout } from '../../shared/api/network';
+import { getApiDataRecord } from '../../shared/api/typeGuards';
+import { getAccessToken, hasDemoSession } from '../../shared/api/demoSession';
+import { LogOut, X } from 'lucide-react';
 import type { AuthOptions } from '@dimension-lab/contracts';
 import { LoginPanel } from '../auth/components/LoginPanel';
 import { TeamLogo } from '../../shared/ui/TeamLogo';
@@ -40,6 +44,23 @@ export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOpt
   const [loginPhase, setLoginPhase] = useState<'welcome' | 'opening' | 'open' | 'closing'>(googleError ? 'open' : 'welcome');
   const login = loginPhase !== 'welcome';
   const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
+  const [accountEmail, setAccountEmail] = useState('');
+  useEffect(() => {
+    if (!signOutConfirmOpen) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    setAccountEmail('');
+    if (authOptions?.mode === 'demo' && !getAccessToken() && hasDemoSession()) {
+      setAccountEmail(DEMO_EMAIL);
+    } else {
+      void fetchWithTimeout('/api/auth/me', { signal }).then(async response => {
+        if (!response.ok) return;
+        const session = getApiDataRecord(await response.json());
+        if (!signal.aborted && session?.authenticated && typeof session.email === 'string') setAccountEmail(session.email);
+      }).catch(() => { /* The user can still sign out if account details are unavailable. */ });
+    }
+    return () => controller.abort();
+  }, [signOutConfirmOpen, authOptions?.mode]);
   const closeSignOutConfirm = useCallback(() => setSignOutConfirmOpen(false), []);
   const signOutDialogRef = useDialogFocus(signOutConfirmOpen, closeSignOutConfirm, '.welcome-signout-cancel');
   useEffect(() => {
@@ -174,12 +195,16 @@ export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOpt
     }}>
       <section ref={signOutDialogRef} className="welcome-signout-confirm-dialog" role="alertdialog" aria-modal="true"
         aria-labelledby="welcome-signout-title" aria-describedby="welcome-signout-description" tabIndex={-1}>
-        <TeamLogo label={t('Dimension Lab logo', 'Logo Dimension Lab')} />
-        <h2 id="welcome-signout-title">{t('Sign out?', 'Đăng xuất?')}</h2>
-        <p id="welcome-signout-description">{t('Are you sure you want to sign out of Dimension Lab?', 'Bạn có chắc muốn đăng xuất khỏi Dimension Lab không?')}</p>
+        <header className="welcome-signout-heading">
+          <TeamLogo label="Dimension Lab" />
+          <h2 id="welcome-signout-title">{t('Sign out?', 'Đăng xuất?')}</h2>
+          <button type="button" className="welcome-signout-close" aria-label={t('Close', 'Đóng')} onClick={closeSignOutConfirm}><X size={20} /></button>
+        </header>
+        {accountEmail && <p className="welcome-signout-account">{t('Signed in as', 'Đã đăng nhập bằng')} {accountEmail}</p>}
+        <p id="welcome-signout-description">{t("You'll need to sign in again to use the workspace.", 'Bạn cần đăng nhập lại để sử dụng workspace.')}</p>
         <div className="welcome-signout-confirm-actions">
-          <button className="welcome-signout-cancel" type="button" onClick={closeSignOutConfirm}>{t('Cancel', 'Hủy')}</button>
-          <button className="welcome-signout-confirm-button" type="button" onClick={() => {
+          <button className="welcome-signout-cancel control-glass" type="button" onClick={closeSignOutConfirm}>{t('Cancel', 'Hủy')}</button>
+          <button className="welcome-signout-confirm-button liquid-glass" type="button" onClick={() => {
             closeSignOutConfirm();
             onSignOut?.();
           }}>{t('Sign out', 'Đăng xuất')}</button>

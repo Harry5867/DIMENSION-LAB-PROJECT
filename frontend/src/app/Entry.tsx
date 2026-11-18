@@ -2,6 +2,7 @@ import type { AuthOptions } from '@dimension-lab/contracts';
 import { useAppLanguage } from "../shared/providers/WelcomeLanguage";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Welcome } from '../features/welcome/Welcome';
+import { TeamLogo } from '../shared/ui/TeamLogo';
 import { clearDemoSession, getAccessToken, hasDemoSession, saveDemoSession } from '../shared/api/demoSession';
 import { fetchWithTimeout, SESSION_EXPIRED_EVENT } from '../shared/api/network';
 import { getApiDataRecord } from '../shared/api/typeGuards';
@@ -15,7 +16,7 @@ const Workspace = lazy(() => import('./App'));
 type EntrancePhase = 'idle' | 'covering' | 'revealing';
 type EntranceDirection = 'in' | 'out';
 
-const glassControlSelector = 'button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home, .theme-toggle, .welcome-primary, .login-page button, .globe-mode-option), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
+const glassControlSelector = '.control-glass, .liquid-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home, .theme-toggle, .welcome-primary, .login-page button, .globe-mode-option), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
 
 export function Entry() {
   const { tr, t } = useAppLanguage();
@@ -24,7 +25,6 @@ export function Entry() {
   const [signOutError, setSignOutError] = useState(false);
   const signingOut = useRef(false);
   const [logoutPending, setLogoutPending] = useState(false);
-  const signOutVeil = useRef<HTMLDivElement>(null);
   const [hash, setHash] = useState(() => window.location.hash);
   const atWelcome = isWelcomeRoute(hash);
   const route = portalRoute(hash);
@@ -190,22 +190,25 @@ export function Entry() {
   };
   const signOut = async () => {
     if (!signedIn || !atWelcome || signingOut.current || entrancePhaseRef.current !== 'idle') return;
+    signingOut.current = true;
+    setLogoutPending(true);
     setSignOutError(false);
-    if (authOptions?.mode === 'atlas' || getAccessToken()) {
-      signingOut.current = true; setLogoutPending(true);
-      try {
+    const revealWelcomeAt = performance.now() + 3500;
+    try {
+      if (authOptions?.mode === 'atlas' || getAccessToken()) {
         const response = await fetchWithTimeout('/api/auth/logout', { method: 'POST' });
         if (!response.ok && response.status !== 401) throw new Error('Sign-out failed.');
-      } catch {
-        setSignOutError(true);
-        return;
-      } finally { signingOut.current = false; setLogoutPending(false); }
+      }
+      clearDemoSession();
+      setSignedIn(false); setModelVisited(false);
+      const remaining = revealWelcomeAt - performance.now();
+      if (remaining > 0) await new Promise<void>(resolve => window.setTimeout(resolve, remaining));
+    } catch {
+      setSignOutError(true);
+    } finally {
+      signingOut.current = false;
+      setLogoutPending(false);
     }
-    clearDemoSession();
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      signOutVeil.current?.animate([{ opacity: .55 }, { opacity: 0 }], { duration: 260, easing: 'ease-out' });
-    }
-    setSignedIn(false); setModelVisited(false);
   };
   useEffect(() => {
     if (entranceDirection !== 'out' || entrancePhase !== 'idle') return;
@@ -262,7 +265,10 @@ export function Entry() {
         <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} persistent={authOptions?.mode === 'atlas'} /></Suspense>
       </div>}
     </div>
-    <div ref={signOutVeil} className="welcome-signout-veil" aria-hidden="true" />
+    <div className="welcome-signout-veil" data-active={logoutPending} aria-hidden="true">
+      <div className="welcome-signout-mark"><TeamLogo /><span /></div>
+    </div>
+    {logoutPending && <p className="entry-transition-status" role="status">{t('Signing out…', 'Đang đăng xuất…')}</p>}
     {signOutError && <div className="workspace-notice fixed bottom-4 right-4 z-[70] rounded border bg-[var(--bg-panel)] p-3" role="alert">{t('Could not sign out. Please try again.', 'Chưa thể đăng xuất. Hãy thử lại.')}</div>}
     {entrancePhase !== 'idle' && <>
       <WorkspaceEntrance phase={entrancePhase} onComplete={advanceEntrance} direction={entranceDirection}

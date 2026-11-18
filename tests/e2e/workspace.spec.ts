@@ -1,11 +1,12 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '../../packages/contracts/src/demo';
 import { openAnalysisDataset } from './support';
 
 async function signIn(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
-  await page.getByLabel('Email', { exact: true }).fill(DEMO_EMAIL);
+  await page.getByLabel('Email address', { exact: true }).fill(DEMO_EMAIL);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByLabel('Password', { exact: true }).fill(DEMO_PASSWORD);
   const [response] = await Promise.all([
     page.waitForResponse(response => new URL(response.url()).pathname === '/api/auth/login'
@@ -17,6 +18,25 @@ async function signIn(page: Page) {
   await expect(page.getByRole('navigation', { name: 'Workspace sections' })).toBeVisible();
 }
 
+async function expectGlass(control: Locator) {
+  await control.hover();
+  await expect.poll(() => control.evaluate(element => {
+    const lens = getComputedStyle(element, '::after');
+    return lens.content !== 'none' && lens.display !== 'none' && Number(lens.opacity) > 0
+      && lens.backgroundImage.includes('radial-gradient') && parseFloat(lens.height) > 20;
+  })).toBe(true);
+}
+
+test('shows the glass highlight on Google sign-in and the return arrow', async ({ page }) => {
+  await page.route('**/api/auth/options', route => route.fulfill({
+    json: { data: { mode: 'atlas', google: true, registration: true } },
+  }));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
+  await expectGlass(page.getByRole('link', { name: 'Continue with Google' }));
+  await expectGlass(page.getByRole('button', { name: 'Back to welcome' }));
+});
+
 test('signs in to the workspace with the demo account', async ({ page }) => {
   await signIn(page);
   await expect(page.getByRole('link', { name: 'Model', exact: true })).toBeVisible();
@@ -25,7 +45,8 @@ test('signs in to the workspace with the demo account', async ({ page }) => {
 test('rejects incorrect credentials, restores a valid session, and signs out', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
-  await page.getByLabel('Email', { exact: true }).fill(DEMO_EMAIL);
+  await page.getByLabel('Email address', { exact: true }).fill(DEMO_EMAIL);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   const password = page.getByLabel('Password', { exact: true });
   await password.fill('wrong-demo-password');
   await page.getByRole('button', { name: 'Show password' }).click();
@@ -49,17 +70,47 @@ test('rejects incorrect credentials, restores a valid session, and signs out', a
   await enter.click();
   await expect(navigation).toBeVisible();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expectGlass(page.getByRole('button', { name: 'Back to welcome', exact: true }));
   await page.getByRole('button', { name: 'Back to welcome', exact: true }).click();
   await expect(enter).toBeVisible();
   await signOut.click();
   const confirm = page.getByRole('alertdialog', { name: 'Sign out?' });
+  await expect(confirm).toContainText('Signed in as ' + DEMO_EMAIL);
+  await expect(confirm).toHaveAccessibleDescription("You'll need to sign in again to use the workspace.");
+  await confirm.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(confirm).toBeHidden();
+  await signOut.click();
   const cancel = confirm.getByRole('button', { name: 'Cancel', exact: true });
   await expect(cancel).toBeFocused();
+  await expectGlass(cancel);
   await cancel.click();
   await expect(confirm).toBeHidden();
   await expect(signOut).toBeVisible();
+  await page.route('**/api/auth/logout', route => route.fulfill({ status: 503 }), { times: 1 });
   await signOut.click();
   await confirm.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Could not sign out');
+  await expect(signOut).toBeVisible();
+  await signOut.click();
+  const teamLogo = await confirm.locator('img').getAttribute('src');
+  let releaseLogout!: () => void;
+  const pendingLogout = new Promise<void>(resolve => { releaseLogout = resolve; });
+  await page.route('**/api/auth/logout', async route => {
+    await pendingLogout;
+    await route.continue();
+  }, { times: 1 });
+  const signOutStarted = performance.now();
+  await confirm.getByRole('button', { name: 'Sign out', exact: true }).click();
+  const veil = page.locator('.welcome-signout-veil');
+  try {
+    await expect(veil).toBeVisible();
+    await expect(veil.locator('img')).toHaveAttribute('src', teamLogo ?? '');
+    await expect(veil.locator('.welcome-signout-mark > span:last-child')).toHaveCSS('animation-duration', '1.2s');
+  } finally {
+    releaseLogout();
+  }
+  await expect(veil).toBeHidden();
+  expect(performance.now() - signOutStarted).toBeGreaterThanOrEqual(3500);
   await expect(confirm).toBeHidden();
   await expect(signOut).toHaveCount(0);
   await page.goto('/#/datasets');

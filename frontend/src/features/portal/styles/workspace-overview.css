@@ -48,7 +48,7 @@ html[data-theme=dark] .portal-page.portal-page--workspace {
   font-size:13px;
   transition:background-color .2s,border-color .2s,color .2s;
 }
-.portal-page--workspace .portal-return-home::after { content:none; }
+.portal-page--workspace .portal-return-home::after { height:auto; transform:none; }
 .portal-page--workspace .portal-return-home:is(:hover,:focus-visible) {
   background:var(--workspace-glass);
   border-color:var(--workspace-glass-edge);

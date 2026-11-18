@@ -211,7 +211,7 @@ export function Portal({ route, hash, onReturnToWelcome, entering = false, inter
     {overview && <header className="portal-header">
       <div className="portal-header-actions">
         <ThemeToggle />
-        <button className="portal-return-home" onClick={onReturnToWelcome}>{tr("Back to welcome")}</button>
+        <button className="portal-return-home control-glass" onClick={onReturnToWelcome}>{tr("Back to welcome")}</button>
       </div>
     </header>}
     <main ref={main} id="portal-main" tabIndex={-1} className={overview ? 'portal-overview' : 'portal-content' + (route === 'theory' ? ' portal-content--theory' : galleryPage ? ' portal-content--member' : '')}>
