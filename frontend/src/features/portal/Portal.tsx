@@ -1,7 +1,7 @@
 import { useAppLanguage } from "../../shared/providers/WelcomeLanguage";
 import { useEffect, useLayoutEffect, useRef, type MouseEvent } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { aboutProfileSlug, aboutTeamHref, aboutTeamSelection, portalSections, type PortalRoute, type PortalSection } from '../../shared/navigation/portalNavigation';
+import { aboutProfileSlug, aboutTeamHref, aboutTeamSelection, guideChapter, portalSections, type GuideChapter, type PortalRoute, type PortalSection } from '../../shared/navigation/portalNavigation';
 import { teamMembers, type TeamMember } from './data/teamMembers';
 import { shouldAnimateLink } from './navigation/sectionTransition';
 import { animateMemberProfile, canAnimateMembers, captureMemberCard, type MemberCardSnapshot } from './animations/memberCardTransition';
@@ -11,6 +11,8 @@ import { ThemeToggle } from '../../shared/ui/ThemeToggle';
 import './styles/portal.css';
 
 const profileHistoryKey = 'dimensionLabMemberFromTeam';
+const guideIndexHistoryKey = 'dimensionLabGuideIndex';
+const guideChapterHistoryKey = 'dimensionLabChapterFromGuide';
 const zoomedOut: Keyframe = { transform: 'scale(.92)', opacity: 0 };
 const zoomedIn: Keyframe = { transform: 'scale(1)', opacity: 1 };
 
@@ -35,8 +37,11 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
   const visitedProfile = useRef(false);
   const pendingCard = useRef<{ hash: string; source: MemberCardSnapshot } | null>(null);
   const returningToTeam = useRef(false);
+  const returningToGuide = useRef(false);
   const overview = route === 'overview';
   const section = portalSections.find(section => section.id === route);
+  const sharedBack = route === 'guide';
+  const chapter = route === 'guide' ? guideChapter(hash) : undefined;
   const slug = route === 'about' ? aboutProfileSlug(hash) : undefined;
   const profilePage = slug !== undefined;
   const member = teamMembers.find(item => item.slug === slug) ?? null;
@@ -44,7 +49,9 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
   const galleryPage = route === 'about' && (!profilePage || hasMember);
   const teamPage = galleryPage && !profilePage;
   const memberPageKey = galleryPage ? member?.slug ?? '#/about' : null;
-  const title = profilePage ? member?.name ?? tr('Team member not found') : tr(section?.title ?? 'Workspace');
+  const title = profilePage ? member?.name ?? tr('Team member not found') : tr(chapter?.title ?? section?.title ?? 'Workspace');
+  const backHref = chapter ? '#/guide' : profilePage ? member ? aboutTeamHref(member.slug) : '#/about' : '#/overview';
+  const backLabel = chapter ? 'Back to User Guide' : profilePage ? 'Back to team' : 'Go back';
   const teamSelection = route === 'about' ? aboutTeamSelection(hash) : null;
   useLayoutEffect(() => {
     if (profilePage) {
@@ -85,6 +92,44 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
     returningToTeam.current = true;
     if (window.history.state?.[profileHistoryKey] === member.slug) window.history.back();
     else window.location.hash = link.hash;
+  }
+
+  function changeProfile(next: TeamMember) {
+    if (!member || !interactive || aboutProfileSlug(window.location.hash) !== member.slug) return;
+    const fromTeam = window.history.state?.[profileHistoryKey] === member.slug;
+    window.location.replace('#/about/' + next.slug);
+    if (fromTeam) window.history.replaceState({ ...window.history.state, [profileHistoryKey]: next.slug }, '');
+  }
+
+  function openGuideChapter(item: GuideChapter, event: MouseEvent<HTMLAnchorElement>) {
+    const link = event.currentTarget;
+    if (!shouldAnimateLink(event, link.target, link.hasAttribute('download'))) return;
+    event.preventDefault();
+    const currentChapter = guideChapter(window.location.hash);
+    if (currentChapter) {
+      if (currentChapter === item) return;
+      const fromGuide = window.history.state?.[guideChapterHistoryKey] === currentChapter.slug;
+      window.location.replace(link.hash);
+      if (fromGuide) window.history.replaceState({ ...window.history.state, [guideChapterHistoryKey]: item.slug }, '');
+      return;
+    }
+    const scrollTop = main.current?.closest('.portal-page')?.scrollTop ?? 0;
+    window.history.replaceState({
+      ...window.history.state,
+      [guideIndexHistoryKey]: { slug: item.slug, scrollTop },
+    }, '');
+    window.location.hash = link.hash;
+    window.history.replaceState({ ...window.history.state, [guideChapterHistoryKey]: item.slug }, '');
+  }
+
+  function backToGuide(event: MouseEvent<HTMLAnchorElement>) {
+    const link = event.currentTarget;
+    if (!shouldAnimateLink(event, link.target, link.hasAttribute('download'))) return;
+    if (window.history.state?.[guideChapterHistoryKey] !== chapter?.slug) return;
+    event.preventDefault();
+    if (returningToGuide.current) return;
+    returningToGuide.current = true;
+    window.history.back();
   }
 
   useLayoutEffect(() => {
@@ -128,11 +173,20 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
   useLayoutEffect(() => {
     if (!interactive) return;
     returningToTeam.current = false;
+    returningToGuide.current = false;
+    const page = main.current?.closest('.portal-page');
+    const guideReturn = route === 'guide' && !guideChapter(hash) ? window.history.state?.[guideIndexHistoryKey] : null;
+    const guideLink = guideReturn && main.current?.querySelector<HTMLAnchorElement>(`[data-guide-chapter="${CSS.escape(guideReturn.slug)}"]`);
+    if (guideLink) {
+      page?.scrollTo({ top: guideReturn.scrollTop, behavior: 'instant' });
+      guideLink.focus({ preventScroll: true });
+      return;
+    }
     const selectedCard = teamSelection && main.current?.querySelector<HTMLAnchorElement>('.member-gallery-open');
     if (selectedCard) {
       selectedCard.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
     } else {
-      main.current?.closest('.portal-page')?.scrollTo({ top: 0, behavior: 'instant' });
+      page?.scrollTo({ top: 0, behavior: 'instant' });
     }
     main.current?.focus({ preventScroll: true });
     if (selectedCard) selectedCard.focus({ preventScroll: true });
@@ -142,7 +196,8 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
       return animateMemberProfile(main.current, pending?.hash === hash ? pending.source : undefined);
     }
   }, [route, hash, teamPage, hasMember, teamSelection, interactive]);
-  const content = <PortalContent route={route} hash={hash} profile={profilePage ? member : undefined} onOpenMember={openMember} />;
+  const content = <PortalContent route={route} hash={hash} profile={profilePage ? member : undefined}
+    onOpenMember={openMember} onChangeProfile={changeProfile} onOpenGuideChapter={openGuideChapter} />;
   return <div data-opening-section={openingId} className={`portal-page${route === 'theory' ? ' portal-page--theory' : ''}${teamPage ? ' portal-page--team' : hasMember ? ' portal-page--profile' : ''}${overview ? ' portal-page--workspace' : ''}${overview && entering ? ' portal-page--entering' : ''}${openingId ? ' portal-page--opening' : ''}${sectionEntering ? ' portal-page--section-arriving' : ''}${titleInTransit ? ' portal-page--title-in-transit' : ''}${overview && returning ? ' portal-page--returning' : ''}`}>
     <a className="portal-skip" href="#portal-main" onClick={e => { e.preventDefault(); main.current?.focus(); }}>{tr("Skip to content")}</a>
     {overview && <header className="portal-header">
@@ -153,13 +208,13 @@ export function Portal({ route, hash, onSignOut, entering = false, interactive =
     </header>}
     <main ref={main} id="portal-main" tabIndex={-1} className={overview ? 'portal-overview' : 'portal-content' + (route === 'theory' ? ' portal-content--theory' : galleryPage ? ' portal-content--member' : '')}>
       {overview ? <WorkspaceOverview active={interactive} onOpenSection={onOpenSection} openingId={openingId} /> : <>
-        {route !== 'theory' && <><div className="portal-page-tools"><a className="portal-back" href={profilePage ? member ? aboutTeamHref(member.slug) : '#/about' : '#/overview'}
-          onClick={teamPage ? backToOverview : backToTeam}><ArrowLeft size={16} aria-hidden="true" /> <span>{tr(profilePage ? 'Back to team' : 'Go back')}</span></a><ThemeToggle /></div>
-        {!profilePage && !galleryPage && <div className="portal-content-heading"><p className="portal-eyebrow"><span data-section-number>{section?.number}</span></p><h1>{title}</h1><p>{tr(section?.subtitle ?? '')}</p></div>}
+        {route !== 'theory' && <><div className="portal-page-tools"><a className={sharedBack ? 'back-control' : 'portal-back'} href={backHref}
+          onClick={chapter ? backToGuide : teamPage ? backToOverview : profilePage ? backToTeam : undefined}><ArrowLeft size={sharedBack ? 15 : 16} aria-hidden="true" /> <span>{tr(backLabel)}</span></a><ThemeToggle /></div>
+        {!profilePage && !galleryPage && <div className="portal-content-heading"><p className="portal-eyebrow"><span data-section-number>{section?.number}</span></p><h1>{title}</h1>{route !== 'guide' && <p>{tr(section?.subtitle ?? '')}</p>}</div>}
         </>}
         {galleryPage ? <div key={memberPageKey} ref={memberContent} className="member-page-motion">{content}</div> : content}
       </>}
     </main>
-    {!overview && route !== 'about' && <footer className="portal-footer"><span>{tr("UNSUPERVISED LEARNING / INTERACTIVE EXPLORATION")}</span><span>{tr("Learn. Explore. Understand.")}</span></footer>}
+    {!overview && route !== 'about' && route !== 'guide' && <footer className="portal-footer"><span>{tr("UNSUPERVISED LEARNING / INTERACTIVE EXPLORATION")}</span><span>{tr("Learn. Explore. Understand.")}</span></footer>}
   </div>;
 }
