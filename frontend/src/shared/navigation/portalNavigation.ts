@@ -6,6 +6,20 @@ export const portalSections = [
   { id: 'library', number: '05', title: 'Datasets', subtitle: 'Explore prepared data stories.', href: '#/library' },
 ] as const;
 export type PortalSection = typeof portalSections[number];
+export const guideChapters = [
+  { slug: 'quick-start', title: 'Quick Start with Wholesale Customers' },
+  { slug: 'import-csv', title: 'Analyze Your Own CSV' },
+  { slug: 'understand-results', title: 'Understand Results and Try Other Features' },
+  { slug: 'save-and-export', title: 'Save and Export Results' },
+  { slug: 'troubleshooting', title: 'Troubleshooting' },
+] as const;
+export type GuideChapter = typeof guideChapters[number];
+
+export function guideChapter(hash: string): GuideChapter | undefined {
+  const path = hash.split('?')[0];
+  return guideChapters.find(chapter => path === '#/guide/' + chapter.slug);
+}
+
 export const modelRoutes = ['explore', 'datasets', 'methods', 'experiments'] as const;
 export type PortalRoute = 'overview' | 'theory' | 'about' | 'guide' | 'library' | typeof modelRoutes[number];
 export function isWelcomeRoute(hash: string) {
@@ -15,6 +29,7 @@ export function isWelcomeRoute(hash: string) {
 export function portalRoute(hash: string): PortalRoute {
   const [value = ''] = hash.replace(/^#\//, '').split('?');
   if (hash.startsWith('#/about/')) return 'about';
+  if (hash.startsWith('#/guide/')) return 'guide';
   return ['overview', ...portalSections.filter(s => s.id !== 'model').map(s => s.id), ...modelRoutes].includes(value) ? value as PortalRoute : 'overview';
 }
 export function isModelRoute(route: PortalRoute): route is typeof modelRoutes[number] { return (modelRoutes as readonly string[]).includes(route); }

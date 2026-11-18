@@ -82,7 +82,8 @@ test('opens a member profile from About Us', async ({ page }) => {
   await page.getByRole('link', { name: 'View the profile of Nguyen Xuan Anh Kiet', exact: true }).click();
   await expect(page).toHaveURL(/#\/about\/nguyen-xuan-anh-kiet$/);
   await expect(page.getByRole('heading', { name: 'Nguyen Xuan Anh Kiet', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Interests', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Contact', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project Responsibilities', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Back to team', exact: true }).click();
   await expect(page).toHaveURL(/#\/about\?member=nguyen-xuan-anh-kiet$/);
 });

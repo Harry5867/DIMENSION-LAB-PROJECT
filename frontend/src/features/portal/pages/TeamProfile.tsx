@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
-import { teamMembers, type TeamMember } from '../data/teamMembers';
+import { Mail, Phone } from 'lucide-react';
+import { teamEducation, teamMembers, type TeamMember } from '../data/teamMembers';
 import { dampCarousel } from '../navigation/carousel';
 import { shouldAnimateLink } from '../navigation/sectionTransition';
 import { aboutTeamHref, aboutTeamSelection } from '../../../shared/navigation/portalNavigation';
@@ -219,8 +220,27 @@ export function TeamBrowser({ hash, onOpenMember }: {
   </section>;
 }
 
-export function TeamProfile({ member }: { member: TeamMember | null }) {
+export function TeamProfile({ member, onChangeProfile }: {
+  member: TeamMember | null;
+  onChangeProfile: (member: TeamMember) => void;
+}) {
   const { tr } = useAppLanguage();
+  const index = member ? teamMembers.indexOf(member) : -1;
+  const previous = teamMembers[index - 1];
+  const next = index >= 0 ? teamMembers[index + 1] : undefined;
+
+  useEffect(() => {
+    function handleKey(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const destination = event.key === 'ArrowLeft' ? previous : event.key === 'ArrowRight' ? next : undefined;
+      if (!destination) return;
+      event.preventDefault();
+      if (!event.repeat) onChangeProfile(destination);
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [next, onChangeProfile, previous]);
+
   if (!member) return <div className="portal-content-heading portal-team-error">
     <h1>{tr('Team member not found')}</h1>
     <p>{tr('Check the address or choose a member from the team page.')}</p>
@@ -236,14 +256,46 @@ export function TeamProfile({ member }: { member: TeamMember | null }) {
           <p className="member-profile-role">{member.role}</p>
         </header>
         <section>
-          <h2>Interests</h2>
-          <p>{member.interests}</p>
+          <dl className="member-profile-details">
+            <dt>University</dt>
+            <dd>{teamEducation.university}</dd>
+            <dt>Major</dt>
+            <dd>{teamEducation.major}</dd>
+          </dl>
         </section>
         <section>
           <h2>Project Responsibilities</h2>
           <ul>{member.responsibilities.map(responsibility => <li key={responsibility}>{responsibility}</li>)}</ul>
         </section>
+        <section>
+          <h2>Contact</h2>
+          <dl className="member-profile-contact">
+            <div>
+              <dt className="sr-only">Phone</dt>
+              <dd><a className="portal-reference" href={`tel:+84${member.contact.phone.slice(1)}`}>
+                <Phone size={16} aria-hidden="true" /><span>{member.contact.phone}</span>
+              </a></dd>
+            </div>
+            <div>
+              <dt className="sr-only">Gmail</dt>
+              <dd><a className="portal-reference" href={`mailto:${member.contact.email}`}>
+                <Mail size={16} aria-hidden="true" /><span>{member.contact.email}</span>
+              </a></dd>
+            </div>
+          </dl>
+        </section>
       </div>
     </div>
+    <nav className="member-profile-navigation" aria-label={tr('Member navigation')}>
+      {([[previous, 'Previous'], [next, 'Next']] as const).map(([destination, label]) => destination && (
+        <a key={label} className="back-control" href={profileHref(destination)}
+          aria-keyshortcuts={label === 'Previous' ? 'ArrowLeft' : 'ArrowRight'}
+          onClick={event => {
+            if (!shouldAnimateLink(event, event.currentTarget.target, event.currentTarget.hasAttribute('download'))) return;
+            event.preventDefault();
+            onChangeProfile(destination);
+          }}>{tr(label)}</a>
+      ))}
+    </nav>
   </article>;
 }

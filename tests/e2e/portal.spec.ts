@@ -15,7 +15,8 @@ test('navigates Theory chapters and the User Guide from Workspace', async ({ pag
   await expect(page.getByRole('link', { name: 'Open Clustering chapter' })).toBeVisible();
   await page.getByRole('link', { name: 'Go back', exact: true }).click();
   await shortcuts.getByRole('link', { name: 'User Guide', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Your first exploration.' })).toBeVisible();
+  await page.getByRole('link', { name: 'Quick Start with Wholesale Customers' }).click();
+  await expect(page.getByRole('heading', { name: 'Open Datasets', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Open Model', exact: true }).click();
   await expect(page).toHaveURL(/#\/explore$/);
 });
