@@ -281,6 +281,17 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
     const filtered = await call(`/v2/analyses/${v2Analysis.data.id}/points/filter`, 'POST', { action: 'exclude-noise' }, researcher);
     assert.equal(filtered.data.excludedCount, 1);
     assert.equal((await call(v2PointsPath, 'GET', undefined, researcher)).data.length, 6);
+    const filteredPage = await fetch(`${api}${v2PointsPath}?offset=0&limit=2`, {
+      headers: { Authorization: `Bearer ${researcher}` },
+    });
+    assert.equal(filteredPage.status, 200);
+    assert.equal((await filteredPage.json()).data.length, 2);
+    assert.equal(filteredPage.headers.get('X-Total-Count'), '6');
+    assert.equal(filteredPage.headers.get('X-Next-Offset'), '2');
+    const allPointsPage = await fetch(`${api}${v2PointsPath}?offset=0&limit=2&includeExcluded=true`, {
+      headers: { Authorization: `Bearer ${researcher}` },
+    });
+    assert.equal(allPointsPage.headers.get('X-Total-Count'), '7');
     assert.equal((await call(v2PointsPath + '?includeExcluded=true', 'GET', undefined, researcher)).data[6].excluded, true);
     assert.equal((await call(`/v2/analyses/${v2Analysis.data.id}/points/6/restore`, 'POST', {}, researcher)).data.excluded, false);
     assert.equal((await call(v2PointsPath, 'GET', undefined, researcher)).data.length, 7);

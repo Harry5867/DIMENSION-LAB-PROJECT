@@ -1,20 +1,22 @@
-const successResponse = {
+const successResponse = () => ({
   description: 'Successful response.',
   content: {
     'application/json': {
       schema: { $ref: '#/components/schemas/ApiSuccess' },
     },
   },
-};
+});
 
-const errorResponse = {
+const errorResponse = () => ({
   description: 'Error response.',
   content: {
     'application/json': {
       schema: { $ref: '#/components/schemas/ApiError' },
     },
   },
-};
+});
+
+const cloneOpenApiValue = <T>(value: T): T => structuredClone(value);
 
 const jsonRequestBody = {
   required: true,
@@ -55,7 +57,7 @@ function endpoint(
     summary,
     description,
     ...(options.public ? { security: [] } : {}),
-    ...(options.body ? { requestBody: options.body } : {}),
+    ...(options.body ? { requestBody: cloneOpenApiValue(options.body) } : {}),
     ...(options.idempotencyKey ? { parameters: [{
       name: 'Idempotency-Key',
       in: 'header',
@@ -64,17 +66,17 @@ function endpoint(
       schema: { type: 'string', pattern: '^[A-Za-z0-9._:-]{1,128}$', minLength: 1, maxLength: 128 },
     }] } : {}),
     responses: {
-      [options.successStatus ?? 200]: successResponse,
-      '400': errorResponse,
-      '401': errorResponse,
-      '403': errorResponse,
-      '404': errorResponse,
-      '409': errorResponse,
-      '413': errorResponse,
-      '429': errorResponse,
-      '503': errorResponse,
-      '500': errorResponse,
-      '501': errorResponse,
+      [options.successStatus ?? 200]: successResponse(),
+      '400': errorResponse(),
+      '401': errorResponse(),
+      '403': errorResponse(),
+      '404': errorResponse(),
+      '409': errorResponse(),
+      '413': errorResponse(),
+      '429': errorResponse(),
+      '503': errorResponse(),
+      '500': errorResponse(),
+      '501': errorResponse(),
     },
   };
 }
@@ -89,6 +91,7 @@ export const openApiSpec = {
     version: '1.1.0',
     description: [
       '`/api/v1` and `/api/v2` are versioned APIs. `/api/v2` adds point-level diagnostics, manual point exclusions, advanced quality evaluation, and bounded parameter optimization. Existing `/api` endpoints remain supported as compatibility aliases.',
+      'Pagination uses offset/limit only on dataset lists, admin user lists, and v2 analysis points. Dataset and user lists default to offset 0 and limit 50 (maximum 100); point lists default to offset 0 and limit 100 (maximum 500). Dataset/user offsets are capped at 100,000; point offset cannot exceed the source row count. Sort/filter parameters are not implemented; unknown query parameters are ignored. Dataset lists return sample datasets first (sample IDs ascending), then owned datasets by creation time descending (ID ascending for owned-dataset ties); user lists sort by creation time descending (demo mode uses admin, researcher, viewer order). These are live offset pages, not snapshot cursors: inserts, deletes, or ordering changes between requests may shift records and cause duplicates or omissions. Dataset/user lists do not return a total count; follow `X-Next-Offset` while it is present. The point-list `X-Total-Count` is the count after `includeExcluded` filtering and before pagination; `X-Next-Offset` is emitted only when another page exists. Dataset-version, preprocessing-run, analysis, and experiment lists currently return the full list without pagination.',
       'Long-running quality checks, preprocessing, analyses, optimization, and reports return HTTP 202 and a job ID. Poll `/api/v1/jobs/{id}` for status and results. An optional `Idempotency-Key` makes job creation safe to retry for seven days.',
       'In Atlas mode, jobs are durable MongoDB queue records claimed atomically by API or standalone worker instances. Delivery is at least once: jobs use 15-minute renewable leases, up to three attempts with bounded exponential backoff, dead-letter status after exhaustion, and seven-day terminal retention. Preprocessing records its job ID on the derived immutable dataset version to avoid duplicate writes on retry. Demo mode remains process-local.',
       'CSV business rules reject malformed numeric feature values, inconsistent dataset metadata, and invalid analysis settings. Missing values, duplicates, constant features, and outliers are reviewable findings; quality responses include suggested thresholds and a rationale without automatically changing the data.',
@@ -559,47 +562,47 @@ export const openApiSpec = {
           google: { type: 'boolean' },
           registration: { type: 'boolean' },
         },
-        HealthStatus: {
-          type: 'object',
-          properties: {
-            status: { type: 'string', enum: ['alive', 'ready', 'ok'] },
-            database: { type: 'string' },
-          },
-          required: ['status'],
-          additionalProperties: true,
-        },
-        SystemHealth: {
-          type: 'object',
-          properties: {
-            uptime: { type: 'string' },
-            memory: {
-              type: 'object',
-              properties: {
-                rssMb: { type: 'string' },
-                heapUsedMb: { type: 'string' },
-                heapTotalMb: { type: 'string' },
-              },
-              required: ['rssMb', 'heapUsedMb', 'heapTotalMb'],
-            },
-            database: {
-              type: 'object',
-              properties: {
-                engine: { type: 'string' },
-                connected: { type: 'boolean' },
-                latency: { type: 'string' },
-                totalDocuments: { type: 'integer' },
-              },
-              required: ['engine', 'connected', 'latency', 'totalDocuments'],
-            },
-            cache: {
-              type: 'object',
-              properties: { memoryEntries: { type: 'integer' }, status: { type: 'string' } },
-              required: ['memoryEntries', 'status'],
-            },
-          },
-          required: ['uptime', 'memory', 'database', 'cache'],
-        },
         required: ['mode', 'google', 'registration'],
+      },
+      HealthStatus: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['alive', 'ready', 'ok'] },
+          database: { type: 'string' },
+        },
+        required: ['status'],
+        additionalProperties: true,
+      },
+      SystemHealth: {
+        type: 'object',
+        properties: {
+          uptime: { type: 'string' },
+          memory: {
+            type: 'object',
+            properties: {
+              rssMb: { type: 'string' },
+              heapUsedMb: { type: 'string' },
+              heapTotalMb: { type: 'string' },
+            },
+            required: ['rssMb', 'heapUsedMb', 'heapTotalMb'],
+          },
+          database: {
+            type: 'object',
+            properties: {
+              engine: { type: 'string' },
+              connected: { type: 'boolean' },
+              latency: { type: 'string' },
+              totalDocuments: { type: 'integer' },
+            },
+            required: ['engine', 'connected', 'latency', 'totalDocuments'],
+          },
+          cache: {
+            type: 'object',
+            properties: { memoryEntries: { type: 'integer' }, status: { type: 'string' } },
+            required: ['memoryEntries', 'status'],
+          },
+        },
+        required: ['uptime', 'memory', 'database', 'cache'],
       },
       AuthSession: {
         type: 'object',
@@ -840,7 +843,7 @@ function copyMissingOperations(sourcePrefix: string, targetPrefix: string, retag
     for (const [method, operation] of Object.entries(pathItem)) {
       if (!methods.has(method) || paths[targetPath][method]) continue;
       paths[targetPath][method] = {
-        ...operation,
+        ...cloneOpenApiValue(operation),
         ...(retag ? { tags: [retag] } : {}),
       };
     }
@@ -922,9 +925,24 @@ function addPathParameters(path: string, operation: OperationRecord) {
   const queryParameters = /\/(?:datasets|users)$/.test(path)
     || /\/analyses\/\{id\}\/points$/.test(path);
   if (queryParameters) {
+    const pointList = path.endsWith('/points');
     parameters.push(
-      { name: 'offset', in: 'query', required: false, schema: { type: 'integer', minimum: 0 } },
-      { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: path.endsWith('/points') ? 500 : 100 } },
+      {
+        name: 'offset',
+        in: 'query',
+        required: false,
+        description: pointList
+          ? 'Zero-based offset into the eligible point list after includeExcluded filtering. Must not exceed the source row count.'
+          : 'Zero-based offset. Maximum 100000. Pages are live reads, not a consistent snapshot; concurrent inserts or deletes can shift later pages.',
+        schema: { type: 'integer', minimum: 0, ...(!pointList && { maximum: 100_000 }), default: 0, example: 0 },
+      },
+      {
+        name: 'limit',
+        in: 'query',
+        required: false,
+        description: pointList ? 'Number of points to return (1-500; default 100).' : 'Number of records to return (1-100; default 50).',
+        schema: { type: 'integer', minimum: 1, maximum: pointList ? 500 : 100, default: pointList ? 100 : 50, example: pointList ? 100 : 50 },
+      },
     );
   }
   if (/\/analyses\/\{id\}\/points$/.test(path)) {
@@ -932,7 +950,8 @@ function addPathParameters(path: string, operation: OperationRecord) {
       name: 'includeExcluded',
       in: 'query',
       required: false,
-      schema: { type: 'boolean', default: false },
+      description: 'Include points manually excluded from this analysis. Defaults to false; X-Total-Count reflects this choice.',
+      schema: { type: 'boolean', default: false, example: false },
     });
   }
   if (parameters.length) operation.parameters = parameters;
@@ -942,6 +961,21 @@ for (const [path, pathItem] of Object.entries(paths)) {
   for (const [method, operation] of Object.entries(pathItem)) {
     if (!methods.has(method)) continue;
     addPathParameters(path, operation);
+
+    if (method === 'get' && /\/(?:datasets|users)$/.test(path)) {
+      const datasetList = path.endsWith('/datasets');
+      const paginationNote = datasetList
+        ? ' Pagination: offset=0, limit=50 by default; limit maximum is 100 and offset maximum is 100000. Sort/filter are not implemented and unknown query parameters are ignored. Samples are ordered by ID ascending before owned datasets ordered by createdAt descending (ID ascending for ties). This is live offset pagination; concurrent changes can shift page boundaries. No total count is returned; use X-Next-Offset.'
+        : ' Pagination: offset=0, limit=50 by default; limit maximum is 100 and offset maximum is 100000. Sort/filter are not implemented and unknown query parameters are ignored. Results are ordered by createdAt descending; demo mode uses admin, researcher, viewer order. This is live offset pagination; concurrent changes can shift page boundaries. No total count is returned; use X-Next-Offset.';
+      operation.description = `${String(operation.description ?? '').trim()}${paginationNote}`;
+    } else if (method === 'get' && /\/analyses\/\{id\}\/points$/.test(path)) {
+      operation.description = `${String(operation.description ?? '').trim()} Pagination: offset=0 and limit=100 by default; limit maximum is 500. Points retain source-row order. Filtering excluded points happens before pagination. X-Total-Count counts eligible points after includeExcluded filtering and before pagination; X-Next-Offset is returned only when another page exists. This is not a snapshot across requests: changing point exclusions between pages can change the count and page contents. Example: GET /api/v2/analyses/{id}/points?offset=0&limit=100&includeExcluded=false`;
+    } else if (method === 'get' && (
+      /\/datasets\/\{(?:datasetId|id)\}\/versions$/.test(path)
+      || /\/(?:preprocessing-runs|analyses|experiments)$/.test(path)
+    )) {
+      operation.description = `${String(operation.description ?? '').trim()} This endpoint returns the full list and does not currently support pagination, sorting, or filtering.`;
+    }
 
     if (operation.requestBody) {
       const requestBody = operation.requestBody;
@@ -990,8 +1024,14 @@ for (const [path, pathItem] of Object.entries(paths)) {
           };
         }
         if (/\/analyses\/\{id\}\/points$/.test(path)) {
-          headers['X-Total-Count'] = { description: 'Total number of included points.', schema: { type: 'integer' } };
-          headers['X-Next-Offset'] = { description: 'Offset for the next page, when present.', schema: { type: 'integer', minimum: 0 } };
+          headers['X-Total-Count'] = {
+            description: 'Count after includeExcluded filtering, before applying offset and limit.',
+            schema: { type: 'integer', minimum: 0, example: 240 },
+          };
+          headers['X-Next-Offset'] = {
+            description: 'Offset for the next page; absent when the current page is the last page.',
+            schema: { type: 'integer', minimum: 0, example: 100 },
+          };
         }
         if (Object.keys(headers).length) response.headers = headers;
       }

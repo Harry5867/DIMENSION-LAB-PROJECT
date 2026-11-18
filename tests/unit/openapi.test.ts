@@ -86,3 +86,70 @@ test('every OpenAPI operation defines response schemas and typed request bodies'
 
   assert.deepEqual(incomplete, [], `Incomplete OpenAPI operations:\n${incomplete.join('\n')}`);
 });
+
+test('OpenAPI states pagination limits, ordering, unsupported filters, and count semantics', () => {
+  const operationAt = (path: string, method: string) => {
+    const operation = (openApiSpec.paths as Record<string, Record<string, unknown>>)[path]?.[method];
+    assert.ok(operation && typeof operation === 'object', `Missing ${method.toUpperCase()} ${path}`);
+    return operation as {
+      description?: string;
+      parameters?: Array<{ name?: string; in?: string; description?: string; schema?: Record<string, unknown> }>;
+      responses?: Record<string, { headers?: Record<string, { description?: string; schema?: Record<string, unknown> }> }>;
+    };
+  };
+  const datasetList = operationAt('/api/v1/datasets', 'get');
+  const userList = operationAt('/api/v1/users', 'get');
+  const pointsList = operationAt('/api/v2/analyses/{id}/points', 'get');
+  const parameter = (operation: ReturnType<typeof operationAt>, name: string) =>
+    operation.parameters?.find(item => item.in === 'query' && item.name === name);
+
+  assert.equal(parameter(datasetList, 'limit')?.schema?.default, 50);
+  assert.equal(parameter(datasetList, 'limit')?.schema?.maximum, 100);
+  assert.equal(parameter(userList, 'offset')?.schema?.maximum, 100_000);
+  assert.equal(parameter(pointsList, 'limit')?.schema?.default, 100);
+  assert.equal(parameter(pointsList, 'limit')?.schema?.maximum, 500);
+  assert.match(datasetList.description ?? '', /Sort\/filter are not implemented/);
+  assert.match(userList.description ?? '', /ordered by createdAt descending/);
+  assert.match(pointsList.description ?? '', /after includeExcluded filtering and before pagination/i);
+  assert.match(pointsList.description ?? '', /not a snapshot/i);
+  assert.match(pointsList.responses?.['200']?.headers?.['X-Total-Count']?.description ?? '', /before applying offset and limit/);
+  assert.deepEqual(pointsList.responses?.['200']?.headers?.['X-Next-Offset']?.schema?.example, 100);
+});
+
+test('OpenAPI keeps route-specific request and response schemas isolated', () => {
+  const operationAt = (path: string, method: string) => {
+    const operation = (openApiSpec.paths as Record<string, Record<string, unknown>>)[path]?.[method];
+    assert.ok(operation && typeof operation === 'object', `Missing ${method.toUpperCase()} ${path}`);
+    return operation as {
+      requestBody?: { required?: boolean; content?: Record<string, { schema?: { $ref?: string } }> };
+      responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+      parameters?: Array<{ name?: string; in?: string }>;
+    };
+  };
+  const requestRef = (path: string, method: string) =>
+    operationAt(path, method).requestBody?.content?.['application/json']?.schema?.$ref;
+
+  assert.equal(requestRef('/api/v1/auth/register', 'post'), '#/components/schemas/RegistrationRequest');
+  assert.equal(requestRef('/api/v1/auth/login', 'post'), '#/components/schemas/AuthCredentials');
+  assert.equal(requestRef('/api/v1/analyses', 'post'), '#/components/schemas/AnalysisRequest');
+  assert.equal(requestRef('/api/v2/analyses/{id}/points/filter', 'post'), '#/components/schemas/PointFilterRequest');
+  assert.equal(operationAt('/api/v1/analyses/{id}/reports', 'post').requestBody?.required, false);
+  assert.equal(operationAt('/api/v1/auth/login', 'post').requestBody?.required, true);
+
+  const responseSchema = operationAt('/api/v2/analyses/{id}/points', 'get').responses?.['200']?.content?.['application/json']?.schema;
+  assert.deepEqual(responseSchema, {
+    allOf: [
+      { $ref: '#/components/schemas/ApiSuccess' },
+      { type: 'object', properties: { data: { $ref: '#/components/schemas/PointList' } } },
+    ],
+  });
+  assert.equal(
+    operationAt('/openapi.json', 'get').responses?.['200']?.content?.['application/json']?.schema
+      && (operationAt('/openapi.json', 'get').responses?.['200']?.content?.['application/json']?.schema as { $ref?: string }).$ref,
+    '#/components/schemas/OpenApiDocument',
+  );
+  const v1PointParams = operationAt('/api/v1/datasets', 'get').parameters?.filter(parameter => parameter.in === 'query');
+  const v2PointParams = operationAt('/api/v2/datasets', 'get').parameters?.filter(parameter => parameter.in === 'query');
+  assert.equal(v1PointParams?.length, 2);
+  assert.equal(v2PointParams?.length, 2);
+});
