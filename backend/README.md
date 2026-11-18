@@ -35,6 +35,13 @@ Chạy `npm run test:api` từ root. Giữ thứ tự middleware, URL callback, 
 
 [Google và Atlas](../docs/google-atlas.md) · [API](../docs/architecture/backend-architecture.md) · [Kiểm thử](../tests/README.md)
 
+### Quy trình thêm endpoint
+
+1. Đăng ký route trong `src/routes/` và giữ đúng auth, quyền, status code cùng định dạng response.
+2. Thêm operation vào `src/docs/openapi.ts`; khai báo schema cụ thể cho request/response, path/query/header parameters và response không phải JSON nếu có.
+3. Chạy `npm test` để kiểm tra mọi method/path được Express đăng ký đều có trong OpenAPI, các body/response có schema và tham số path được khai báo. Cập nhật test API cho hành vi endpoint.
+4. Chạy `npm run test:api` và `npm run build` trước khi hoàn tất thay đổi.
+
 ## Ghi chú bảo trì cho người và AI
 
 Tìm route tương ứng rồi lần theo middleware, service và repository. Kiểm tra thứ tự CORS, guard, body parser, route và error handler. Khi sửa dữ liệu riêng, đối chiếu owner trong truy vấn, tệp và cache. Chạy test API cho nhóm đã sửa.
