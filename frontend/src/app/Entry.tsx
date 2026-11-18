@@ -154,7 +154,8 @@ export function Entry() {
       if (entranceDirectionRef.current === 'in') {
         const destination = signInDestination(window.location.hash);
         window.location.hash = destination;
-        setHash(destination); setWorkspaceEntering(destination === '#/overview'); setSignedIn(true); setHomeArrival(null);
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        setHash(destination); setWorkspaceEntering(destination === '#/overview' && !reducedMotion); setSignedIn(true); setHomeArrival(null);
       } else {
         // Leaving the workspace returns to the welcome page without ending the session.
         window.location.hash = ''; setHash('');
@@ -231,7 +232,7 @@ export function Entry() {
     const moveGlassHighlight = (event: PointerEvent) => {
       if (event.pointerType === 'touch' || reduceMotion.matches || !(event.target instanceof Element)) return;
       const control = event.target.closest<HTMLElement>(glassControlSelector);
-      if (!control || control.closest('.welcome-exploration-controls') || control.matches(':disabled, [aria-disabled="true"]')) return;
+      if (!control || control.matches(':disabled, [aria-disabled="true"]')) return;
       const bounds = control.getBoundingClientRect();
       control.style.setProperty('--glass-x', `${event.clientX - bounds.left}px`);
       control.style.setProperty('--glass-y', `${event.clientY - bounds.top}px`);

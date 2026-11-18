@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Layers, Search, X } from 'lucide-react';
 import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
 import {
@@ -8,8 +7,6 @@ import {
 } from './globeScene';
 import { borderSource, earthPosition } from './atlas/atlasLines';
 import { loadTerrainData, sourceIndex, terrainDefaults, type TerrainData } from './terrain/terrainData';
-import { TerrainControls } from './terrain/TerrainControls';
-import { StoryControls } from './stories/StoryControls';
 import { StoryMarkers } from './stories/StoryMarkers';
 import { filterStories, groupStories, loadStories, projectStoryGroups, type StoryFilter, type StoryGroup, type StoryRecord } from './stories/storyData';
 import './data-globe.css';
@@ -20,12 +17,7 @@ import { createAtlasIgnition } from '../animations/atlasIgnition';
 const home = { yaw: MathUtils.degToRad(-102), pitch: MathUtils.degToRad(20) };
 const minZoom = .76;
 const maxZoom = 1.85;
-const globeModes = [
-  { id: 'atlas', label: 'Atlas' },
-  { id: 'terrain', label: 'Terrain' },
-  { id: 'stories', label: 'Stories' },
-] as const;
-export type GlobeMode = typeof globeModes[number]['id'];
+export type GlobeMode = 'atlas' | 'terrain' | 'stories';
 const atlasDefaults: AtlasLayers = { particles: true, grid: true, borders: true, labels: true, flags: false };
 const exhibitionBase: AtlasLayers = { ...atlasDefaults, borders: false, labels: false };
 const ease = (current: number, target: number, speed: number, dt: number) => current + (target - current) * (1 - Math.exp(-speed * dt));
@@ -65,15 +57,10 @@ function coordinates(city: Capital) {
   return lat + ' · ' + lon;
 }
 
-export function DataGlobe({ suspended = false, showDetails = true, motionEnabled, theme = 'light', modeControlsTarget, explorationControlsTarget, onModeChange, onExplore, genesis }: {
+export function DataGlobe({ suspended = false, motionEnabled, theme = 'light', genesis }: {
   theme?: 'light' | 'dark';
-  modeControlsTarget?: HTMLElement | null;
-  explorationControlsTarget: HTMLElement | null;
-  onModeChange: (mode: GlobeMode) => void;
   motionEnabled?: boolean;
   suspended?: boolean;
-  showDetails?: boolean;
-  onExplore: () => void;
   genesis?: WelcomeGenesisRequest;
 }) {
   const { language, t } = useWelcomeLanguage();
@@ -113,7 +100,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   const storyCategoryControl = useRef<HTMLSelectElement>(null);
   const isStories = mode === 'stories';
   const filteredStories = useMemo(() => stories ? filterStories(stories, storyCategory) : [], [stories, storyCategory]);
-  const selectedStory = isStories && showDetails ? filteredStories.find(story => story.id === storySelected) ?? null : null;
+  const selectedStory = isStories ? filteredStories.find(story => story.id === storySelected) ?? null : null;
   const storyGroups = useMemo(() => groupStories(filteredStories, storiesDetailed, storiesCompact, selectedStory?.id ?? null), [filteredStories, storiesDetailed, storiesCompact, selectedStory?.id]);
   const storyInspecting = isStories && (storyHovered !== null || selectedStory !== null || storyClusterFocused);
   const [layers, setLayers] = useState(atlasDefaults);
@@ -131,7 +118,7 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     return { data: terrainData, ...terrainSettings, highlight };
   }, [mode, terrainData, terrainSettings, terrainHovered, terrainSelected]);
   const terrainInspecting = mode === 'terrain' && (terrainHovered !== null || terrainSelected !== null);
-  const active = isAtlas && showDetails ? selected : null;
+  const active = isAtlas ? selected : null;
   const markerIndices = useMemo(() => {
     const indices = new Set(featuredCapitalIndices);
     if (regionalAnchor !== null) regionalCapitals[regionalAnchor]?.forEach(index => indices.add(index));
@@ -153,7 +140,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   function selectMode(nextMode: GlobeMode) {
     if (nextMode === mode) return;
     setMode(nextMode);
-    onModeChange(nextMode);
     setSelected(null);
     setHovered(null);
     setDirectoryOpen(false);
@@ -186,7 +172,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     setStorySelected(id);
     setStoryClusterFocused(false);
     setStoryHovered(null);
-    onExplore();
     focusAt(MathUtils.degToRad(-story.longitude), MathUtils.degToRad(story.latitude), Math.max(1.12, goal.current.zoom));
   }
 
@@ -205,29 +190,11 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     const [first] = group.members;
     if (!first) return;
     if (group.members.length === 1) { selectStory(first.id, trigger); return; }
-    onExplore();
     setStoryHovered(null);
     setStoriesDetailed(true);
     setStoryClusterFocused(true);
     focusAt(-Math.atan2(group.position.x, group.position.z), Math.asin(group.position.y), Math.max(1.45, goal.current.zoom));
     viewport.current?.focus({ preventScroll: true });
-  }
-
-  function changeStoryCategory(category: StoryFilter) {
-    setStoryCategory(category);
-    setStoryClusterFocused(false);
-    setStoryHovered(null);
-    if (storySelected && !filterStories(stories ?? [], category).some(story => story.id === storySelected)) setStorySelected(null);
-  }
-
-  function inspectTerrain(index: number | null) {
-    setTerrainSelected(index);
-    setTerrainHovered(null);
-    terrainPointer.current = null;
-    if (index === null || !terrainData) return;
-    const point = terrainData.points[index];
-    if (!point) return;
-    focusAt(MathUtils.degToRad(-point.longitude), MathUtils.degToRad(point.latitude), goal.current.zoom);
   }
 
   function focusAt(yaw: number, pitch: number, zoom: number) {
@@ -248,7 +215,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       ? directory.current.querySelector('summary')
       : trigger;
     if (directory.current) directory.current.open = false;
-    onExplore();
     setHovered(null);
     setSelected(index);
     const zoom = index === hanoiIndex ? 1.25 : 1.12;
@@ -267,14 +233,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   useEffect(() => {
     if (active !== null) closeButton.current?.focus({ preventScroll: true });
   }, [active]);
-
-  useEffect(() => {
-    if (showDetails) return;
-    setSelected(null);
-    setHovered(null);
-    setStorySelected(null);
-    setStoryHovered(null);
-  }, [showDetails]);
 
   useEffect(() => {
     if (!isStories || stories) return;
@@ -757,12 +715,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         .some(value => value?.toLowerCase().includes(search)));
   }, [query, language]);
 
-  const modeControls = <div className="globe-mode-switcher" role="group" aria-label={t('Visualization mode', 'Chế độ trực quan hóa')}>
-    {globeModes.map(item => <button className="globe-mode-option" type="button" key={item.id} aria-pressed={mode === item.id} onClick={() => selectMode(item.id)}>
-      {t(item.label, { atlas: 'Bản đồ', terrain: 'Địa hình', stories: 'Câu chuyện' }[item.id])}
-    </button>)}
-  </div>;
-
   return <div className={`data-globe${suspended ? ' atlas-suspended' : ''}`} data-mode={mode} onKeyDown={event => {
     if (event.key === 'Escape' && city) { event.preventDefault(); closeCity(); }
     else if (event.key === 'Escape' && selectedStory) { event.preventDefault(); closeStory(); }
@@ -914,17 +866,5 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         </div>
       </details>
     </div>}
-    {explorationControlsTarget && mode === 'terrain' && createPortal(<TerrainControls data={terrainData} error={terrainError} settings={terrainSettings}
-      selected={terrainSelected} onSettingsChange={setTerrainSettings} onInspect={inspectTerrain}
-      onReset={() => { setTerrainSettings({ ...terrainDefaults }); setTerrainSelected(null); setTerrainHovered(null); terrainPointer.current = null; }} />, explorationControlsTarget)}
-    {explorationControlsTarget && isStories && createPortal(<StoryControls stories={stories} filtered={filteredStories} category={storyCategory} selected={selectedStory} error={storyError}
-      onCategory={changeStoryCategory} onSelect={selectStory} onClose={closeStory} onRetry={() => setStoryAttempt(attempt => attempt + 1)}
-      categoryRef={storyCategoryControl} onAtlas={story => {
-        selectMode('atlas');
-        const index = capitals.findIndex(city => city.id === story.placeId);
-        if (index >= 0) openCity(index, storyCategoryControl.current ?? viewport.current!);
-        else focusAt(MathUtils.degToRad(-story.longitude), MathUtils.degToRad(story.latitude), goal.current.zoom);
-      }} />, explorationControlsTarget)}
-    {modeControlsTarget ? createPortal(modeControls, modeControlsTarget) : modeControls}
   </div>;
 }

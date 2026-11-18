@@ -20,7 +20,7 @@
 .welcome-page[data-genesis] > .data-atmosphere--welcome { opacity: var(--genesis-atmosphere, 0); }
 .welcome-page[data-genesis] .globe-renderer { opacity: var(--genesis-silhouette, 0); }
 .welcome-page[data-genesis] .globe-renderer::before { opacity: var(--genesis-disk, .34); }
-.welcome-page[data-genesis] :is(.welcome-copy, .welcome-concept-group, .welcome-globe-modes, .welcome-theme-toggle, .globe-controls, .atlas-coordinate, .globe-capital-marker) {
+.welcome-page[data-genesis] :is(.welcome-copy, .welcome-header-actions, .globe-controls, .atlas-coordinate, .globe-capital-marker) {
   visibility: hidden;
 }
 .welcome-page[data-genesis] .welcome-brand .team-logo {
@@ -34,7 +34,7 @@
 .welcome-page[data-genesis] .globe-viewport { translate: 0 var(--genesis-globe-shift, 0px); }
 
 @media (prefers-reduced-motion: no-preference) {
-  .welcome-page[data-genesis-visited]:not([data-genesis]) :is(.welcome-concept-group, .welcome-globe-modes, .welcome-theme-toggle, .globe-controls, .atlas-coordinate, .globe-capital-marker) {
+  .welcome-page[data-genesis-visited]:not([data-genesis]) :is(.welcome-header-actions, .globe-controls, .atlas-coordinate, .globe-capital-marker) {
     animation: welcome-information-reveal 280ms ease-out backwards;
   }
 }

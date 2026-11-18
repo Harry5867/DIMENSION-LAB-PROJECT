@@ -25,7 +25,7 @@ export function WorkspaceEntrance({ phase, onComplete, direction = 'in', center,
   const cx = centerX * 100 + '%', cy = centerY * 100 + '%';
   useLayoutEffect(() => {
     const element = curtain.current;
-    if (!element) return;
+    if (!element || direction !== 'out') return;
     const measure = () => {
       const { width, height } = element.getBoundingClientRect();
       // Reach the farthest corner at the end, rather than opening an oversized
@@ -36,7 +36,7 @@ export function WorkspaceEntrance({ phase, onComplete, direction = 'in', center,
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [centerX, centerY]);
+  }, [centerX, centerY, direction]);
   const field = <svg x={cx} y={cy} width="1" height="1" overflow="visible">
     <g className="entry-gateway-rays" stroke="#6b8d78" strokeWidth=".8" opacity=".24">
       {rays.map((ray, index) => <line key={index} {...ray} />)}
@@ -54,8 +54,9 @@ export function WorkspaceEntrance({ phase, onComplete, direction = 'in', center,
       </g>)}
     </g>
   </svg>;
-  return <div ref={curtain} className={`entry-curtain entry-curtain--${phase}${direction === 'out' ? ' entry-curtain--out' : ''}${reducedMotion ? ' entry-curtain--reduced' : ''}`} aria-hidden="true"
+  return <div ref={curtain} className={`entry-curtain entry-curtain--${phase}${direction === 'out' ? ' entry-curtain--out' : ''}${theme === 'dark' ? ' entry-curtain--dark' : ''}${reducedMotion ? ' entry-curtain--reduced' : ''}`} aria-hidden="true"
     onAnimationEnd={event => { if (event.target === event.currentTarget) onComplete(); }}>
+    {direction === 'out' && <>
     <svg className="entry-gateway-field" width="100%" height="100%" aria-hidden="true">
       <defs>
         <radialGradient id={`${id}-paper`} cx={cx} cy={cy} r="85%">
@@ -73,14 +74,14 @@ export function WorkspaceEntrance({ phase, onComplete, direction = 'in', center,
       <g mask={`url(#${id}-iris)`}>
         <rect width="100%" height="100%" fill={`url(#${id}-paper)`} />
         <rect width="100%" height="100%" fill={`url(#${id}-grid)`} />
-        {direction === 'in' && field}
       </g>
-      {direction === 'out' && field}
+      {field}
     </svg>
     <div className="entry-gateway-brand">
       <div className="entry-gateway-eyebrow"><LabMark /><span>{tr("A NEW PERSPECTIVE")}</span></div>
       <div className="entry-gateway-wordmark"><span>DIMENSION</span><span className="entry-gateway-slash">/</span><span>LAB</span></div>
-      <div className="entry-gateway-caption"><span>{tr("ENTERING WORKSPACE")}</span><i /><span>01 — 05</span></div>
+      <div className="entry-gateway-caption"><span>{tr("RETURNING TO WELCOME")}</span><i /></div>
     </div>
+    </>}
   </div>;
 }

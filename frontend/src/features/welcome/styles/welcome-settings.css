@@ -10,14 +10,9 @@
   background:radial-gradient(circle at 81% 13%,#205248 0%,#0c2e28 32%,#061b17 65%,#061511 100%);
   box-shadow:inset -12px 8px 23px -14px #7ce9bf,inset 0 0 0 1px #65bc9e62,0 0 35px #1ebc9c20;
 }
-.welcome-page[data-theme=dark] .welcome-header nav button { color:var(--text-muted); }
-.welcome-page[data-theme=dark] .welcome-concepts button::before { background:#536b5b; }
-.welcome-page[data-theme=dark] .welcome-concepts button:is(:hover,:focus-visible,[aria-pressed=true])::before { background:var(--explore-primary); }
-.welcome-page[data-theme=dark] .welcome-header nav button:is(:hover,:focus-visible,[aria-expanded=true]) { color:var(--explore-primary); }
-.welcome-page[data-theme=dark] .welcome-concept-label { background:var(--bg-panel); color:var(--text-main); border-color:var(--border-subtle); }
 .welcome-page[data-theme=dark] .globe-city-panel > p:not(.welcome-eyebrow) { color:var(--text-muted); }
 .welcome-page[data-theme=dark] .story-image-placeholder { background:var(--bg-interactive); }
-.welcome-page[data-theme=dark] :is(.globe-mode-switcher,.globe-directory > summary,.globe-directory-panel,.globe-capital-tooltip,.globe-city-panel,.globe-terrain-panel,.globe-story-panel,.story-marker-preview) { background:var(--bg-panel); color:var(--text-main); border-color:var(--border-subtle); box-shadow:0 6px 22px #0002; }
+.welcome-page[data-theme=dark] :is(.globe-directory > summary,.globe-directory-panel,.globe-capital-tooltip,.globe-city-panel,.globe-terrain-panel,.globe-story-panel,.story-marker-preview) { background:var(--bg-panel); color:var(--text-main); border-color:var(--border-subtle); box-shadow:0 6px 22px #0002; }
 .welcome-page[data-theme=dark] :is(.globe-directory-panel input,.terrain-controls-body select,.story-controls-body select) { background:var(--bg-interactive); color:var(--text-main); border-color:var(--border-subtle); }
 .welcome-page[data-theme=dark] :is(.globe-directory-panel label,.terrain-data-details,.terrain-reading,.story-information,.story-panel-image,.terrain-visibility-row button,.story-image-placeholder) { border-color:var(--border-subtle); }
 .welcome-page[data-theme=dark] :is(.globe-capital-tooltip span,.globe-city-panel dt,.globe-directory-panel small,.globe-directory-panel p,.globe-terrain-panel p,.terrain-color-key,.terrain-source,.terrain-data-details summary,.globe-story-panel summary > span,.story-count,.story-source,.story-data-reference p,.story-demo-note,.story-marker-preview > span,.story-marker-preview small,.story-location) { color:var(--text-muted); }
