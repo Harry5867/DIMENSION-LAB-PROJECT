@@ -30,6 +30,7 @@ export async function connectAtlas() {
       db.collection('sessions').createIndex({ tokenHash: 1 }, { unique: true }),
       db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       db.collection('oauth_attempts').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      db.collection('email_enrollments').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       db.collection('datasets').createIndex({ id: 1 }, { unique: true }),
       db.collection('datasets').createIndex({ ownerId: 1, createdAt: -1, id: 1 }),
       db.collection('dataset_versions').createIndex({ datasetId: 1, version: 1 }, { unique: true }),

@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { MongoServerError, ObjectId } from 'mongodb';
 import * as argon2 from 'argon2';
 import { atlasDatabase, atlasMode, type AtlasProfile } from '../database/atlas';
@@ -8,6 +8,8 @@ import { isRecord } from '../http/validation';
 
 interface PasswordUser extends AtlasProfile {
   passwordHash: string;
+  verifiedEmail?: boolean;
+  linkedGoogle?: boolean;
 }
 
 export const passwordRegistrationEnabled = () => atlasMode && process.env.NODE_ENV !== 'production';
@@ -63,10 +65,11 @@ export async function registerPasswordUser(req: Request) {
   }
 }
 
-export async function verifyPasswordUser(req: Request) {
+export async function verifyPasswordUser(req: Request, allowEnrollment = false) {
   const { email, password } = credentials(req, 'login');
   const user = await atlasDatabase().collection<PasswordUser>('password_users').findOne({ email });
   if (!user) {
+    if (allowEnrollment) return beginEnrollment(email, password);
     dummyHash ??= argon2.hash(randomBytes(32), hashOptions).catch(error => {
       dummyHash = undefined;
       throw error;
@@ -76,5 +79,73 @@ export async function verifyPasswordUser(req: Request) {
   }
   const valid = await argon2.verify(user.passwordHash, password);
   if (!valid) throw new UnauthorizedError('Invalid email or password.');
+  return user;
+}
+
+interface Enrollment {
+  _id: string;
+  digest: string;
+  email: string;
+  passwordHash: string;
+  expiresAt: Date;
+  attempts: number;
+}
+
+const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+async function beginEnrollment(email: string, password: string) {
+  if (!process.env.RESEND_API_KEY || !process.env.LAB_EMAIL_FROM) {
+    throw new AppError('Email verification is unavailable.', 503, 'EMAIL_UNAVAILABLE');
+  }
+  limit('mail:' + email, 1);
+  limit('mail:global', 30);
+  const challenge = randomBytes(32).toString('base64url');
+  const code = randomInt(1_000_000).toString().padStart(6, '0');
+  const attempts = atlasDatabase().collection<Enrollment>('email_enrollments');
+  const _id = digest(challenge);
+  await attempts.insertOne({ _id, digest: digest(challenge + code), email,
+    passwordHash: await argon2.hash(password, hashOptions), expiresAt: new Date(Date.now() + 600_000), attempts: 0 });
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST', signal: AbortSignal.timeout(8000),
+      headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: process.env.LAB_EMAIL_FROM, to: [email], subject: 'Verify your Dimension Lab email',
+        text: `Your Dimension Lab verification code is ${code}. It expires in 10 minutes. Enter it only in the sign-in you started. If you did not request it, ignore this email.` }),
+    });
+    if (!response.ok) throw new Error('Delivery failed');
+  } catch {
+    await attempts.deleteOne({ _id });
+    throw new AppError('Email verification is unavailable.', 503, 'EMAIL_UNAVAILABLE');
+  }
+  return { challenge };
+}
+
+export async function finishEnrollment(req: Request): Promise<PasswordUser> {
+  const { challenge, code } = isRecord(req.body) ? req.body : {};
+  if (!atlasMode || typeof challenge !== 'string' || !/^[\w-]{43}$/.test(challenge)
+    || typeof code !== 'string' || !/^\d{6}$/.test(code)) throw new BadRequestError('Invalid verification request.');
+  limit('verify:ip:' + req.ip, 25);
+  const db = atlasDatabase();
+  const attempts = db.collection<Enrollment>('email_enrollments');
+  const _id = digest(challenge);
+  const active = { _id, expiresAt: { $gt: new Date() }, attempts: { $lt: 5 } };
+  const hash = digest(challenge + code);
+  const attempt = await attempts.findOneAndDelete({ ...active, digest: hash });
+  if (!attempt) {
+    await attempts.updateOne({ ...active, digest: { $ne: hash } }, { $inc: { attempts: 1 } });
+    throw new UnauthorizedError('Invalid or expired verification code.');
+  }
+  const matches = await db.collection<AtlasProfile>('users').find({ email: attempt.email })
+    .collation({ locale: 'en', strength: 2 }).limit(2).toArray();
+  if (matches.length > 1) throw new AppError('Use Google to sign in to this account.', 409, 'AMBIGUOUS_ACCOUNT');
+  const existing = matches[0];
+  const user: PasswordUser = { _id: existing?._id ?? new ObjectId(), displayName: existing?.displayName ?? attempt.email,
+    email: attempt.email, role: 'researcher', createdAt: new Date(), passwordHash: attempt.passwordHash,
+    verifiedEmail: true, linkedGoogle: Boolean(existing) };
+  try {
+    await db.collection<PasswordUser>('password_users').insertOne(user);
+  } catch (error) {
+    if (!(error instanceof MongoServerError) || error.code !== 11000) throw error;
+    throw new AppError('Sign in again with your password.', 409, 'ALREADY_ENROLLED');
+  }
   return user;
 }

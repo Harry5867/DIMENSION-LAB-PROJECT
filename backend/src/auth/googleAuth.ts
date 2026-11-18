@@ -80,12 +80,17 @@ export async function beginGoogleSignIn(_req: Request, res: Response) {
   }).href);
 }
 
-export async function upsertGoogleUser(profile: { sub: string; email: string; displayName: string }) {
+export async function upsertGoogleUser(profile: { sub: string; email: string; displayName: string; authoritativeEmail?: boolean }) {
   const users = atlasDatabase().collection<AtlasUser>('users');
   const now = new Date();
   const filter = { googleSub: profile.sub };
-  const update = { $set: { email: profile.email, displayName: profile.displayName, lastLoginAt: now },
-    $setOnInsert: { role: 'researcher' as const, createdAt: now } };
+  const fields = { email: profile.email, displayName: profile.displayName, lastLoginAt: now };
+  const previous = await users.findOneAndUpdate(filter, { $set: fields }, { returnDocument: 'after' });
+  if (previous) return previous;
+  const verified = profile.authoritativeEmail && await atlasDatabase().collection<AtlasProfile & { verifiedEmail: boolean }>('password_users')
+    .findOne({ email: profile.email.trim().toLowerCase(), verifiedEmail: true });
+  const owner = verified && !await users.findOne({ _id: verified._id }) ? verified : undefined;
+  const update = { $set: fields, $setOnInsert: { ...(owner && { _id: owner._id }), role: 'researcher' as const, createdAt: now } };
   try {
     return await users.findOneAndUpdate(filter, update, { upsert: true, returnDocument: 'after' });
   } catch (error) {
@@ -113,6 +118,7 @@ export async function finishGoogleSignIn(req: Request, res: Response) {
   }).then(result => result.claims(), () => undefined);
   if (!claims?.sub || typeof claims.email !== 'string' || claims.email_verified !== true) return failed();
   const user = await upsertGoogleUser({ sub: claims.sub, email: claims.email,
+    authoritativeEmail: claims.email.toLowerCase().endsWith('@gmail.com') || typeof claims.hd === 'string',
     displayName: typeof claims.name === 'string' ? claims.name : claims.email });
   if (!user) throw new AppError('Could not save the user profile.', 503, 'STORAGE_UNAVAILABLE');
   await issueAtlasSession(req, res, user);

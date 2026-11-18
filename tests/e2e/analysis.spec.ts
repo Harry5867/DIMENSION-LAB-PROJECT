@@ -64,7 +64,7 @@ test('runs PCA and K-Means, controls the 3D view, exports points, and restores a
   await expect(page.getByText('Configuration restored. Run analysis to generate new results.', { exact: true })).toBeVisible();
 });
 
-test('runs Isolation Forest and saves the anomaly analysis locally', async ({ page }) => {
+test('runs Isolation Forest and saves the anomaly analysis for the demo session', async ({ page }) => {
   test.setTimeout(70_000);
   await openAnalysisDataset(page, 'browser-anomaly');
   await page.getByRole('button', { name: /^Anomaly Detection/ }).click();
@@ -72,8 +72,8 @@ test('runs Isolation Forest and saves the anomaly analysis locally', async ({ pa
   const result = page.getByRole('dialog', { name: 'Anomaly Detection · Isolation Forest' });
   await expect(result.getByRole('heading', { name: 'Anomaly score distribution' })).toBeVisible({ timeout: 25_000 });
   await expect(result.getByRole('region', { name: 'Summary statistics' })).toContainText(/Rows analyzed\s*32/);
-  await result.getByRole('button', { name: 'Save locally' }).click();
-  await expect(result.getByRole('status')).toHaveText('Saved in this browser.');
+  await result.getByRole('button', { name: 'Save for this session' }).click();
+  await expect(result.getByRole('status')).toHaveText('Saved for this demo session.');
   await result.getByRole('button', { name: 'Close analysis dashboard' }).click();
   await expect(result).toBeHidden();
 });

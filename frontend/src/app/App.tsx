@@ -1,6 +1,7 @@
 import { projectionSettingsError } from '@dimension-lab/algorithms/projection';
 import { runAnalysis } from '../features/analysis/runAnalysis';
 import { useAppLanguage } from "../shared/providers/WelcomeLanguage";
+import { useAnalysisHistory } from '../features/analysis/useAnalysisHistory';
 import { UnsupervisedPanel, AnalysisOverlay } from '../features/analysis/components/UnsupervisedPanel';
 import { GMMResult } from '@dimension-lab/algorithms/gmm';
 import { useAppTheme } from '../shared/providers/ThemeProvider';
@@ -72,6 +73,7 @@ function openWorkspacePage(page: WorkspaceRoute) {
 }
 
 export function App({ active = true, persistent = false }: { active?: boolean; persistent?: boolean }) {
+  const analysisHistory = useAnalysisHistory(persistent);
   const [openSetupMethod, setOpenSetupMethod] = useState<SetupMethod | null>(null);
   const { tr } = useAppLanguage();
   const [page, setPage] = useState(readWorkspacePage);
@@ -745,7 +747,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
   const renderSetup = (methodsOnly = false) => {
     const accordionProps = methodsOnly ? {} : { accordion: { open: openSetupMethod, setOpen: setOpenSetupMethod } };
     return <ControlSidebar embedded methodsOnly={methodsOnly} {...accordionProps}
-        additionalMethods={dataset && <UnsupervisedPanel active={active} {...accordionProps} key={activeDatasetId + dataset.name} dataset={dataset} projection={completedRun ? completedRun.reduction.method + ' projection' : rawPreviewPoints.length ? 'Raw first three selected numeric features' : 'Unavailable until at least three numeric features are selected'} onRestoreSettings={(features, normalization) => { setSelectedFeatures(features); setReductionConfig(previous => ({ ...previous, normalization })); }} features={selectedFeatures} normalization={reductionConfig.normalization} points={dataPoints.length ? dataPoints : rawPreviewPoints} onSelect={handleSelectPoint} onOverlay={overlay => { if (overlay) { handleResetLiveAnimation(); setFocusedCluster(null); } setAnalysisOverlay(overlay); }} />}
+        additionalMethods={dataset && <UnsupervisedPanel history={analysisHistory} active={active} {...accordionProps} key={activeDatasetId + dataset.name} dataset={dataset} projection={completedRun ? completedRun.reduction.method + ' projection' : rawPreviewPoints.length ? 'Raw first three selected numeric features' : 'Unavailable until at least three numeric features are selected'} onRestoreSettings={(features, normalization) => { setSelectedFeatures(features); setReductionConfig(previous => ({ ...previous, normalization })); }} features={selectedFeatures} normalization={reductionConfig.normalization} points={dataPoints.length ? dataPoints : rawPreviewPoints} onSelect={handleSelectPoint} onOverlay={overlay => { if (overlay) { handleResetLiveAnimation(); setFocusedCluster(null); } setAnalysisOverlay(overlay); }} />}
         datasetName={datasetTitle ?? tr('Loading…')}
         totalRows={dataset ? dataset.totalRows : 0}
         featureColumns={dataset ? dataset.featureColumns : []}

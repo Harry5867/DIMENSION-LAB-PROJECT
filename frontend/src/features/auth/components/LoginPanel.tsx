@@ -12,12 +12,14 @@ import './login.css';
 export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { onClose: () => void; onSignIn: (token?: string | null) => void; authOptions: AuthOptions | null; googleError: boolean }) {
   const { t } = useWelcomeLanguage();
   const heading = useRef<HTMLHeadingElement>(null);
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const emailInput = useRef<HTMLInputElement>(null);
   const [emailEntered, setEmailEntered] = useState(false);
-  const [registering, setRegistering] = useState(false);
-  const [displayName, setDisplayName] = useState('');
-  const [confirmation, setConfirmation] = useState('');
+  const [invalidEmail, setInvalidEmail] = useState(false);
+  const [challenge, setChallenge] = useState('');
+  const [code, setCode] = useState('');
+  const codeInput = useRef<HTMLInputElement>(null);
   const [feedback, setFeedback] = useState('');
-  const [registered, setRegistered] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
@@ -25,47 +27,43 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
   const [submitting, setSubmitting] = useState(false);
   const loginRequest = useRef<AbortController | null>(null);
   useEffect(() => () => loginRequest.current?.abort(), []);
-  useEffect(() => { heading.current?.focus({ preventScroll: true }); }, [registering, emailEntered]);
+  useEffect(() => {
+    const target = challenge ? codeInput.current : emailEntered ? passwordInput.current : emailInput.current;
+    target?.focus({ preventScroll: true });
+  }, [challenge, emailEntered, authOptions]);
   const close = () => { loginRequest.current?.abort(); onClose(); };
   async function signIn() {
     if (loginRequest.current) return;
     const atlas = authOptions?.mode === 'atlas';
     setFeedback('');
-    setRegistered(false);
-    if (registering && (password !== confirmation || !displayName.trim() || [...password].length < 12
-      || new TextEncoder().encode(password).length > 512)) {
-      setFeedback(t('Enter a display name and matching passwords of at least 12 characters and at most 512 bytes.',
-        'Hãy nhập tên hiển thị và hai mật khẩu giống nhau, tối thiểu 12 ký tự và tối đa 512 byte.'));
-      return;
-    }
     const request = new AbortController();
     loginRequest.current = request;
     setSubmitting(true);
     setError(false);
     try {
-      const response = await fetchWithTimeout(registering ? '/api/auth/register' : '/api/auth/login', {
+      const response = await fetchWithTimeout(challenge ? '/api/auth/verify-email' : '/api/auth/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, ...(registering && { displayName }) }), signal: request.signal,
+        body: JSON.stringify(challenge ? { challenge, code } : { email, password, ...(atlas && { enroll: true }) }), signal: request.signal,
       }, atlas ? 15000 : 5000);
       if (atlas) {
         if (response.ok) {
           const data = getApiDataRecord(await response.json());
           if (request.signal.aborted) return;
-          if (registering && data?.registered === true) {
-            setRegistering(false);
-            setRegistered(true);
-            setPassword('');
-            setConfirmation('');
-            setVisible(false);
+          if (data?.verificationRequired === true && typeof data.challenge === 'string') {
+            setPassword(''); setVisible(false); setCode(''); setChallenge(data.challenge);
             return;
           }
-          if (!registering && data?.authenticated === true) {
+          if (data?.authenticated === true) {
             onSignIn();
             return;
           }
         }
-        if (response.status === 401) setFeedback(t('Email or password is incorrect.', 'Email hoặc mật khẩu chưa đúng.'));
-        else if (response.status === 409) setFeedback(t('This email is already registered.', 'Email này đã được đăng ký.'));
+        if (response.status === 401 && challenge) setFeedback(t('Invalid or expired code. Try again, or restart sign-in for a new code.', 'Mã sai hoặc đã hết hạn. Hãy thử lại hoặc đăng nhập lại để nhận mã mới.'));
+        else if (response.status === 503) setFeedback(t('Sign-in is temporarily unavailable. Try again later.', 'Tạm thời chưa thể đăng nhập. Hãy thử lại sau.'));
+        else if (response.status === 401) setFeedback(authOptions?.google
+          ? t('Email or password is incorrect. If you joined with Google, choose Continue with Google on the email screen.', 'Email hoặc mật khẩu chưa đúng. Nếu bạn đã dùng Google, hãy chọn Tiếp tục với Google.')
+          : t('Email or password is incorrect.', 'Email hoặc mật khẩu chưa đúng.'));
+        else if (response.status === 409) setFeedback(t('Restart sign-in with your existing account.', 'Hãy đăng nhập lại bằng tài khoản hiện có.'));
         else if (response.status === 429) setFeedback(t('Too many attempts. Try again in a minute.', 'Bạn đã thử quá nhiều lần. Hãy thử lại sau một phút.'));
         else if (response.status === 400) setFeedback(t('Check the information you entered.', 'Hãy kiểm tra lại thông tin đã nhập.'));
         else setFeedback(t('The request could not be completed. Try again.', 'Không thể hoàn tất yêu cầu. Hãy thử lại.'));
@@ -79,7 +77,10 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
         }
       }
       if (![502, 503, 504].includes(response.status) && (response.status !== 500 || response.headers.get('content-type')?.includes('application/json'))) {
-        if (!request.signal.aborted) setError(true);
+        if (!request.signal.aborted) {
+          if (response.status === 401) setError(true);
+          else setFeedback(t('The request could not be completed. Try again.', 'Không thể hoàn tất yêu cầu. Hãy thử lại.'));
+        }
         return;
       }
     } catch {
@@ -98,33 +99,31 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
     if (event.key === 'Escape' && !event.defaultPrevented) close();
   }}>
     <LoginBackdrop />
-    <button className="back-control back-control--icon login-back control-glass" type="button" aria-label="Back to welcome" onClick={close}>
+    <button className="login-back control-glass" type="button" aria-label="Back to welcome" onClick={close}>
       <ArrowLeft size={20} strokeWidth={1.7} aria-hidden="true" />
     </button>
     <div className="login-content">
       <header className="login-heading">
-        <h1 id="login-title" ref={heading} tabIndex={-1}>{!emailEntered ? t('Log in or sign up', 'Đăng nhập hoặc đăng ký') : registering ? t('Create account', 'Tạo tài khoản') : t('Sign in', 'Đăng nhập')}</h1>
+        <h1 id="login-title" ref={heading} tabIndex={-1}>{!emailEntered ? t('Log in or sign up', 'Đăng nhập hoặc đăng ký') : challenge ? t('Verify email', 'Xác minh email') : t('Sign in', 'Đăng nhập')}</h1>
         <TeamLogo label="Dimension Lab" />
       </header>
-      <p className="login-subtitle">{t('Explore your data and discover the patterns within.', 'Khám phá dữ liệu và tìm ra những quy luật bên trong.')}</p>
+      {emailEntered ? <p className="login-identity">{email}</p> : <p className="login-subtitle">{t('Explore your data and discover the patterns within.', 'Khám phá dữ liệu và tìm ra những quy luật bên trong.')}</p>}
       {authOptions ? <>
-      {googleError && !registering && <p role="alert" className="login-error">{t('Google sign-in could not be completed. Please try again.', 'Không thể hoàn tất đăng nhập Google. Hãy thử lại.')}</p>}
-      {registered && <p role="status">{t('Account created. Sign in with your password.', 'Đã tạo tài khoản. Hãy nhập mật khẩu để đăng nhập.')}</p>}
-      <form onSubmit={event => { event.preventDefault(); if (emailEntered) void signIn(); else setEmailEntered(true); }}>
-        {registering && <div className="login-field">
-          <label htmlFor="login-name">{t('Display name', 'Tên hiển thị')}</label>
-          <input id="login-name" autoComplete="name" maxLength={80} required value={displayName} onChange={event => setDisplayName(event.target.value)} />
-        </div>}
-        <div className="login-field login-email-field">
+      {googleError && !emailEntered && <p role="alert" className="login-error">{t('Google sign-in could not be completed. Please try again.', 'Không thể hoàn tất đăng nhập Google. Hãy thử lại.')}</p>}
+      {challenge && <p role="status">{t('Enter the six-digit code sent to your email.', 'Nhập mã sáu chữ số đã gửi đến email của bạn.')}</p>}
+      <form onSubmit={event => { event.preventDefault(); if (emailEntered) void signIn(); else { setEmail(email.trim()); setEmailEntered(true); } }}>
+        {!emailEntered && <div className="login-field login-email-field">
         <label htmlFor="login-email">{t('Email address', 'Địa chỉ email')}</label>
-        <input id="login-email" type="email" autoComplete="username" maxLength={254} value={email} required onChange={event => { setEmail(event.target.value); setError(false); }} aria-invalid={error} aria-describedby={error ? 'login-error' : undefined} />
-        </div>
-        {emailEntered && <div className="login-field">
+        <input ref={emailInput} id="login-email" type="email" pattern="[^@\s]+@[^@\s]+\.[^@\s]+" aria-invalid={invalidEmail} aria-describedby={invalidEmail ? "email-format-error" : undefined}
+          onInvalid={event => { event.preventDefault(); setInvalidEmail(true); event.currentTarget.focus(); }} autoComplete="username" maxLength={254} value={email} required onChange={event => { setEmail(event.target.value); setInvalidEmail(false); }} />
+        </div>}
+        {invalidEmail && !emailEntered && <p id="email-format-error" role="alert" className="login-error">{t('Enter a valid email address and try again.', 'Hãy nhập lại địa chỉ email hợp lệ.')}</p>}
+        {emailEntered && !challenge && <div className="login-field">
           <label htmlFor="login-password">{t('Password', 'Mật khẩu')}</label>
           <div className="login-password">
-            <input id="login-password" type={visible ? 'text' : 'password'} autoComplete={registering ? 'new-password' : 'current-password'}
-              placeholder={registering ? t('At least 12 characters', 'Tối thiểu 12 ký tự') : t('Enter your password', 'Nhập mật khẩu của bạn')}
-              required value={password} onChange={event => { setPassword(event.target.value); setError(false); }}
+            <input ref={passwordInput} id="login-password" type={visible ? 'text' : 'password'} autoComplete="current-password"
+              placeholder={t('Enter your password', 'Nhập mật khẩu của bạn')} minLength={authOptions.mode === 'atlas' ? 12 : undefined}
+              required value={password} onChange={event => { setPassword(event.target.value); setError(false); setFeedback(''); }}
               aria-invalid={error} aria-describedby={error ? 'login-error' : undefined} />
             <button className="login-visibility-toggle" type="button" aria-controls="login-password"
               aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(value => !value)}>
@@ -132,18 +131,18 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
             </button>
           </div>
         </div>}
-        {registering && <div className="login-field">
-          <label htmlFor="login-confirmation">{t('Confirm password', 'Xác nhận mật khẩu')}</label>
-          <input id="login-confirmation" type="password" autoComplete="new-password" required value={confirmation} onChange={event => setConfirmation(event.target.value)} />
+        {challenge && <div className="login-field">
+          <label htmlFor="email-code">{t('Verification code', 'Mã xác minh')}</label>
+          <input ref={codeInput} id="email-code" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => { setCode(event.target.value); setFeedback(''); }} />
         </div>}
         {feedback && <p role="alert" className="login-error">{feedback}</p>}
-        {error && <p role="alert" id="login-error" className="login-error">{t('Email or password is incorrect. Use the demo account below.', 'Email hoặc mật khẩu chưa đúng. Hãy dùng tài khoản mẫu bên dưới.')}</p>}
-        <button className={emailEntered ? 'login-submit' : 'login-submit liquid-glass'} type="submit" disabled={submitting}>{!emailEntered ? t('Continue', 'Tiếp tục') : submitting ? t('Please wait…', 'Vui lòng đợi…') : registering ? t('Create account', 'Tạo tài khoản') : t('Sign in', 'Đăng nhập')}</button>
+        {error && <p role="alert" id="login-error" className="login-error">{t('Email or password is incorrect. Use your demo credentials.', 'Email hoặc mật khẩu chưa đúng. Hãy dùng thông tin tài khoản mẫu.')}</p>}
+        <button className={emailEntered ? 'login-submit' : 'login-submit liquid-glass'} type="submit" disabled={submitting}>{submitting ? t('Please wait…', 'Vui lòng đợi…') : challenge ? t('Verify email', 'Xác minh email') : !emailEntered || authOptions.mode === 'atlas' ? t('Continue', 'Tiếp tục') : t('Sign in', 'Đăng nhập')}</button>
       </form>
-      {authOptions.mode === 'demo' && <div className="login-demo">
+      {!emailEntered && authOptions.mode === 'demo' && <div className="login-demo">
         <button type="button" className="login-option" disabled={submitting} onClick={() => { setEmailEntered(true); setEmail(DEMO_EMAIL); setPassword(DEMO_PASSWORD); setError(false); }}><span>{t('Use demo account', 'Dùng tài khoản mẫu')}</span></button>
       </div>}
-      {authOptions.google && <>
+      {!emailEntered && authOptions.google && <>
         <p className="login-divider">{t('or', 'hoặc')}</p>
         <a className="login-option login-google welcome-rim" href="/api/auth/google" aria-disabled={submitting || undefined} onClick={event => {
           if (submitting) event.preventDefault();
@@ -157,13 +156,6 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
           {t('Continue with Google', 'Tiếp tục với Google')}
         </a>
       </>}
-      {emailEntered && authOptions.registration && <p className="login-switch">
-        {registering ? t('Already have an account?', 'Đã có tài khoản?') : t('New to Dimension Lab?', 'Bạn mới đến Dimension Lab?')}{' '}
-        <button type="button" disabled={submitting} onClick={() => {
-          setRegistering(value => !value);
-          setPassword(''); setConfirmation(''); setVisible(false); setFeedback(''); setRegistered(false);
-        }}>{registering ? t('Sign in', 'Đăng nhập') : t('Create an account', 'Tạo tài khoản')}</button>
-      </p>}
       </> : <p role="status">{t('Checking sign-in options…', 'Đang kiểm tra phương thức đăng nhập…')}</p>}
     </div>
   </main>;

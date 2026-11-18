@@ -28,7 +28,8 @@ Bảng này liệt kê toàn bộ 22 thao tác `/api` trên `codex/integrate-aut
 | --- | --- | --- | --- |
 | `GET /api/auth/options` | Công khai | 200 | Đọc `mode`, `google` và `registration` để biết nút đăng nhập nào có thể dùng. |
 | `POST /api/auth/register` | Công khai khi bật đăng ký | 201 | Tạo tài khoản từ `email`, `password`, `displayName`. Backend cho đăng ký trong chế độ Atlas ngoài production. Tên hiển thị dài 1–80 ký tự sau khi cắt khoảng trắng. |
-| `POST /api/auth/login` | Công khai | 200 | Gửi `email` và `password`. Demo trả `token` và `user`, có thể chọn `role` demo. Atlas xác thực tài khoản và đặt cookie phiên. |
+| `POST /api/auth/login` | Công khai | 200 | Gửi `email` và `password`. Demo trả `token` và `user`, có thể chọn `role` demo. Atlas xác thực tài khoản và đặt cookie phiên. Với `enroll: true`, nếu chưa có mật khẩu thì gửi mã xác minh và trả 202 kèm `challenge`. |
+| `POST /api/auth/verify-email` | Công khai, cùng origin | 200 | Gửi `challenge` và mã 6 chữ số trong 10 phút. Backend tạo mật khẩu và cấp phiên sau khi xác minh. Cần đặt `RESEND_API_KEY` và `LAB_EMAIL_FROM` của người gửi đã xác minh trong môi trường backend. |
 | `GET /api/auth/google` | Công khai khi bật Google | 302 | Mở luồng đăng nhập. Trình duyệt được chuyển đến Google. |
 | `GET /api/auth/google/callback` | Luồng OAuth của Google | 303 | Xử lý phản hồi của Google. Khi thành công, backend đặt cookie và chuyển về Workspace. Khi xác thực OAuth thất bại, trình duyệt có thể được chuyển về Welcome. |
 | `GET /api/auth/me` | Phiên tùy chọn | 200 | Đọc `authenticated` và `user`. Khi chưa đăng nhập, `user` bằng `null`. |
@@ -61,6 +62,8 @@ Bảng này liệt kê toàn bộ 22 thao tác `/api` trên `codex/integrate-aut
 | --- | --- | --- | --- |
 | `POST /api/compute` | Đăng nhập | 200 | Gửi `matrix`, `groundTruth`, `reductionConfig`, `clusteringConfig`. Trả tọa độ, kết quả phân cụm và chỉ số đánh giá. Header `X-Cache` cho biết `HIT` hoặc `MISS`. |
 | `POST /api/unsupervised` | Đăng nhập | 200 | Gửi `kind`, `rows`, `features`, `options`. `anomaly` dùng Isolation Forest và thêm `normalization`. `association` dùng Apriori. Trả kết quả ngay. |
+| GET /api/unsupervised/history | Phiên Atlas | 200 | Đọc tối đa 5 lượt đã lưu của chính tài khoản. |
+| POST /api/unsupervised/history | Phiên Atlas | 201 | Lưu dataset, createdAt, task và result (tối đa 3 MiB/lượt), trả lịch sử mới nhất. |
 | `GET /api/experiments` | Đăng nhập | 200 | Lấy lịch sử thí nghiệm. Atlas lọc theo tài khoản, demo dùng lịch sử trong bộ nhớ. |
 | `POST /api/experiments` | Admin hoặc researcher | 201 | Lưu kết quả với `datasetId`, `datasetName`, `reductionMethod`, `clusteringMethod`, `k`, `silhouetteScore`, `ari` và `params` tùy chọn. Trả `id` của thí nghiệm. |
 

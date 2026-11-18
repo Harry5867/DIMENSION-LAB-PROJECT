@@ -24,13 +24,15 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
     if (expected?.$exists !== undefined) return (doc[key] !== undefined) === expected.$exists;
     if (expected?.$type) return doc[key] instanceof ObjectId;
     if (expected?.$gt) return doc[key] > expected.$gt;
+    if (expected?.$lt !== undefined) return doc[key] < expected.$lt;
+    if (expected?.$ne !== undefined) return doc[key] !== expected.$ne;
     return String(doc[key]) === String(expected);
   });
   const database = { command: async () => ({ ok: 1 }), collection: (name: string) => ({
     createIndex: async (fields: object, options: unknown) => { indexes.push([name, fields, options]); },
     find: (filter: object) => {
       let rows = documents(name).filter(doc => matches(doc, filter));
-      const cursor = { sort: () => cursor, skip: (offset: number) => { rows = rows.slice(offset); return cursor; },
+      const cursor = { sort: () => cursor, collation: () => cursor, skip: (offset: number) => { rows = rows.slice(offset); return cursor; },
         limit: (limit: number) => { rows = rows.slice(0, limit); return cursor; }, toArray: async () => rows };
       return cursor;
     },
@@ -46,6 +48,10 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
     findOneAndDelete: async (filter: object) => {
       const index = documents(name).findIndex(doc => matches(doc, filter));
       return index < 0 ? null : documents(name).splice(index, 1)[0];
+    },
+    updateOne: async (filter: object, update: { $inc: { attempts: number } }) => {
+      const doc = documents(name).find(item => matches(item, filter));
+      if (doc) doc.attempts += update.$inc.attempts;
     },
     insertOne: async (doc: any) => {
       if (failCollection === name) throw new MongoServerError({ message: 'simulated storage failure' });
@@ -82,7 +88,7 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   assert.ok(indexes.some(([name, fields, options]) => name === 'password_users' && 'email' in fields && (options as { unique?: boolean }).unique));
   assert.ok(indexes.some(([name, fields, options]) => name === 'sessions' && 'expiresAt' in fields && (options as any).expireAfterSeconds === 0));
 
-  await t.test('password accounts use Atlas sessions and can only access their own datasets', async () => {
+  await t.test('password accounts use Atlas sessions and can only access their own datasets', async accountTest => {
     const { createApp } = await import('../../backend/src/app');
     const server = createApp().listen(0, '127.0.0.1');
     try {
@@ -120,6 +126,41 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
       const me = async (cookie: string) => (await fetch(api + '/auth/me', { headers: { Cookie: cookie } })).json();
       assert.equal((await me(firstCookie)).data.user.name, first.displayName);
       assert.equal((await me(secondCookie)).data.user.name, second.displayName);
+      await accountTest.test('email codes provision new accounts and preserve the owner of Google workspaces', async sub => {
+        process.env.RESEND_API_KEY = 'test-mail-key';
+        process.env.LAB_EMAIL_FROM = 'lab@example.test';
+        const originalFetch = globalThis.fetch;
+        let code = '';
+        sub.mock.method(globalThis, 'fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          if (input !== 'https://api.resend.com/emails') return originalFetch(input, init);
+          const mail = JSON.parse(String(init?.body)) as { text: string };
+          code = /code is (\d{6})/.exec(mail.text)![1]!;
+          return Promise.resolve(new Response('{}', { status: 200 }));
+        });
+        for (const google of [false, true]) {
+          const email = google ? 'oauth@example.test' : 'manual@example.test';
+          const owner = google ? await auth.upsertGoogleUser({ sub: 'enrollment-test', email, displayName: 'Google user' }) : null;
+          const start = await post('/auth/login', { email, password, enroll: true });
+          assert.equal(start.status, 202);
+          assert.equal(start.headers.get('set-cookie'), null);
+          const { challenge } = (await start.json()).data;
+          const verify = (digits: string) => post('/auth/verify-email', { challenge, code: digits });
+          assert.equal((await verify(code === '000000' ? '111111' : '000000')).status, 401);
+          const verified = await verify(code);
+          assert.equal(verified.status, 200);
+          const verifiedCookie = verified.headers.getSetCookie()[0]!.split(';')[0]!;
+          const account = (await me(verifiedCookie)).data.user;
+          if (owner) assert.equal(account.id, String(owner._id));
+          assert.equal((await verify(code)).status, 401);
+          const subsequent = await login({ email, password, displayName: '' });
+          assert.equal((await me(subsequent)).data.user.id, account.id);
+          await post('/auth/logout', {}, verifiedCookie);
+          await post('/auth/logout', {}, subsequent);
+        }
+        collections.set('users', documents('users').filter(user => user.googleSub !== 'enrollment-test'));
+        delete process.env.RESEND_API_KEY;
+        delete process.env.LAB_EMAIL_FROM;
+      });
       const csv = 'a,b,c\r\n1,2,3\r\n4,5,6\r\n';
       const form = new FormData();
       form.append('file', new Blob([csv], { type: 'text/csv' }), 'password-auth-test.csv');

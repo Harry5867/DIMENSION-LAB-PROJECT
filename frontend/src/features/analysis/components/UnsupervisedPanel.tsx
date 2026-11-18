@@ -10,16 +10,17 @@ import type { SetupAccordion } from './ControlSidebar';
 import { DataPoint, NormalizationMethod, ParsedDataset } from '@dimension-lab/contracts';
 import type { AnalysisTask } from '@dimension-lab/algorithms/analysisTasks';
 import { isRecord } from '../../../shared/api/typeGuards';
-import { isAnalysisResult, readSavedAnalysisRuns, type SavedRun } from '../savedRuns';
+import { isAnalysisResult, type SavedRun } from '@dimension-lab/algorithms/savedRuns';
+import type { useAnalysisHistory } from '../useAnalysisHistory';
 import { AssociationRule } from '@dimension-lab/algorithms/apriori';
 import { csvText, downloadText } from '../../experiments/exportData';
 import './unsupervised.css';
 
 export interface AnalysisOverlay { scores?: number[]; rows: number[]; title: string }
-interface Props { active?: boolean; accordion?: SetupAccordion; projection: string; onRestoreSettings: (features: string[], normalization: NormalizationMethod) => void; dataset: ParsedDataset; features: string[]; normalization: NormalizationMethod; points: DataPoint[]; onSelect: (point: DataPoint) => void; onOverlay: (overlay: AnalysisOverlay | null) => void }
+interface Props { history: ReturnType<typeof useAnalysisHistory>; active?: boolean; accordion?: SetupAccordion; projection: string; onRestoreSettings: (features: string[], normalization: NormalizationMethod) => void; dataset: ParsedDataset; features: string[]; normalization: NormalizationMethod; points: DataPoint[]; onSelect: (point: DataPoint) => void; onOverlay: (overlay: AnalysisOverlay | null) => void }
 
 
-export function UnsupervisedPanel({ active = true, accordion, dataset, features, normalization, points, onSelect, onOverlay, projection, onRestoreSettings }: Props) {
+export function UnsupervisedPanel({ history, active = true, accordion, dataset, features, normalization, points, onSelect, onOverlay, projection, onRestoreSettings }: Props) {
   const { language, tr, t } = useAppLanguage();
   const panelId = useId();
   const [dashboardOpen, setDashboardOpen] = useState(false);
@@ -39,7 +40,7 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
   useEffect(() => { if (dashboardOpen && selectedRule) detailRef.current?.scrollIntoView({ block: 'nearest' }); }, [selectedRule]);
   useEffect(() => { if (dashboardOpen && inspectedRow !== null) rowRef.current?.scrollIntoView({ block: 'nearest' }); }, [inspectedRow]);
   useEffect(() => { setQuery(''); setInspectedRow(null); setSelectedRule(null); setRuleSupport(0); setRuleConfidence(0); setRuleLift(0); }, [kind]);
-  const [saved, setSaved] = useState<SavedRun[]>([]);
+  const { saved, saving, historyError } = history;
   const generation = useRef(0);
   const worker = useRef<Worker | null>(null), cache = useRef(new Map<string, SavedRun['result']>());
   useEffect(() => {
@@ -47,13 +48,7 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
     generation.current++; worker.current?.terminate(); worker.current = null;
     setBusy(false); setDashboardOpen(false);
   }, [active]);
-  useEffect(() => {
-    try {
-      const value: unknown = JSON.parse(localStorage.getItem('unsupervised-runs-v1') ?? '[]');
-      setSaved(readSavedAnalysisRuns(value));
-    } catch { /* Storage unavailable. */ }
-    return () => worker.current?.terminate();
-  }, []);
+  useEffect(() => () => worker.current?.terminate(), []);
   const task: AnalysisTask = kind === 'anomaly' ? { kind, rows: dataset.rawRows, features, normalization, options: { trees, sampleSize, contamination, seed } }
     : { kind, rows: dataset.rawRows, features: columns, options: { support, confidence, lift, bins, maxSize } };
   const dirty = run !== null && JSON.stringify(task) !== JSON.stringify(run.task);
@@ -97,7 +92,14 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
     if (highlight) onOverlay({ rows, title: both ? 'Rows matching both rule sides' : 'Rows matching antecedent' });
   };
   const exportRun = () => { if (run) downloadText(JSON.stringify(run, null, 2), 'unsupervised-result.json', 'application/json'); };
-  const save = () => { if (!run) return; try { const next = [run, ...saved].slice(0, 5); localStorage.setItem('unsupervised-runs-v1', JSON.stringify(next)); setSaved(next); setStatus('Saved in this browser.'); } catch { setError('Browser storage is full or unavailable. Export JSON to retain this result.'); } };
+  const save = async () => {
+    if (!run) return;
+    setError(''); setStatus('');
+    try {
+      await history.save(run);
+      setStatus(history.persistent ? 'Saved to your account.' : 'Saved for this demo session.');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save analysis.'); }
+  };
   const restore = (r: SavedRun) => {
     if (JSON.stringify(r.task.rows) !== JSON.stringify(dataset.rawRows)) { setError('Select the original dataset before restoring this run.'); return; }
     setKind(r.task.kind); setExpanded(true); setRun(r); setDashboardOpen(true); setInspectedRow(null); setQuery(''); onOverlay(r.result.kind === 'anomaly' ? { scores: r.result.scores, rows: r.result.anomalies.flatMap((v, i) => v ? [i] : []), title: 'Isolation Forest · anomaly score' } : null); setSelectedRule(null); setError('');
@@ -151,7 +153,8 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
       {busy && <button onClick={() => { generation.current++; worker.current?.terminate(); worker.current = null; setBusy(false); setStatus('Cancelled.'); }}>{tr("Cancel")}</button>}
       {error && <p role="alert">{tr(error)}</p>}{status && <p role="status">{tr(status)}</p>}
       {run && run.task.kind === kind && <button type="button" className="unsupervised-run" onClick={() => setDashboardOpen(true)}>{tr("Open results dashboard")}</button>}
-      {!!saved.length && <details><summary>{tr("Local analysis history (")}{saved.length}/5)</summary>{saved.map((r, i) => <p key={i}><button disabled={busy} onClick={() => restore(r)}>{r.dataset} · {tr(r.task.kind)} · {new Date(r.createdAt).toLocaleString(language)}</button></p>)}</details>}
+      {historyError && <p role="alert">{historyError}</p>}
+      {!!saved.length && <details><summary>{tr("Analysis history (")}{saved.length}/5)</summary>{saved.map((r, i) => <p key={i}><button disabled={busy} onClick={() => restore(r)}>{r.dataset} · {tr(r.task.kind)} · {new Date(r.createdAt).toLocaleString(language)}</button></p>)}</details>}
     </div>;
   const stats = result?.kind === 'anomaly' ? [
     { label: 'Rows analyzed', value: result.scores.length.toLocaleString(), hint: 'Source rows in the completed run' },
@@ -167,7 +170,7 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
   const dashboard = active && dashboardOpen && run && <AnalysisDashboard title={run.result.kind === 'anomaly' ? tr("Anomaly Detection · Isolation Forest") : tr("Association Rules · Apriori")} dataset={dataset.id === 'cancer_wdbc' || dataset.id === 'wholesale_customers' ? tr(run.dataset) : run.dataset} createdAt={run.createdAt} kind={run.result.kind} stats={stats} onClose={() => setDashboardOpen(false)}>
       {run && <section><p className="analysis-projection-note">{tr("3D view:")} {tr(projection)}{tr(". Anomaly scores use the selected input features; rule membership uses original rows. Removed points are excluded from the 3D view.")}</p><p><strong>{tr("Viewing")} {run.result.kind === 'anomaly' ? 'Isolation Forest' : 'Apriori'}</strong> · {new Date(run.createdAt).toLocaleString(language)}{dirty ? tr(" · Settings changed; rerun to update") : ''}</p>
         <details><summary>{tr("Completed run configuration")}</summary><pre>{JSON.stringify({ ...run.task, rows: `${run.task.rows.length} source rows` }, null, 2)}</pre></details>
-        <p>{tr("CSV buttons distinguish the complete result from the currently filtered rows. JSON includes the completed configuration and result.")}</p><div className="unsupervised-tabs"><button onClick={save}>{tr("Save locally")}</button><button onClick={exportRun}>{tr("Export JSON")}</button><button onClick={() => onOverlay(null)}>{tr("Clear 3D overlay")}</button></div>
+        <p>{tr("CSV buttons distinguish the complete result from the currently filtered rows. JSON includes the completed configuration and result.")}</p><div className="unsupervised-tabs"><button disabled={saving} onClick={() => void save()}>{tr(history.persistent ? "Save to account" : "Save for this session")}</button><button onClick={exportRun}>{tr("Export JSON")}</button><button onClick={() => onOverlay(null)}>{tr("Clear 3D overlay")}</button></div>
         {result?.kind === 'anomaly' && <>
           <details><summary>{tr("Missing-value handling")}</summary><p>{tr("Invalid or missing numeric values are replaced with the mean of the valid values in the same column before normalization.")}</p>{result.preprocessing ? <ResultTable rows={result.preprocessing} label={tr("Numeric preprocessing")} headers={['Feature', 'Values replaced', 'Replacement mean']} render={p => <tr key={p.feature}><td>{p.feature}</td><td>{p.missing}</td><td>{p.mean.toPrecision(6)}</td></tr>} /> : <p>{tr("Detailed preprocessing counts are unavailable for this older saved run. Rerun to refresh.")}</p>}</details>
           <p>{result.anomalies.filter(Boolean).length} / {result.scores.length} {tr("anomalies (")}{(100 * result.anomalies.filter(Boolean).length / result.scores.length).toFixed(1)}{tr("%). Threshold:")} {result.threshold.toFixed(4)}{tr(". Ties at the threshold are included.")}</p>

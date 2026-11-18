@@ -28,14 +28,15 @@
   opacity: .58;
   pointer-events: none;
 }
-.login-content { position:relative; width:min(100%, 540px); }
-.login-heading { display:flex; justify-content:center; align-items:center; gap:12px; --team-logo-width:clamp(34px,4.5vw,52px); }
-.login-heading h1 { font:550 clamp(26px,3.6vw,40px)/1.15 var(--font-sans); letter-spacing:-.035em; }
+.login-content { position:relative; width:min(100%, 500px); }
+.login-heading { display:flex; justify-content:center; align-items:center; gap:12px; --team-logo-width:clamp(32px,4.3vw,48px); }
+.login-heading h1 { font:550 clamp(25px,3.4vw,37px)/1.15 var(--font-sans); letter-spacing:-.035em; }
 .login-heading h1:focus { outline:none; }
-.login-subtitle { text-align:center; margin:22px 0 clamp(34px,5vh,52px); font-size:clamp(16px,1.8vw,20px); }
+.login-subtitle { text-align:center; margin:26px 0 clamp(38px,5.5vh,56px); font-size:clamp(16px,1.7vw,19px); }
+.login-identity { display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:8px 14px; margin:26px 0 38px; overflow-wrap:anywhere; color:var(--text-muted); }
 .login-email-field { position:relative; }
 .login-field.login-email-field label { position:absolute; z-index:1; left:24px; top:0; transform:translateY(-50%); background:var(--welcome-background); padding:0 6px; color:var(--accent-primary); }
-.login-content form { display: grid; gap: 18px; }
+.login-content form { display: grid; gap: 22px; }
 .login-field { min-width: 0; }
 .login-field label { display: block; margin-bottom: 5px; font-size: 14px; font-weight: 600; }
 .login-field input {
@@ -114,7 +115,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 26px 0;
+  margin: 30px 0;
   text-transform: uppercase;
   color: var(--text-muted);
   font-size: 13px;
@@ -145,8 +146,8 @@
 
 @media (max-height: 760px) {
   .login-page { padding-block-end: 28px; }
-  .login-content form { gap: 16px; }
-  .login-divider { margin-block: 18px; }
+  .login-content form { gap: 19px; }
+  .login-divider { margin-block: 22px; }
 }
 @media (forced-colors: active) {
   .login-backdrop { display: none; }

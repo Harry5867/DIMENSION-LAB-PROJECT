@@ -100,6 +100,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           email: { type: 'string', format: 'email' },
           password: { type: 'string', format: 'password' },
           role: { type: 'string', enum: ['admin', 'researcher', 'viewer'], description: 'Demo mode only.' },
+          enroll: { type: 'boolean', description: 'Request email verification for first-time password sign-in in Atlas mode.' },
         },
       },
       RegisterRequest: {
@@ -205,7 +206,15 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ['Auth'], summary: 'Sign in with email and password', security: [],
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/LoginRequest' } } } },
-        responses: { '200': successResponse('Signed in.'), '401': errorResponse('Credentials are invalid.'), '403': errorResponse('Origin is not allowed.') },
+        description: 'With enroll=true in Atlas mode, a first-time password user receives an email code.',
+        responses: { '200': successResponse('Signed in.'), '202': successResponse('Verification required; includes a challenge.'), '401': errorResponse('Credentials are invalid.'), '403': errorResponse('Origin is not allowed.') },
+      },
+    },
+    '/api/auth/verify-email': {
+      post: {
+        tags: ['Auth'], summary: 'Complete first-time password sign-in', security: [],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['challenge', 'code'], properties: { challenge: { type: 'string' }, code: { type: 'string', pattern: '^[0-9]{6}$' } } } } } },
+        responses: { '200': successResponse('Email verified and signed in.'), '401': errorResponse('Code expired or invalid.'), '429': errorResponse('Too many attempts.') },
       },
     },
     '/api/auth/register': {
@@ -300,6 +309,14 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: 'Requires a signed-in user. The task payload is validated by the analysis-task schema.',
         requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: true } } } },
         responses: { '200': successResponse('Unsupervised analysis result.'), '400': errorResponse('Task is invalid.'), ...authResponses },
+      },
+    },
+    '/api/unsupervised/history': {
+      get: { tags: ['Analysis'], summary: 'List your five most recent saved analysis runs (Atlas)', responses: { '200': successResponse('Private analysis history.'), ...authResponses } },
+      post: {
+        tags: ['Analysis'], summary: 'Save an analysis run to your account',
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['dataset', 'createdAt', 'task', 'result'] } } } },
+        responses: { '201': successResponse('Updated private history.'), '400': errorResponse('Invalid run.'), '413': errorResponse('Run exceeds 3 MiB.'), ...authResponses },
       },
     },
     '/api/experiments': {

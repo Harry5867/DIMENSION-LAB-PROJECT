@@ -1,5 +1,5 @@
-import { parseAnalysisTask, type AnalysisTask, type AnalysisTaskResult } from '@dimension-lab/algorithms/analysisTasks';
-import { isRecord } from '../../shared/api/typeGuards';
+import { parseAnalysisTask, type AnalysisTask, type AnalysisTaskResult } from './analysisTasks';
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 type AnomalyResult = Extract<AnalysisTaskResult, { kind: 'anomaly' }>;
 type SavedAnalysisResult = Exclude<AnalysisTaskResult, AnomalyResult>

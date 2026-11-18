@@ -40,6 +40,30 @@ test('uses the welcome rim on Google sign-in and glass on the return arrow', asy
   await expectGlass(page.getByRole('button', { name: 'Back to welcome' }));
 });
 
+test('manual enrollment verifies a code after the password step and keeps Google on the email screen', async ({ page }) => {
+  await page.route('**/api/auth/options', route => route.fulfill({ json: { data: { mode: 'atlas', google: true, registration: false } } }));
+  await page.route('**/api/auth/login', route => route.fulfill({ status: 202, json: { data: { verificationRequired: true, challenge: 'test-challenge' } } }));
+  await page.route('**/api/auth/verify-email', route => {
+    const verified = route.request().postDataJSON().code === '123456';
+    return route.fulfill({ status: verified ? 200 : 401, json: { data: { authenticated: verified } } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Continue with Google' })).toBeVisible();
+  await page.getByLabel('Email address').fill('new-user@example.test');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByLabel('Password', { exact: true }).fill('a new test password');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  const code = page.getByLabel('Verification code');
+  await expect(code).toBeFocused();
+  await code.fill('000000');
+  await code.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Invalid or expired code');
+  await code.fill('123456');
+  await code.press('Enter');
+  await expect(page).toHaveURL(/#\/overview$/);
+});
+
 test('signs in to the workspace with the demo account', async ({ page }) => {
   await signIn(page);
   await expect(page.getByRole('link', { name: 'Model', exact: true })).toBeVisible();
@@ -48,9 +72,15 @@ test('signs in to the workspace with the demo account', async ({ page }) => {
 test('rejects incorrect credentials, restores a valid session, and signs out', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
+  await page.getByLabel('Email address', { exact: true }).fill('reader@invalid');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('Enter a valid email address and try again.');
+  await expect(page.getByLabel('Password', { exact: true })).toHaveCount(0);
   await page.getByLabel('Email address', { exact: true }).fill(DEMO_EMAIL);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   const password = page.getByLabel('Password', { exact: true });
+  await expect(password).toBeFocused();
+  await expect(page.getByLabel('Email address', { exact: true })).toHaveCount(0);
   await password.fill('wrong-demo-password');
   await page.getByRole('button', { name: 'Show password' }).click();
   await expect(password).toHaveAttribute('type', 'text');
@@ -59,7 +89,7 @@ test('rejects incorrect credentials, restores a valid session, and signs out', a
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Email or password is incorrect.');
 
-  await page.getByRole('button', { name: 'Use demo account', exact: true }).click();
+  await password.fill(DEMO_PASSWORD);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   const navigation = page.getByRole('navigation', { name: 'Workspace sections' });
   await expect(navigation).toBeVisible();

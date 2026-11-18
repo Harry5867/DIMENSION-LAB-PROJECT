@@ -20,7 +20,7 @@ export function configureMiddleware(app: Express) {
   app.use('/api', (req: AuthenticatedRequest, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
     if (req.method === 'GET' && ['/health', '/auth/options', '/auth/google', '/auth/google/callback'].includes(req.path)) return next();
-    if (req.method === 'POST' && ['/auth/login', '/auth/register'].includes(req.path)) return next();
+    if (req.method === 'POST' && ['/auth/login', '/auth/register', '/auth/verify-email'].includes(req.path)) return next();
     const authorize = () => {
       if (req.method === 'GET' && req.path === '/auth/me') return next();
       requireAuth(req, res, next);
@@ -35,7 +35,7 @@ export function configureMiddleware(app: Express) {
       authorize();
     }).catch(next);
   });
-  app.use(['/api/auth/login', '/api/auth/register'], express.json({ limit: '8kb' }));
+  app.use(['/api/auth/login', '/api/auth/register', '/api/auth/verify-email'], express.json({ limit: '8kb' }));
   app.use(express.json({ limit: '32mb' }));
 
   app.use((req, res, next) => {

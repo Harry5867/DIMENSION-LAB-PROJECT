@@ -4,6 +4,8 @@ import { DEMO_EMAIL, DEMO_PASSWORD } from './packages/contracts/src/demo';
 const apiPort = process.env.LAB_E2E_API_PORT || '5000';
 const webPort = process.env.LAB_E2E_WEB_PORT || '3000';
 const baseURL = `http://127.0.0.1:${webPort}`;
+const historyMongoPort = process.env.LAB_E2E_HISTORY_MONGO_PORT;
+if (historyMongoPort && !/^\d{1,5}$/.test(historyMongoPort)) throw new Error('Expected a local MongoDB port.');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -20,7 +22,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      name: 'Demo API',
+      name: historyMongoPort ? 'Account history API' : 'Demo API',
       command: 'npm exec -- tsx backend/src/index.ts',
       url: `http://127.0.0.1:${apiPort}/api/health`,
       reuseExistingServer: false,
@@ -31,6 +33,12 @@ export default defineConfig({
         LAB_STORAGE_MODE: 'demo',
         LAB_AUTH_EMAIL: DEMO_EMAIL,
         LAB_AUTH_PASSWORD: DEMO_PASSWORD,
+        ...(historyMongoPort && {
+          LAB_STORAGE_MODE: 'atlas',
+          LAB_ALLOWED_ORIGIN: baseURL,
+          MONGODB_URI: `mongodb://127.0.0.1:${historyMongoPort}`,
+          MONGODB_DB: 'history_browser_test',
+        }),
       },
     },
     {

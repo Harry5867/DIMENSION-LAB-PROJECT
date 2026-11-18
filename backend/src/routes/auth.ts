@@ -1,7 +1,7 @@
 import { isRecord } from '../http/validation';
 import { atlasMode } from '../database/atlas';
 import { beginGoogleSignIn, finishGoogleSignIn, googleEnabled, issueAtlasSession, protectCookieWrite, revokeAtlasSession } from '../auth/googleAuth';
-import { passwordRegistrationEnabled, registerPasswordUser, verifyPasswordUser } from '../auth/passwordAuth';
+import { finishEnrollment, passwordRegistrationEnabled, registerPasswordUser, verifyPasswordUser } from '../auth/passwordAuth';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '@dimension-lab/contracts/demo';
 import { sendSuccess } from '../http/response';
 import { BadRequestError, UnauthorizedError } from '../http/errors';
@@ -9,6 +9,14 @@ import { AuthenticatedRequest, issueSession, revokeSession } from '../auth/auth'
 import type { Express } from 'express';
 
 export function registerAuthRoutes(app: Express) {
+  app.post('/api/auth/verify-email', async (req, res, next) => {
+    try {
+      protectCookieWrite(req);
+      const user = await finishEnrollment(req);
+      await issueAtlasSession(req, res, user, user.linkedGoogle ? undefined : 'password');
+      sendSuccess(res, { authenticated: true });
+    } catch (error) { next(error); }
+  });
   app.post('/api/auth/register', async (req, res, next) => {
     try {
       protectCookieWrite(req);
@@ -21,8 +29,9 @@ export function registerAuthRoutes(app: Express) {
     try {
       if (atlasMode) {
         protectCookieWrite(req);
-        const user = await verifyPasswordUser(req);
-        await issueAtlasSession(req, res, user, 'password');
+        const user = await verifyPasswordUser(req, isRecord(req.body) && req.body.enroll === true);
+        if ('challenge' in user) return sendSuccess(res, { verificationRequired: true, challenge: user.challenge }, 202);
+        await issueAtlasSession(req, res, user, user.linkedGoogle ? undefined : 'password');
         return sendSuccess(res, { authenticated: true });
       }
       const { email, password, role = 'admin' } = isRecord(req.body) ? req.body : {};
