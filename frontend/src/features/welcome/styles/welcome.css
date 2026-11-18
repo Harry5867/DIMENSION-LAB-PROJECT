@@ -1,4 +1,4 @@
-.welcome-page { --text-main:#202720; --text-muted:#4a5568; --explore-primary:#007a6e; --accent-primary:#007a6e; --bg-panel:#fff; --bg-interactive:#f4f6f3; --border-subtle:#dce3df; position:relative; isolation:isolate; color:var(--text-main); background:#fff; height:100dvh; display:flex; flex-direction:column; overflow:auto; overflow-x:hidden; }
+.welcome-page { --text-main:#202720; --text-muted:#4a5568; --explore-primary:#007a6e; --accent-primary:var(--welcome-action); --bg-panel:#fff; --bg-interactive:#f4f6f3; --border-subtle:#dce3df; position:relative; isolation:isolate; color:var(--text-main); background:var(--welcome-background); height:100dvh; display:flex; flex-direction:column; overflow:auto; overflow-x:hidden; }
 .welcome-surface { display:contents; }
 .welcome-login-layer {
   position:fixed; inset:0; z-index:10; overflow:auto; overscroll-behavior:contain;

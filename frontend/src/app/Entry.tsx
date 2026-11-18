@@ -23,6 +23,8 @@ export function Entry() {
   const [authOptions, setAuthOptions] = useState<AuthOptions | null>(null);
   const [signOutError, setSignOutError] = useState(false);
   const signingOut = useRef(false);
+  const [logoutPending, setLogoutPending] = useState(false);
+  const signOutVeil = useRef<HTMLDivElement>(null);
   const [hash, setHash] = useState(() => window.location.hash);
   const atWelcome = isWelcomeRoute(hash);
   const route = portalRoute(hash);
@@ -190,16 +192,19 @@ export function Entry() {
     if (!signedIn || !atWelcome || signingOut.current || entrancePhaseRef.current !== 'idle') return;
     setSignOutError(false);
     if (authOptions?.mode === 'atlas' || getAccessToken()) {
-      signingOut.current = true;
+      signingOut.current = true; setLogoutPending(true);
       try {
         const response = await fetchWithTimeout('/api/auth/logout', { method: 'POST' });
         if (!response.ok && response.status !== 401) throw new Error('Sign-out failed.');
       } catch {
         setSignOutError(true);
         return;
-      } finally { signingOut.current = false; }
+      } finally { signingOut.current = false; setLogoutPending(false); }
     }
     clearDemoSession();
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      signOutVeil.current?.animate([{ opacity: .55 }, { opacity: 0 }], { duration: 260, easing: 'ease-out' });
+    }
     setSignedIn(false); setModelVisited(false);
   };
   useEffect(() => {
@@ -243,7 +248,7 @@ export function Entry() {
   }, []);
 
   return <>
-    <div className="entry-screen" inert={transitioning} onClickCapture={captureReturn}
+    <div className="entry-screen" inert={transitioning || logoutPending} onClickCapture={captureReturn}
       data-transition={entrancePhase !== 'idle' ? entranceDirection : undefined}
       data-transition-phase={entrancePhase !== 'idle' ? entrancePhase : undefined}
       data-transition-motion={exitReducedMotion ? 'gentle' : 'full'}>
@@ -257,6 +262,7 @@ export function Entry() {
         <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} persistent={authOptions?.mode === 'atlas'} /></Suspense>
       </div>}
     </div>
+    <div ref={signOutVeil} className="welcome-signout-veil" aria-hidden="true" />
     {signOutError && <div className="workspace-notice fixed bottom-4 right-4 z-[70] rounded border bg-[var(--bg-panel)] p-3" role="alert">{t('Could not sign out. Please try again.', 'Chưa thể đăng xuất. Hãy thử lại.')}</div>}
     {entrancePhase !== 'idle' && <>
       <WorkspaceEntrance phase={entrancePhase} onComplete={advanceEntrance} direction={entranceDirection}

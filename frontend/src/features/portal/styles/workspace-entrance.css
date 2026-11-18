@@ -1,4 +1,5 @@
 .entry-screen { display:contents; }
+.welcome-signout-veil { position:fixed; inset:0; z-index:200; background:var(--welcome-background); opacity:0; pointer-events:none; }
 /* Full motion was explicitly chosen for this entrance. Duration overrides are
    restricted to these temporary layers; other reduced-motion rules stay intact. */
 .entry-curtain {
@@ -71,7 +72,7 @@
   .entry-gateway-caption { width:86%; margin-top:24px; font-size:8px; gap:12px; }
 }
 
-/* Sign out closes the gateway around the map before revealing home. */
+/* Returning to Welcome closes the gateway around the map before revealing home. */
 .entry-curtain--out.entry-curtain--covering { animation:entry-exit-clock 700ms linear both; animation-duration:700ms !important; }
 .entry-curtain--out.entry-curtain--covering .entry-gateway-hole {
   animation:entry-gateway-close 450ms 250ms cubic-bezier(.65,0,.35,1) both;

@@ -48,6 +48,7 @@ test('rejects incorrect credentials, restores a valid session, and signs out', a
   await expect(signOut).toBeVisible();
   await enter.click();
   await expect(navigation).toBeVisible();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.getByRole('button', { name: 'Back to welcome', exact: true }).click();
   await expect(enter).toBeVisible();
   await signOut.click();

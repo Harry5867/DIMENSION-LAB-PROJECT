@@ -38,16 +38,16 @@ export function WorkspaceEntrance({ phase, onComplete, direction = 'in', center,
     return () => observer.disconnect();
   }, [centerX, centerY, direction]);
   const field = <svg x={cx} y={cy} width="1" height="1" overflow="visible">
-    <g className="entry-gateway-rays" stroke="#6b8d78" strokeWidth=".8" opacity=".24">
+    <g className="entry-gateway-rays" stroke="var(--welcome-action)" strokeWidth=".8" opacity=".24">
       {rays.map((ray, index) => <line key={index} {...ray} />)}
     </g>
-    <g className="entry-gateway-rings" fill="none" stroke="#74937d" strokeWidth="1">
+    <g className="entry-gateway-rings" fill="none" stroke="var(--welcome-action)" strokeWidth="1">
       <circle r="155" opacity=".4" /><circle r="250" opacity=".65" />
       <circle r="345" opacity=".3" /><circle r="425" opacity=".15" />
       <ellipse rx="345" ry="120" transform="rotate(-24)" opacity=".55" />
       <ellipse rx="150" ry="345" transform="rotate(-24)" opacity=".35" />
     </g>
-    <g className="entry-gateway-nodes" fill="#4b6e59">
+    <g className="entry-gateway-nodes" fill="var(--welcome-action)">
       {nodes.map(node => <g key={node.label}>
         <circle cx={node.x} cy={node.y} r="3" />
         <text x={node.x + 12} y={node.y + 4}>{node.label}</text>
@@ -60,11 +60,11 @@ export function WorkspaceEntrance({ phase, onComplete, direction = 'in', center,
     <svg className="entry-gateway-field" width="100%" height="100%" aria-hidden="true">
       <defs>
         <radialGradient id={`${id}-paper`} cx={cx} cy={cy} r="85%">
-          <stop offset="0" stopColor={theme === 'dark' ? '#294638' : '#dbe9df'} /><stop offset=".45" stopColor={theme === 'dark' ? '#1b3025' : '#e7ece1'} />
-          <stop offset="1" stopColor={theme === 'dark' ? '#101815' : '#f2efe6'} />
+          <stop offset="0" stopColor="color-mix(in srgb, var(--welcome-action) 12%, var(--welcome-background))" /><stop offset=".45" stopColor="color-mix(in srgb, var(--welcome-action) 5%, var(--welcome-background))" />
+          <stop offset="1" stopColor="var(--welcome-background)" />
         </radialGradient>
         <pattern id={`${id}-grid`} width="42" height="42" patternUnits="userSpaceOnUse">
-          <path d="M42 0H0V42" fill="none" stroke="#6e8d7a" strokeWidth=".65" opacity=".16" />
+          <path d="M42 0H0V42" fill="none" stroke="var(--welcome-action)" strokeWidth=".65" opacity=".16" />
         </pattern>
         <mask id={`${id}-iris`} x="0" y="0" width="100%" height="100%" maskUnits="userSpaceOnUse" style={{ maskType: 'luminance' }}>
           <rect width="100%" height="100%" fill="white" />

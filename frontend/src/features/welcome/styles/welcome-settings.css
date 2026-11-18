@@ -1,6 +1,8 @@
+:root { --welcome-background:#fff; --welcome-action:#007a6e; }
+:root[data-theme=dark] { --welcome-background:#091713; --welcome-action:#96e6cb; }
 .welcome-page { color-scheme:light; }
 .welcome-page[data-theme=dark] {
-  --welcome-background:#091713; --text-main:#edf6ef; --text-muted:#bccfc5; --explore-primary:#96e6cb; --accent-primary:#96e6cb;
+  --text-main:#edf6ef; --text-muted:#bccfc5; --explore-primary:#96e6cb; --accent-primary:var(--welcome-action);
   --bg-panel:#18251f; --bg-interactive:#203128; --border-subtle:#354a3e;
   background:var(--welcome-background); color-scheme:dark;
 }
