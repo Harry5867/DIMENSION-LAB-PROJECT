@@ -489,8 +489,9 @@ test('malformed and unknown profiles stay in About while other sign-in destinati
 test('prepared data stories reproduce PCA and seeded GMM from the exact bundled source files', () => {
   assert.deepEqual(caseStudies.map(story => story.rowCount), [569, 440]);
   for (const story of caseStudies) {
-    const csv = readFileSync(new URL('../../public/' + story.file, import.meta.url), 'utf8');
-    assert.equal(createHash('sha256').update(csv).digest('hex'), story.sourceHash);
+    const csv = readFileSync(new URL('../../public/' + story.file, import.meta.url), 'utf8')
+      .replace(/\r\n?/g, '\n');
+    assert.equal(createHash('sha256').update(csv, 'utf8').digest('hex'), story.sourceHash);
     const dataset = parseCSVString(csv);
     const pca = computePCA(extractFeatureMatrix(dataset.rawRows, story.features, 'z-score'));
     const gmm = computeGMM(pca.coordinates, story.configuration);
