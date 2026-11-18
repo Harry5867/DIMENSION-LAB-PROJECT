@@ -89,26 +89,26 @@
  background:#59deb6; border-color:#8ff4d5; color:#0b231a;
 }
 /* The glow is painted once; only its opacity changes during interaction. */
-#root .welcome-page .welcome-primary::before {
+#root .welcome-page .welcome-rim::before {
  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; pointer-events:none;
  box-shadow:0 10px 22px #007a6e38,0 3px 9px #007a6e25; opacity:var(--pill-glow); transition:opacity 240ms ease;
 }
-#root .welcome-page .welcome-primary::after {
+#root .welcome-page .welcome-rim::after {
  content:''; position:absolute; inset:-1px; z-index:0; border-radius:inherit; padding:1px; pointer-events:none;
  background:linear-gradient(110deg,transparent 36%,#d1fff755 43%,#fff 49%,#b8fff3c4 53%,transparent 63%) 100% 0 / 260% 100%;
  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0); -webkit-mask-composite:xor;
  mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0); mask-composite:exclude;
  box-shadow:none; opacity:0; transition:opacity 180ms ease;
 }
-#root .welcome-page .welcome-primary:focus-visible:not(:disabled) { --pill-glow:1; outline:2px solid #007a6e; outline-offset:4px; }
-#root .welcome-page .welcome-primary:focus-visible:not(:disabled)::after { opacity:1; }
-#root .welcome-page[data-motion=full] .welcome-primary:focus-visible:not(:disabled)::after { animation:welcome-pill-rim 750ms cubic-bezier(.22,.61,.36,1) both; animation-duration:750ms !important; }
+#root .welcome-page .welcome-rim:focus-visible:not(:disabled,[aria-disabled=true]) { --pill-glow:1; outline:2px solid #007a6e; outline-offset:4px; }
+#root .welcome-page .welcome-rim:focus-visible:not(:disabled,[aria-disabled=true])::after { opacity:1; }
+#root .welcome-page[data-motion=full] .welcome-rim:focus-visible:not(:disabled,[aria-disabled=true])::after { animation:welcome-pill-rim 750ms cubic-bezier(.22,.61,.36,1) both; animation-duration:750ms !important; }
 @media (hover:hover) and (pointer:fine) {
- #root .welcome-page .welcome-primary:hover:not(:disabled) { --pill-glow:1; box-shadow:inset 0 1px 0 #ffffff8c,inset 0 -1px 1px #003c3638,0 3px 8px #007a6e1a; }
- #root .welcome-page .welcome-primary:hover:not(:disabled)::after { opacity:1; }
- #root .welcome-page[data-motion=full] .welcome-primary:hover:not(:disabled)::after { animation:welcome-pill-rim 750ms cubic-bezier(.22,.61,.36,1) both; animation-duration:750ms !important; }
+ #root .welcome-page .welcome-rim:hover:not(:disabled,[aria-disabled=true]) { --pill-glow:1; box-shadow:inset 0 1px 0 #ffffff8c,inset 0 -1px 1px #003c3638,0 3px 8px #007a6e1a; }
+ #root .welcome-page .welcome-rim:hover:not(:disabled,[aria-disabled=true])::after { opacity:1; }
+ #root .welcome-page[data-motion=full] .welcome-rim:hover:not(:disabled,[aria-disabled=true])::after { animation:welcome-pill-rim 750ms cubic-bezier(.22,.61,.36,1) both; animation-duration:750ms !important; }
 }
-#root .welcome-page[data-motion=full] .welcome-primary:active:not(:disabled) { scale:.985; }
+#root .welcome-page[data-motion=full] .welcome-rim:active:not(:disabled,[aria-disabled=true]) { scale:.985; }
 #root .welcome-page .welcome-primary:disabled { opacity:.5; box-shadow:none; }
 #root .welcome-page .welcome-primary:disabled::before, #root .welcome-page .welcome-primary:disabled::after { content:none; }
 @keyframes welcome-pill-rim { from { background-position:100% 0; } to { background-position:-100% 0; } }
@@ -171,15 +171,15 @@
 .welcome-page[data-motion=full] .welcome-title-line > span { animation:welcome-text-reveal 700ms 80ms cubic-bezier(.16,1,.3,1) both; animation-duration:700ms !important; }
 .welcome-page[data-motion=full] .welcome-title-line:nth-child(2) > span { animation-delay:180ms; }
 .welcome-page[data-motion=gentle] .welcome-title-line > span { animation:none; }
-#root .welcome-page[data-motion=gentle] .welcome-primary { transition:none; }
-#root .welcome-page[data-motion=gentle] .welcome-primary::before, #root .welcome-page[data-motion=gentle] .welcome-primary::after { transition:none; animation:none; }
+#root .welcome-page[data-motion=gentle] .welcome-rim { transition:none; }
+#root .welcome-page[data-motion=gentle] .welcome-rim::before, #root .welcome-page[data-motion=gentle] .welcome-rim::after { transition:none; animation:none; }
 @media(prefers-reduced-motion:reduce) {
  .welcome-signout-confirm-backdrop, .welcome-signout-confirm-dialog { animation:none; }
 }
 @media (forced-colors:active) {
  #root .welcome-page .welcome-primary { border:1px solid ButtonText; background:ButtonFace; color:ButtonText; box-shadow:none; }
- #root .welcome-page .welcome-primary::before, #root .welcome-page .welcome-primary::after { display:none; }
- #root .welcome-page .welcome-primary:focus-visible { outline-color:Highlight; }
+ #root .welcome-page .welcome-rim::before, #root .welcome-page .welcome-rim::after { display:none; }
+ #root .welcome-page .welcome-rim:focus-visible { outline-color:Highlight; }
 }
 
 #root .welcome-page :is(.login-page,.welcome-signout-confirm-actions) .liquid-glass {

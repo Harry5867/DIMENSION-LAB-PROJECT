@@ -27,13 +27,16 @@ async function expectGlass(control: Locator) {
   })).toBe(true);
 }
 
-test('shows the glass highlight on Google sign-in and the return arrow', async ({ page }) => {
+test('uses the welcome rim on Google sign-in and glass on the return arrow', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.route('**/api/auth/options', route => route.fulfill({
     json: { data: { mode: 'atlas', google: true, registration: true } },
   }));
   await page.goto('/');
   await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
-  await expectGlass(page.getByRole('link', { name: 'Continue with Google' }));
+  const google = page.getByRole('link', { name: 'Continue with Google' });
+  await google.hover();
+  await expect.poll(() => google.evaluate(link => getComputedStyle(link, '::after').animationName)).toBe('welcome-pill-rim');
   await expectGlass(page.getByRole('button', { name: 'Back to welcome' }));
 });
 

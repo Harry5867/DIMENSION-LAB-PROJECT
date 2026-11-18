@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import type { AuthOptions } from '@dimension-lab/contracts';
 import { DEMO_EMAIL, DEMO_PASSWORD, validDemoCredentials } from '@dimension-lab/contracts/demo';
 import { useWelcomeLanguage } from '../../../shared/providers/WelcomeLanguage';
@@ -99,7 +99,7 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
   }}>
     <LoginBackdrop />
     <button className="back-control back-control--icon login-back control-glass" type="button" aria-label="Back to welcome" onClick={close}>
-      <ChevronLeft size={20} strokeWidth={1.7} aria-hidden="true" />
+      <ArrowLeft size={20} strokeWidth={1.7} aria-hidden="true" />
     </button>
     <div className="login-content">
       <header className="login-heading">
@@ -145,7 +145,7 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
       </div>}
       {authOptions.google && <>
         <p className="login-divider">{t('or', 'hoặc')}</p>
-        <a className="login-option control-glass" href="/api/auth/google" aria-disabled={submitting || undefined} onClick={event => {
+        <a className="login-option login-google welcome-rim" href="/api/auth/google" aria-disabled={submitting || undefined} onClick={event => {
           if (submitting) event.preventDefault();
         }}>
           <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">

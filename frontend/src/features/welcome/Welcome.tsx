@@ -173,7 +173,7 @@ export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOpt
         <p className="welcome-description">{intro.description}</p>
         </div>
         <div className="welcome-actions">
-          <button ref={enterRef} className="welcome-primary welcome-enter" onClick={openLogin}>
+          <button ref={enterRef} className="welcome-primary welcome-enter welcome-rim" onClick={openLogin}>
             {t('ENTER THE LAB', 'VÀO PHÒNG LAB')}
           </button>
         </div>
