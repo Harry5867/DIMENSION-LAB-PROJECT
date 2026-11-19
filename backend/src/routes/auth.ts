@@ -1,6 +1,7 @@
 import { isRecord } from '../http/validation';
 import { atlasMode } from '../database/atlas';
-import { beginGoogleSignIn, finishGoogleSignIn, googleEnabled, revokeGoogleSession } from '../auth/googleAuth';
+import { beginGoogleSignIn, finishGoogleSignIn, googleEnabled, issueAtlasSession, protectCookieWrite, revokeAtlasSession } from '../auth/googleAuth';
+import { finishEnrollment, passwordRegistrationEnabled, registerPasswordUser, verifyPasswordUser } from '../auth/passwordAuth';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '@dimension-lab/contracts/demo';
 import { sendSuccess } from '../http/response';
 import { BadRequestError, UnauthorizedError } from '../http/errors';
@@ -8,10 +9,31 @@ import { AuthenticatedRequest, issueSession, revokeSession } from '../auth/auth'
 import type { Express } from 'express';
 
 export function registerAuthRoutes(app: Express) {
-  // Đăng nhập giả lập hoặc chuyển đổi vai trò (admin, researcher, viewer)
-  app.post('/api/auth/login', (req, res, next) => {
+  app.post('/api/auth/verify-email', async (req, res, next) => {
     try {
-      if (atlasMode) throw new UnauthorizedError('Sign in with Google to access persistent storage.');
+      protectCookieWrite(req);
+      const user = await finishEnrollment(req);
+      await issueAtlasSession(req, res, user, user.linkedGoogle ? undefined : 'password');
+      sendSuccess(res, { authenticated: true });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/auth/register', async (req, res, next) => {
+    try {
+      protectCookieWrite(req);
+      await registerPasswordUser(req);
+      sendSuccess(res, { registered: true }, 201);
+    } catch (error) { next(error); }
+  });
+
+  app.post('/api/auth/login', async (req, res, next) => {
+    try {
+      if (atlasMode) {
+        protectCookieWrite(req);
+        const user = await verifyPasswordUser(req, isRecord(req.body) && req.body.enroll === true);
+        if ('challenge' in user) return sendSuccess(res, { verificationRequired: true, challenge: user.challenge }, 202);
+        await issueAtlasSession(req, res, user, user.linkedGoogle ? undefined : 'password');
+        return sendSuccess(res, { authenticated: true });
+      }
       const { email, password, role = 'admin' } = isRecord(req.body) ? req.body : {};
       const expectedEmail = process.env.LAB_AUTH_EMAIL || DEMO_EMAIL;
       const expectedPassword = process.env.LAB_AUTH_PASSWORD || (process.env.NODE_ENV === 'production' ? undefined : DEMO_PASSWORD);
@@ -35,7 +57,9 @@ export function registerAuthRoutes(app: Express) {
     }
   });
 
-  app.get('/api/auth/options', (_req, res) => sendSuccess(res, { mode: atlasMode ? 'atlas' : 'demo', google: googleEnabled() }));
+  app.get('/api/auth/options', (_req, res) => sendSuccess(res, {
+    mode: atlasMode ? 'atlas' : 'demo', google: googleEnabled(), registration: passwordRegistrationEnabled(),
+  }));
   app.get('/api/auth/google', (req, res, next) => {
     res.setHeader('Referrer-Policy', 'no-referrer');
     void beginGoogleSignIn(req, res).catch(next);
@@ -51,12 +75,13 @@ export function registerAuthRoutes(app: Express) {
     sendSuccess(res, {
       authenticated: Boolean(req.user),
       user: req.user || null,
+      ...(req.user && { email: atlasMode ? req.user.username : process.env.LAB_AUTH_EMAIL || DEMO_EMAIL }),
     });
   });
 
   app.post('/api/auth/logout', async (req, res, next) => {
     try {
-      if (atlasMode) await revokeGoogleSession(req, res);
+      if (atlasMode) await revokeAtlasSession(req, res);
       else revokeSession(req);
       sendSuccess(res, { authenticated: false });
     } catch (error) { next(error); }

@@ -1,14 +1,13 @@
 import { useAppLanguage } from "../../../shared/providers/WelcomeLanguage";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen } from 'lucide-react';
-import { associationExample, exampleTransactions, theoryHref, theorySelection, type ChapterId, type TheoryMethod } from '../data/theory';
-import { getTheoryChapters } from '../data/localizedTheory';
+import { associationExample, exampleTransactions, theoryChapters as chapters, theoryHref, theorySelection, type ChapterId, type TheoryMethod } from '../data/theory';
 import { TheoryIllustration } from './TheoryIllustrations';
 import { ThemeToggle } from '../../../shared/ui/ThemeToggle';
 import '../styles/theory.css';
 
 const coverAngles = [-7, -2, 2, 7];
-const coverMethods = ['pca', 'kmeans', 'isolation', 'apriori'] as const;
+const coverMethods = { reduction: 'pca', clustering: 'kmeans', anomaly: 'isolation', association: 'apriori' } as const;
 const pipeline: Record<ChapterId, [string, string]> = {
   reduction: ['N × D numeric features', 'N × 3 coordinates'],
   clustering: ['Projected coordinates', 'Group assignments'],
@@ -58,8 +57,7 @@ function MethodContent({ method, chapterId }: { method: TheoryMethod; chapterId:
 }
 
 export function Theory() {
-  const { language, tr, t } = useAppLanguage();
-  const chapters = useMemo(() => getTheoryChapters(language), [language]);
+  const { tr, t } = useAppLanguage();
   const [hash, setHash] = useState(() => window.location.hash);
   const selection = theorySelection(hash);
   const catalog = useRef<HTMLDivElement>(null), readerTitle = useRef<HTMLHeadingElement>(null);
@@ -86,11 +84,10 @@ export function Theory() {
 
   if (selection) {
     const index = chapters.findIndex(item => item.id === selection.chapter.id);
-    const chapter = chapters[index];
-    const method = chapter.methods.find(item => item.id === selection.method.id) ?? chapter.methods[0];
-    const nextChapter = chapters[(index + 1) % chapters.length];
+    const { chapter, method } = selection;
+    const nextChapter = chapters[(index + 1) % chapters.length] ?? chapter;
     return <div className="theory-scope theory-reader">
-      <div className="portal-page-tools"><a className="theory-back-link" href="#/theory"><ArrowLeft size={15} aria-hidden="true" /> {tr("All chapters")}</a><ThemeToggle /></div>
+      <div className="portal-page-tools"><a className="back-control" href="#/theory"><ArrowLeft size={15} aria-hidden="true" /> {tr("All chapters")}</a><ThemeToggle /></div>
       <header className="theory-reader-heading portal-content-heading"><p className="theory-section-label"><span data-section-number>{chapter.number}</span> {tr("/ THE THEORY COLLECTION")}</p><h1 ref={readerTitle} tabIndex={-1}>{chapter.title}</h1><p>{chapter.subtitle}</p></header>
       <nav className="theory-method-nav" aria-label={tr("Algorithms in this chapter")}>{chapter.methods.map(item => <a key={item.id} href={theoryHref(chapter.id, item.id)} aria-current={method.id === item.id ? 'page' : undefined}>{item.name}<ArrowUpRight size={14} aria-hidden="true" /></a>)}</nav>
       <MethodContent method={method} chapterId={chapter.id} />
@@ -99,14 +96,14 @@ export function Theory() {
   }
 
   return <div className="theory-scope theory-catalog" ref={catalog}>
-    <div className="portal-page-tools"><a className="theory-back-link" href="#/overview"><ArrowLeft size={15} aria-hidden="true" /> {tr("Go back")}</a><ThemeToggle /></div>
+    <div className="portal-page-tools"><a className="back-control" href="#/overview"><ArrowLeft size={15} aria-hidden="true" /> {tr("Go back")}</a><ThemeToggle /></div>
     <header className="theory-catalog-heading portal-content-heading"><div className="theory-catalog-meta"><p className="theory-section-label"><span data-section-number>01</span> {tr("/ THEORY")}</p><p className="theory-section-label">{tr("04 CHAPTERS / 08 METHODS")}</p></div><h1>{tr("Theory")}</h1><p>{tr("Understand the algorithms.")}</p></header>
     <nav className="theory-books" aria-label={tr("Theory chapters")}>{chapters.map((chapter, index) => <div key={chapter.id} className="theory-book-slot"
       style={{ '--book-angle': coverAngles[index] + 'deg', '--book-order': index === 1 ? 4 : index === 2 ? 3 : 2, '--book-offset': index === 1 || index === 2 ? '-8px' : '12px' } as CSSProperties}><a
       href={theoryHref(chapter.id)} data-chapter={chapter.id} className={'theory-book theory-book--' + chapter.id}
       aria-label={t('Open ' + chapter.title + ' chapter', 'Mở chương ' + chapter.title)}
       onClick={() => { returnScroll.current = catalog.current?.closest('.portal-page')?.scrollTop ?? 0; }}>
-      <div className="theory-book-frame"><div className="theory-book-meta"><span>{chapter.number}</span><span aria-hidden="true">＋</span></div><div className="theory-book-title"><h2>{chapter.coverTitle}</h2>{chapter.id === 'reduction' && <p>{tr("Dimensionality Reduction")}</p>}</div><TheoryIllustration method={coverMethods[index]} cover /><div className="theory-book-methods">{chapter.methods.map(item => item.name).join(' · ')}</div><span className="theory-book-open">{tr("Explore chapter")} <ArrowUpRight size={16} aria-hidden="true" /></span></div>
+      <div className="theory-book-frame"><div className="theory-book-meta"><span>{chapter.number}</span><span aria-hidden="true">＋</span></div><div className="theory-book-title"><h2>{chapter.coverTitle}</h2>{chapter.id === 'reduction' && <p>{tr("Dimensionality Reduction")}</p>}</div><TheoryIllustration method={coverMethods[chapter.id]} cover /><div className="theory-book-methods">{chapter.methods.map(item => item.name).join(' · ')}</div><span className="theory-book-open">{tr("Explore chapter")} <ArrowUpRight size={16} aria-hidden="true" /></span></div>
     </a></div>)}</nav>
     <p className="theory-catalog-hint"><BookOpen size={15} aria-hidden="true" /><span>{tr("Four perspectives. Select a chapter to explore its input, process and output.")}</span></p>
   </div>;

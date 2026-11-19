@@ -24,7 +24,7 @@ export function createAtmosphereRuntime(canvas: HTMLCanvasElement, variant: Atmo
     ctx.globalCompositeOperation = 'source-over'; ctx.lineCap = 'round';
     const count = particleCount();
     for (let index = 0; index < count; index++) {
-      const particle = particles[index];
+      const particle = particles[index]!;
       if (variant === 'welcome') {
         const opacity = atmosphereMask(variant, particle.x, particle.y, width, height) * preset.opacity;
         if (opacity < .01) continue;
@@ -59,8 +59,9 @@ export function createAtmosphereRuntime(canvas: HTMLCanvasElement, variant: Atmo
       focusY = atmosphereEase(focusY, signal.current.focusY, dt);
       const count = particleCount();
       for (let i = 0; i < count; i++) {
-        advanceAtmosphereParticle(particles[i], variant, dt, speed, width, height);
-        if (variant === 'workspace' && atmosphereParticleExpired(particles[i], width, height, focusX, focusY)) {
+        const particle = particles[i]!;
+        advanceAtmosphereParticle(particle, variant, dt, speed, width, height);
+        if (variant === 'workspace' && atmosphereParticleExpired(particle, width, height, focusX, focusY)) {
           particles[i] = createAtmosphereParticle(variant, width, height, random, false, { focusX, focusY });
         }
       }

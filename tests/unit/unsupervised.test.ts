@@ -1,5 +1,6 @@
 import { numericValue } from '@dimension-lab/algorithms/numericValue';
 import { compareRow, describeItem, ruleRows } from '../../frontend/src/features/analysis/analysisPresentation';
+import { readSavedAnalysisRuns } from '@dimension-lab/algorithms/savedRuns';
 import { runAnalysisTask } from '@dimension-lab/algorithms/analysisTasks';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -113,4 +114,23 @@ test('Task validation rejects duplicated or absent features and nonfinite source
   assert.throws(() => parseAnalysisTask({ ...task, features: ['x', 'x'] }), /unique/);
   assert.throws(() => parseAnalysisTask({ ...task, features: ['missing'] }), /present/);
   assert.throws(() => parseAnalysisTask({ ...task, rows: [{ x: Infinity }] }));
+});
+
+test('Saved anomaly results restore without preprocessing metadata and reject invalid scores', () => {
+  const task = { kind: 'anomaly', rows: [{ x: 1 }, { x: 5 }], features: ['x'], normalization: 'none',
+    options: { trees: 5, sampleSize: 2, contamination: 0.1, seed: 42 } } as const;
+  const saved = { dataset: 'Demo', createdAt: '2026-01-01T00:00:00.000Z', task,
+    result: { kind: 'anomaly', scores: [0.3, 0.8], anomalies: [false, true], threshold: 0.8 } };
+  const invalid = { ...saved, result: { ...saved.result, scores: [0.3, '0.8'] } };
+  assert.deepEqual(readSavedAnalysisRuns([invalid, saved]), [saved]);
+});
+
+test('Saved association results reject malformed rules and keep valid worker output', () => {
+  const task = { kind: 'association' as const, rows: [{ a: 'red', b: 'large' }, { a: 'blue', b: 'small' }],
+    features: ['a', 'b'], options: { support: 0.5, confidence: 0.5, lift: 0, maxSize: 2, bins: 2 } };
+  const result = runAnalysisTask(task);
+  assert.equal(result.kind, 'association');
+  const saved = { dataset: 'Demo', createdAt: '2026-01-01T00:00:00.000Z', task, result };
+  const invalid = { ...saved, result: { ...result, rules: [{ antecedent: [42], consequent: [] }] } };
+  assert.deepEqual(readSavedAnalysisRuns([invalid, saved]), [saved]);
 });

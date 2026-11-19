@@ -37,7 +37,7 @@ export function parseStories(input: unknown): StoryRecord[] {
   });
 }
 export async function loadStories(signal?: AbortSignal) {
-  const response = await fetchWithTimeout(new URL('../../data/stories-demo.json', import.meta.url).href, { signal }, 12000);
+  const response = await fetchWithTimeout(new URL('../../data/stories-demo.json', import.meta.url).href, signal ? { signal } : {}, 12000);
   if (!response.ok) throw new Error('Story collection unavailable');
   return parseStories(await response.json());
 }
@@ -69,7 +69,7 @@ export function projectStoryGroups(groups: StoryGroup[], orientation: Quaternion
     .sort((a, b) => a.group.key.localeCompare(b.group.key));
   const size = frame.compact ? 40 : 48, step = size + 8;
   const placed: Array<{ x: number; y: number }> = [];
-  const offsets = [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1], [-2, 0], [2, 0], [0, -2], [0, 2], [-2, -1], [2, -1], [-2, 1], [2, 1]];
+  const offsets = [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1], [-2, 0], [2, 0], [0, -2], [0, 2], [-2, -1], [2, -1], [-2, 1], [2, 1]] as const;
   for (const item of visible) {
     for (const [dx, dy] of offsets) {
       const x = item.anchorX + dx * step, y = item.anchorY + dy * step;

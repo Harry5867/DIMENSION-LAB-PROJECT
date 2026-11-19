@@ -11,6 +11,10 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+export function getApiDataRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) && isRecord(value.data) ? value.data : undefined;
+}
+
 function isDataValue(value: unknown): value is DataValue {
   return value === null
     || typeof value === 'string'
@@ -18,7 +22,7 @@ function isDataValue(value: unknown): value is DataValue {
     || typeof value === 'boolean';
 }
 
-function isDatasetRow(value: unknown): boolean {
+export function isDatasetRow(value: unknown): value is Record<string, DataValue> {
   return isRecord(value) && Object.values(value).every(isDataValue);
 }
 

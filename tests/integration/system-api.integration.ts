@@ -5,13 +5,15 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '@dimension-lab/contracts/demo';
+import { sampleDatasets } from '@dimension-lab/contracts';
 import { MAX_CSV_BYTES, parseCSVString } from '@dimension-lab/algorithms/dataParser';
 import { reduceMatrix } from '@dimension-lab/algorithms/projection';
 import { computeDBSCAN } from '@dimension-lab/algorithms/dbscan';
 
 test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract', { timeout: 45_000 }, async () => {
   const port = process.env.LAB_TEST_PORT || '5318';
-  const api = 'http://127.0.0.1:' + port + '/api';
+  const origin = 'http://127.0.0.1:' + port;
+  const api = origin + '/api';
   const server = spawn(process.execPath, ['--import', 'tsx', 'backend/src/index.ts'], {
     env: { ...process.env, NODE_ENV: 'test', LAB_STORAGE_MODE: 'demo', PORT: port, LAB_BIND_HOST: '127.0.0.1',
       MONGODB_URI: 'mongodb://127.0.0.1:1/dimension_lab_test', LAB_AUTH_EMAIL: DEMO_EMAIL, LAB_AUTH_PASSWORD: DEMO_PASSWORD },
@@ -41,6 +43,18 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
       assert.ok(i < 80 && server.exitCode === null, 'Isolated server failed to start: ' + logs);
       await delay(100);
     }
+    const openApiResponse = await fetch(origin + '/openapi.json');
+    assert.equal(openApiResponse.status, 200);
+    const openApi = await openApiResponse.json() as { openapi: string; paths: Record<string, unknown> };
+    assert.equal(openApi.openapi, '3.0.3');
+    assert.ok(openApi.paths['/api/compute']);
+    assert.ok(openApi.paths['/api/datasets/upload']);
+    assert.equal(openApi.paths['/api/v1/analyses'], undefined, 'docs must not describe unmounted branch APIs');
+    const docsResponse = await fetch(origin + '/docs/');
+    assert.equal(docsResponse.status, 200);
+    assert.match(docsResponse.headers.get('content-type') || '', /text\/html/);
+    assert.match(await docsResponse.text(), /swagger-ui/);
+
     const health = await call('/health');
     assert.match(health.data.database, /In-Memory/);
     const crossOrigin = await fetch(api + '/auth/login', {
@@ -68,15 +82,26 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
     assert.equal((await call('/auth/me', 'GET', undefined, admin)).data.authenticated, true);
     assert.equal((await call('/cache', 'DELETE')).status, 401);
     assert.equal((await call('/cache', 'DELETE', undefined, viewer)).status, 403);
-    assert.equal((await call('/datasets/cancer_wdbc', 'DELETE', undefined, admin)).status, 403);
-
-    for (const [id, file, rows] of [['cancer_wdbc', 'data.csv', 569], ['wholesale_customers', 'wholesale.csv', 440]] as const) {
-      const local = parseCSVString(readFileSync('public/' + file, 'utf8'));
-      const result = await call('/datasets/' + id, 'GET', undefined, viewer);
-      assert.equal(result.data.totalRows, rows);
+    const sampleList = await call('/datasets', 'GET', undefined, viewer);
+    assert.deepEqual(sampleList.data.filter((item: { is_preloaded?: boolean }) => item.is_preloaded)
+      .map((item: { id: string }) => item.id).sort(), sampleDatasets.map(sample => sample.id).sort());
+    for (const sample of sampleDatasets) {
+      const source = readFileSync('public/' + sample.assetPath, 'utf8');
+      const local = parseCSVString(source);
+      const samplePath = '/datasets/' + sample.id;
+      const result = await call(samplePath, 'GET', undefined, viewer);
+      assert.equal(result.data.totalRows, sample.total_rows);
       assert.deepEqual(result.data.rawRows, local.rawRows);
       assert.deepEqual(result.data.features, local.featureColumns);
       assert.equal(result.data.labelColumn, local.labelColumn);
+      assert.equal((await call(samplePath, 'PATCH', { name: 'Renamed' }, admin)).status, 403);
+      assert.equal((await call(samplePath, 'DELETE', undefined, admin)).status, 403);
+      const preview = await call(samplePath + '/preview', 'GET', undefined, viewer);
+      assert.deepEqual(preview.data.rows, local.rawRows.slice(0, 20));
+      const download = await fetch(api + samplePath + '/download', { headers: { Authorization: 'Bearer ' + viewer } });
+      assert.equal(download.status, 200);
+      assert.ok(download.headers.get('Content-Disposition')?.includes(sample.filename));
+      assert.equal(await download.text(), source);
     }
     const content = 'id,label,a,b,c\n001,A,0,2,3\n002,B,,3,4\n003,B,2,4,5';
     assert.equal((await call('/datasets/upload', 'POST', csv(content))).status, 401);
@@ -158,10 +183,18 @@ test('Atlas startup failure returns 503 and cannot fall back to demo authenticat
     assert.equal(health.status, 503);
     assert.equal((await health.json()).error.code, 'STORAGE_UNAVAILABLE');
     const options = await fetch(api + '/auth/options');
-    assert.deepEqual((await options.json()).data, { mode: 'atlas', google: false });
+    assert.deepEqual((await options.json()).data, { mode: 'atlas', google: false, registration: true });
     assert.equal((await fetch(api + '/auth/google')).status, 503);
     assert.equal((await fetch(api + '/auth/login', { method: 'POST',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD }) })).status, 401);
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD }) })).status, 403);
+    for (const endpoint of ['register', 'login']) {
+      const response = await fetch(api + '/auth/' + endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:3000' },
+        body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD, displayName: 'Test' }),
+      });
+      assert.equal(response.status, 503);
+      assert.equal(response.headers.get('set-cookie'), null);
+    }
     assert.equal((await fetch(api + '/datasets', { headers: { Cookie: 'lab_session=' + 'a'.repeat(43) } })).status, 503);
     assert.equal((await fetch(api + '/auth/logout', { method: 'POST', headers: { Origin: 'http://localhost:4000' } })).status, 403);
   } finally {

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { MongoServerError } from 'mongodb';
 import * as oidc from 'openid-client';
-import { atlasDatabase, atlasMode, type AtlasSession, type AtlasUser } from '../database/atlas';
+import { atlasDatabase, atlasMode, type AtlasProfile, type AtlasSession, type AtlasUser } from '../database/atlas';
 import { AppError, ForbiddenError } from '../http/errors';
 
 const callbackPath = '/api/auth/google/callback';
@@ -18,18 +18,31 @@ const readCookie = (req: Request, name: string) => req.headers.cookie?.split(';'
 function redirectUri() {
   try {
     const uri = new URL(process.env.GOOGLE_REDIRECT_URI ?? '');
-    if (uri.username || uri.password || uri.search || uri.hash || uri.pathname !== callbackPath) return;
+    if (uri.username || uri.password || uri.search || uri.hash || uri.pathname !== callbackPath) return undefined;
     if (uri.protocol === 'https:' || (uri.protocol === 'http:' && uri.hostname === 'localhost'
       && process.env.NODE_ENV !== 'production')) return uri;
   } catch { /* Invalid configuration. */ }
+  return undefined;
 }
 
 export const googleEnabled = () => Boolean(atlasMode && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && redirectUri());
-const cookieOptions = (path: string) => ({ path, httpOnly: true, secure: redirectUri()?.protocol === 'https:', sameSite: 'lax' as const });
+function applicationOrigin() {
+  const configured = process.env.LAB_ALLOWED_ORIGIN;
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      if (url.origin === configured && (url.protocol === 'https:'
+        || (url.protocol === 'http:' && process.env.NODE_ENV !== 'production'))) return url.origin;
+    } catch { /* Ignore invalid origins. */ }
+  }
+  return redirectUri()?.origin ?? (process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:3000');
+}
+
+const cookieOptions = (path: string) => ({ path, httpOnly: true, secure: applicationOrigin()?.startsWith('https:') ?? false, sameSite: 'lax' as const });
 
 export function protectCookieWrite(req: Request) {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)
-    && (!redirectUri() || req.headers.origin !== redirectUri()?.origin)) {
+    && (!applicationOrigin() || req.headers.origin !== applicationOrigin())) {
     throw new ForbiddenError('This request must come from the application origin.');
   }
 }
@@ -67,12 +80,17 @@ export async function beginGoogleSignIn(_req: Request, res: Response) {
   }).href);
 }
 
-export async function upsertGoogleUser(profile: { sub: string; email: string; displayName: string }) {
+export async function upsertGoogleUser(profile: { sub: string; email: string; displayName: string; authoritativeEmail?: boolean }) {
   const users = atlasDatabase().collection<AtlasUser>('users');
   const now = new Date();
   const filter = { googleSub: profile.sub };
-  const update = { $set: { email: profile.email, displayName: profile.displayName, lastLoginAt: now },
-    $setOnInsert: { role: 'researcher' as const, createdAt: now } };
+  const fields = { email: profile.email, displayName: profile.displayName, lastLoginAt: now };
+  const previous = await users.findOneAndUpdate(filter, { $set: fields }, { returnDocument: 'after' });
+  if (previous) return previous;
+  const verified = profile.authoritativeEmail && await atlasDatabase().collection<AtlasProfile & { verifiedEmail: boolean }>('password_users')
+    .findOne({ email: profile.email.trim().toLowerCase(), verifiedEmail: true });
+  const owner = verified && !await users.findOne({ _id: verified._id }) ? verified : undefined;
+  const update = { $set: fields, $setOnInsert: { ...(owner && { _id: owner._id }), role: 'researcher' as const, createdAt: now } };
   try {
     return await users.findOneAndUpdate(filter, update, { upsert: true, returnDocument: 'after' });
   } catch (error) {
@@ -100,18 +118,24 @@ export async function finishGoogleSignIn(req: Request, res: Response) {
   }).then(result => result.claims(), () => undefined);
   if (!claims?.sub || typeof claims.email !== 'string' || claims.email_verified !== true) return failed();
   const user = await upsertGoogleUser({ sub: claims.sub, email: claims.email,
+    authoritativeEmail: claims.email.toLowerCase().endsWith('@gmail.com') || typeof claims.hd === 'string',
     displayName: typeof claims.name === 'string' ? claims.name : claims.email });
   if (!user) throw new AppError('Could not save the user profile.', 503, 'STORAGE_UNAVAILABLE');
-  await revokeGoogleSession(req, res);
-  const secret = token();
-  await db.collection<AtlasSession>('sessions').insertOne({
-    tokenHash: hash(secret), userId: user._id, expiresAt: new Date(Date.now() + sessionLifetime),
-  });
-  res.cookie(sessionCookie, secret, { ...cookieOptions('/api'), maxAge: sessionLifetime });
+  await issueAtlasSession(req, res, user);
   res.redirect(303, new URL('/#/overview', uri).href);
 }
 
-export async function googleSessionUser(req: Request) {
+export async function issueAtlasSession(req: Request, res: Response, user: AtlasProfile, provider?: 'password') {
+  const db = atlasDatabase();
+  const secret = token();
+  await db.collection<AtlasSession>('sessions').insertOne({
+    tokenHash: hash(secret), userId: user._id, expiresAt: new Date(Date.now() + sessionLifetime), ...(provider && { provider }),
+  });
+  await deleteAtlasSession(req);
+  res.cookie(sessionCookie, secret, { ...cookieOptions('/api'), maxAge: sessionLifetime });
+}
+
+export async function atlasSessionUser(req: Request) {
   const secret = readCookie(req, sessionCookie);
   if (!secret || !/^[\w-]{43}$/.test(secret)) return null;
   const db = atlasDatabase();
@@ -119,14 +143,19 @@ export async function googleSessionUser(req: Request) {
     tokenHash: hash(secret), expiresAt: { $gt: new Date() },
   });
   if (!session) return null;
-  const user = await db.collection<AtlasUser>('users').findOne({ _id: session.userId });
+  const user = await db.collection<AtlasProfile>(session.provider === 'password' ? 'password_users' : 'users')
+    .findOne({ _id: session.userId }, { projection: { email: 1, displayName: 1, role: 1 } });
   return user && { id: user._id.toHexString(), username: user.email, name: user.displayName, role: user.role };
 }
 
-export async function revokeGoogleSession(req: Request, res: Response) {
+async function deleteAtlasSession(req: Request) {
   const secret = readCookie(req, sessionCookie);
   if (secret && /^[\w-]{43}$/.test(secret)) {
     await atlasDatabase().collection<AtlasSession>('sessions').deleteOne({ tokenHash: hash(secret) });
   }
+}
+
+export async function revokeAtlasSession(req: Request, res: Response) {
+  await deleteAtlasSession(req);
   res.clearCookie(sessionCookie, cookieOptions('/api'));
 }

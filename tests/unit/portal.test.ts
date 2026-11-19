@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { portalSections, portalRoute, isModelRoute, isWelcomeRoute } from '../../frontend/src/shared/navigation/portalNavigation';
+import { portalSections, portalRoute, isModelRoute, isWelcomeRoute, aboutProfileSlug, aboutTeamHref, aboutTeamSelection, signInDestination } from '../../frontend/src/shared/navigation/portalNavigation';
+import { teamMembers } from '../../frontend/src/features/portal/data/teamMembers';
 import caseStudies from '../../frontend/src/features/portal/data/case-studies.json';
 import { parseCSVString, extractFeatureMatrix } from '@dimension-lab/algorithms/dataParser';
 import { computePCA } from '@dimension-lab/algorithms/pca';
@@ -17,7 +18,7 @@ import { associationExample, exampleTransactions, theoryChapters, theoryHref, th
 import { computeApriori } from '@dimension-lab/algorithms/apriori';
 import { parseWelcomePreferences, resolveWelcomeTheme } from '../../frontend/src/shared/preferences/welcomePreferences';
 import { readThemeMode, resolveTheme, themePreferenceKey } from '../../frontend/src/shared/preferences/themePreferences';
-import { shouldPlayGenesis, genesisDuration, genesisFrame, genesisImpact, genesisScanEnd, genesisSignalStart, genesisProjection } from '../../frontend/src/features/welcome/animations/welcomeGenesis';
+import { shouldPlayGenesis, genesisBrandPath, genesisDuration, genesisFrame, genesisGrowthStart, genesisImpact, genesisImpactPoint, genesisLogoFormationEnd, genesisReturnEnd, genesisSatelliteEnd, genesisScanEnd, genesisSignalStart, genesisProjection } from '../../frontend/src/features/welcome/animations/welcomeGenesis';
 import { createEarthRenderer } from '../../frontend/src/features/welcome/globe/globeScene';
 
 test('a fresh Welcome plays its intro automatically unless it is returning or reduced motion is enabled', () => {
@@ -75,10 +76,11 @@ test('the Canvas fallback reveals the live points in place and preserves their a
   }
 });
 
-test('Welcome intro starts blank, reveals the globe before the signal, and shows the header after the scan', () => {
+test('Welcome intro scans the globe, circles it once, and forms the logo before enlarging the globe', () => {
   const opening = genesisFrame(.12);
   assert.equal(opening.phase, 'empty');
-  for (const value of [opening.silhouette, opening.atmosphere, opening.scanGlow, opening.navigation, opening.headline]) assert.equal(value, 0);
+  for (const value of [opening.silhouette, opening.atmosphere, opening.scanGlow, opening.satelliteTurns, opening.returning, opening.logo]) assert.equal(value, 0);
+  assert.deepEqual(opening.logoSegments, [0, 0, 0, 0, 0, 0]);
   const globe = genesisFrame(.54);
   assert.equal(globe.phase, 'globe');
   assert.ok(globe.silhouette > 0 && globe.silhouette < 1);
@@ -88,15 +90,49 @@ test('Welcome intro starts blank, reveals the globe before the signal, and shows
   const impact = genesisFrame(genesisImpact);
   assert.equal(impact.phase, 'scan');
   assert.equal(impact.scan, -1);
+  assert.equal(impact.satelliteTurns, 0);
   const middle = genesisFrame(2.55);
   assert.ok(middle.scan > -1 && middle.scan < 1 && middle.scanGlow > 0);
-  assert.equal(middle.hanoi, 0);
-  assert.equal(genesisFrame(genesisScanEnd - .01).navigation, 0);
-  assert.equal(genesisFrame(genesisScanEnd).phase, 'welcome');
-  assert.ok(genesisFrame(4).hanoi > 0 && genesisFrame(4).action > 0 && genesisFrame(4).navigation > 0);
+  assert.ok(middle.scanProgress > 0 && middle.scanProgress < 1);
+  assert.equal(middle.satelliteTurns, 0);
+  assert.equal(middle.returning, 0);
+  assert.equal(genesisFrame(genesisScanEnd - .01).satelliteTurns, 0);
+  const orbitStart = genesisFrame(genesisScanEnd);
+  assert.equal(orbitStart.phase, 'satellite');
+  assert.equal(orbitStart.scanProgress, 1);
+  assert.equal(orbitStart.satelliteTurns, 0);
+  assert.ok(Math.abs(genesisSatelliteEnd - genesisScanEnd - 1.05) < 1e-9);
+  const halfway = genesisFrame((genesisScanEnd + genesisSatelliteEnd) / 2);
+  assert.ok(Math.abs(halfway.satelliteTurns - .5) < 1e-9);
+  assert.equal(halfway.returning, 0);
+  assert.equal(genesisFrame(genesisSatelliteEnd).satelliteTurns, 1);
+  const returning = genesisFrame((genesisSatelliteEnd + genesisReturnEnd) / 2);
+  assert.equal(returning.phase, 'return');
+  assert.ok(returning.returning > 0 && returning.returning < 1);
+  assert.deepEqual(returning.logoSegments, opening.logoSegments);
+  assert.equal(returning.logo, 0);
+  const unfolding = genesisFrame(genesisReturnEnd + .20);
+  assert.equal(unfolding.phase, 'logo');
+  assert.equal(unfolding.returning, 1);
+  assert.ok(unfolding.logoSegments[0] > unfolding.logoSegments[1]);
+  assert.ok(unfolding.logoSegments[1] > unfolding.logoSegments[2]);
+  assert.equal(unfolding.logoSegments[5], 0);
+  assert.equal(unfolding.logo, 0);
+  const handoff = genesisFrame(genesisLogoFormationEnd);
+  assert.deepEqual(handoff.logoSegments, [1, 1, 1, 1, 1, 1]);
+  assert.ok(handoff.logo > 0 && handoff.logo < 1);
+  assert.equal(handoff.growth, 0);
+  const growthStart = genesisFrame(genesisGrowthStart);
+  assert.equal(growthStart.phase, 'grow');
+  assert.equal(growthStart.logo, 1);
+  assert.equal(growthStart.growth, 0);
+  const growing = genesisFrame((genesisGrowthStart + genesisDuration) / 2);
+  assert.ok(growing.growth > 0 && growing.growth < 1);
+  assert.equal(growing.complete, false);
+  assert.equal(genesisFrame(genesisDuration - .01).complete, false);
   const completed = genesisFrame(genesisDuration + 1);
   assert.equal(completed.phase, 'complete');
-  for (const value of [completed.grid, completed.borders, completed.hanoi, completed.controls]) assert.equal(value, 1);
+  for (const value of [completed.grid, completed.borders, completed.returning, completed.logo, completed.growth]) assert.equal(value, 1);
   assert.equal(completed.scanGlow, 0);
 });
 
@@ -113,6 +149,44 @@ test('the overlay targets the live Atlas in desktop and stacked layouts', () => 
     assert.equal(projection.radius, radius);
     assert.equal(host.left + projection.x, globe.left + centerX);
     assert.equal(host.top + projection.y, globe.top + globe.height / 2);
+    const raisedCenter = globe.height * .42;
+    const raisedProjection = genesisProjection(host, globe, centerX, radius, raisedCenter);
+    assert.equal(host.top + raisedProjection.y, globe.top + raisedCenter);
+  }
+});
+
+test('the stream crosses the globe and hands off to the satellite at the end of the scan', () => {
+  for (const [width, height, x, y, radius] of [[1440, 780, 1020, 400, 210], [390, 700, 195, 364, 125], [320, 568, 160, 295, 108]]) {
+    const host = { left: 8, top: 4, width, height };
+    const globe = { x, y, radius };
+    const logo = { left: host.left + 20, top: host.top + 12, width: 68, height: 40 };
+    const path = genesisBrandPath(host, globe, logo);
+    const launch = path.point(0);
+    const bottom = path.point(.69);
+    const arrival = path.point(1);
+    const hit = genesisImpactPoint(globe);
+    const orbitStart = path.satellite(0);
+    const satellite = path.satellite(1);
+    assert.deepEqual(path.signal(1), hit);
+    assert.deepEqual(path.scan(0), hit);
+    const scanEnd = path.scan(1);
+    assert.ok(hit.x < x - radius * .95 && scanEnd.x > x + radius * .95);
+    assert.ok(Math.hypot(orbitStart.x - scanEnd.x, orbitStart.y - scanEnd.y) < 1e-9);
+    const scanning = path.scan(.999);
+    const orbitNext = path.satellite(.001);
+    assert.ok(orbitNext.x > scanEnd.x && orbitNext.y > scanEnd.y);
+    assert.ok((scanEnd.x - scanning.x) * (orbitNext.x - scanEnd.x) + (scanEnd.y - scanning.y) * (orbitNext.y - scanEnd.y) > 0);
+    assert.ok(Math.hypot(launch.x - satellite.x, launch.y - satellite.y) < 1e-9);
+    assert.ok(satellite.front && satellite.visible);
+    const orbit = Array.from({ length: 48 }, (_, index) => path.satellite(index / 48));
+    assert.ok(orbit.some(point => !point.front && !point.visible));
+    assert.ok(orbit.some(point => !point.front && point.visible));
+    const approaching = path.satellite(.999);
+    const leaving = path.point(.001);
+    assert.ok((launch.x - approaching.x) * (leaving.x - launch.x) + (launch.y - approaching.y) * (leaving.y - launch.y) > 0);
+    assert.ok(launch.y < bottom.y && bottom.y < height);
+    assert.ok(launch.x > bottom.x && launch.x > arrival.x);
+    assert.deepEqual(arrival, { x: logo.left - host.left + logo.width / 2, y: logo.top - host.top + logo.height / 2 });
   }
 });
 
@@ -376,13 +450,49 @@ test('portal separates content pages and legacy workspace routes, with a safe ov
   assert.equal(portalSections.length, 5);
   assert.equal(new Set(portalSections.map(section => section.href)).size, 5);
   assert.deepEqual(portalSections.map(section => isModelRoute(portalRoute(section.href))), [false, true, false, false, false]);
-  for (const route of ['explore', 'datasets', 'methods', 'experiments']) assert.equal(isModelRoute(portalRoute('#/' + route)), true);
+  for (const route of ['explore', 'datasets', 'methods', 'experiments', 'dashboard']) assert.equal(isModelRoute(portalRoute('#/' + route)), true);
   for (const hash of ['', '#/', '#/missing', '#portal-main', '#/overview/extra']) assert.equal(portalRoute(hash), 'overview');
   assert.equal(portalRoute('#/library?example=1'), 'library');
 });
 
+test('team and profile hashes retain the About route and round-trip the selected member', () => {
+  assert.equal(new Set(teamMembers.map(member => member.slug)).size, teamMembers.length);
+  for (const { slug } of teamMembers) {
+    const profile = '#/about/' + slug;
+    const team = aboutTeamHref(slug);
+    assert.equal(portalRoute(profile), 'about');
+    assert.equal(aboutProfileSlug(profile), slug);
+    assert.equal(aboutProfileSlug(team), undefined);
+    assert.equal(portalRoute(team), 'about');
+    assert.equal(aboutTeamSelection(team), slug);
+    assert.equal(aboutTeamSelection(profile + '?member=' + slug), null);
+    assert.equal(signInDestination(profile), profile);
+    assert.equal(signInDestination(team), team);
+  }
+  assert.equal(aboutTeamSelection('#/about'), null);
+  assert.equal(aboutProfileSlug('#/about/%6cinh?source=shared'), 'linh');
+  assert.equal(signInDestination('#/about'), '#/about');
+});
+
+test('malformed and unknown profiles stay in About while other sign-in destinations use Workspace', () => {
+  for (const hash of ['#/about/', '#/about/foo/bar', '#/about/foo%2Fbar', '#/about/%E0%A4', '#/about/UPPER', '#/about/foo/']) {
+    assert.equal(portalRoute(hash), 'about');
+    assert.equal(aboutProfileSlug(hash), null);
+    assert.equal(signInDestination(hash), hash);
+  }
+  const missing = '#/about/unknown-member';
+  assert.equal(portalRoute(missing), 'about');
+  assert.equal(teamMembers.some(member => member.slug === aboutProfileSlug(missing)), false);
+  for (const hash of ['#/', '#/aboutextra', '#/theory?chapter=reduction', '#/explore', '//example.org/#/about']) {
+    assert.equal(signInDestination(hash), '#/overview');
+  }
+});
+
 test('prepared data stories reproduce PCA and seeded GMM from the exact bundled source files', () => {
-  assert.deepEqual(caseStudies.map(story => story.rowCount), [569, 440]);
+  assert.deepEqual(caseStudies.map(story => [story.id, story.rowCount]), [
+    ['cancer_wdbc', 569], ['wholesale_customers', 440], ['palmer_penguins', 344],
+    ['wheat_seeds', 210], ['banknote_authentication', 900], ['smartphone_activity', 600], ['handwritten_digits', 900],
+  ]);
   for (const story of caseStudies) {
     const csv = readFileSync(new URL('../../public/' + story.file, import.meta.url), 'utf8');
     assert.equal(createHash('sha256').update(csv).digest('hex'), story.sourceHash);

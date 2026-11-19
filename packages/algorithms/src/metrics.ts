@@ -10,7 +10,7 @@ export function computeSilhouetteScore(data: number[][], labels: number[]): numb
   let clusteredPoints = 0;
   for (let i = 0; i < labels.length; i++) {
     const label = labels[i];
-    if (label < 0) continue; // Exclude noise.
+    if (label === undefined || label < 0) continue; // Exclude noise.
     if (!clusters.has(label)) clusters.set(label, []);
     clusters.get(label)!.push(i);
     clusteredPoints++;
@@ -18,14 +18,14 @@ export function computeSilhouetteScore(data: number[][], labels: number[]): numb
 
   if (clusters.size < 2 || clusters.size === clusteredPoints) return null;
 
-  const dimension = data[0].length;
+  const dimension = data[0]!.length;
   const distanceSum = (i: number, neighbors: number[]) => {
     let sum = 0;
     for (const j of neighbors) {
       if (i === j) continue;
       let squared = 0;
       for (let k = 0; k < dimension; k++) {
-        const difference = data[i][k] - data[j][k];
+        const difference = data[i]![k]! - data[j]![k]!;
         squared += difference * difference;
       }
       sum += Math.sqrt(squared);
@@ -86,8 +86,8 @@ export function computeARI(
   let sumBj = 0;
   for (let i = 0; i < groundTruth.length; i++) {
     const actual = groundTruth[i];
-    if (actual === null || actual === '') continue;
     const cluster = predicted[i];
+    if (actual == null || actual === '' || cluster === undefined) continue;
     let row = cells.get(actual);
     if (!row) { row = new Map(); cells.set(actual, row); }
     sumNij += addPairCount(row, cluster);
@@ -117,13 +117,13 @@ export function detectOutliers3D(
   zThreshold: number = 2.5
 ): boolean[] {
   const n = points.length;
-  if (n < 4) return new Array(n).fill(false);
+  if (n < 4) return new Array<boolean>(n).fill(false);
 
   let sumX = 0, sumY = 0, sumZ = 0;
   for (let i = 0; i < n; i++) {
-    sumX += points[i].x;
-    sumY += points[i].y;
-    sumZ += points[i].z;
+    sumX += points[i]!.x;
+    sumY += points[i]!.y;
+    sumZ += points[i]!.z;
   }
   const meanX = sumX / n;
   const meanY = sumY / n;
@@ -132,9 +132,9 @@ export function detectOutliers3D(
   const distances = new Float64Array(n);
   let sumDist = 0;
   for (let i = 0; i < n; i++) {
-    const dx = points[i].x - meanX;
-    const dy = points[i].y - meanY;
-    const dz = points[i].z - meanZ;
+    const dx = points[i]!.x - meanX;
+    const dy = points[i]!.y - meanY;
+    const dz = points[i]!.z - meanZ;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     distances[i] = dist;
     sumDist += dist;
@@ -143,14 +143,14 @@ export function detectOutliers3D(
 
   let varDist = 0;
   for (let i = 0; i < n; i++) {
-    const diff = distances[i] - meanDist;
+    const diff = distances[i]! - meanDist;
     varDist += diff * diff;
   }
   const stdDist = Math.sqrt(varDist / (n - 1)) || 1e-6;
 
   const isOutlier = new Array<boolean>(n);
   for (let i = 0; i < n; i++) {
-    isOutlier[i] = (distances[i] - meanDist) / stdDist > zThreshold;
+    isOutlier[i] = (distances[i]! - meanDist) / stdDist > zThreshold;
   }
   return isOutlier;
 }
@@ -177,9 +177,9 @@ export function detectKMeansOutliers(
       clusterDists.set(c, { indices: [], dists: [] });
     }
     const centroid = centroids[c] || [0, 0, 0];
-    const dx = points[i].x - (centroid[0] || 0);
-    const dy = points[i].y - (centroid[1] || 0);
-    const dz = points[i].z - (centroid[2] || 0);
+    const dx = points[i]!.x - (centroid[0] || 0);
+    const dy = points[i]!.y - (centroid[1] || 0);
+    const dz = points[i]!.z - (centroid[2] || 0);
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     clusterDists.get(c)!.indices.push(i);
     clusterDists.get(c)!.dists.push(d);
@@ -194,8 +194,8 @@ export function detectKMeansOutliers(
     const std = Math.sqrt(variance) || 1e-6;
 
     for (let j = 0; j < kCount; j++) {
-      if ((dists[j] - mean) / std > zThreshold) {
-        isOutlier[indices[j]] = true;
+      if ((dists[j]! - mean) / std > zThreshold) {
+        isOutlier[indices[j]!] = true;
       }
     }
   });

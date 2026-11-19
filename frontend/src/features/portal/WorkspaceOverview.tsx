@@ -23,7 +23,7 @@ export function WorkspaceOverview({ active, onOpenSection, openingId }: {
     href: section.href,
     'data-opening': openingId === section.id || undefined,
     onClick: (event: MouseEvent<HTMLAnchorElement>) => {
-      if (!onOpenSection || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (section.id === 'about' || !onOpenSection || window.matchMedia('(prefers-reduced-motion: reduce)').matches
         || !shouldAnimateLink(event, event.currentTarget.target, event.currentTarget.hasAttribute('download'))) return;
       event.preventDefault();
       onOpenSection(section, event.currentTarget);

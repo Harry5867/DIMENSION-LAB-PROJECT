@@ -16,7 +16,7 @@ const mixturePoints = [...cloud(134, 120, 42, 72, 43), ...cloud(224, 157, 39, 65
   const a = Math.exp(-.5 * (((p.x - 134) / 48) ** 2 + ((p.y - 120) / 30) ** 2)) / (48 * 30);
   const b = Math.exp(-.5 * (((p.x - 224) / 44) ** 2 + ((p.y - 157) / 30) ** 2)) / (44 * 30);
   const probability = a / (a + b);
-  const color = [22, 120, 109].map((value, i) => Math.round(value * probability + [135, 149, 106][i] * (1 - probability)));
+  const color = ([[22, 135], [120, 149], [109, 106]] as const).map(([first, second]) => Math.round(first * probability + second * (1 - probability)));
   return { ...p, color: `rgb(${color.join(',')})` };
 });
 const anomalyPoints = cloud(145, 158, 72, 68, 48, .3);
@@ -55,11 +55,11 @@ export function TheoryIllustration({ method, cover = false }: { method: MethodId
       <g fill="var(--theory-text,#4e675b)"><text x="279" y="46">PC1</text><text x="117" y="47">PC2</text><text x="128" y="254">{tr("PC1 projection")}</text></g>
     </>}
     {(method === 'tsne' || method === 'umap' || method === 'kmeans') && <>
-      {method === 'umap' && <g stroke="#839d86" strokeWidth=".7" opacity=".45">{groups.map((group, gi) => <g key={gi}>{group.map((p, i) => <path key={i} d={`M${p.x} ${p.y}L${group[(i + 5) % group.length].x} ${group[(i + 5) % group.length].y}`} />)}</g>)}<path d="M129 121 148 183M219 183 235 124" strokeDasharray="3 4" /></g>}
+      {method === 'umap' && <g stroke="#839d86" strokeWidth=".7" opacity=".45">{groups.map((group, gi) => <g key={gi}>{group.map((p, i) => <path key={i} d={`M${p.x} ${p.y}L${group[(i + 5) % group.length]!.x} ${group[(i + 5) % group.length]!.y}`} />)}</g>)}<path d="M129 121 148 183M219 183 235 124" strokeDasharray="3 4" /></g>}
       {groups.map((group, i) => <g key={i}>
         {method === 'kmeans' && <ellipse cx={[91, 260, 180][i]} cy={[100, 95, 203][i]} rx="61" ry="45" stroke={colors[i]} opacity=".3" transform={`rotate(${[-24, -28, 12][i]} ${[91, 260, 180][i]} ${[100, 95, 203][i]})`} />}
         {points(group, colors[i])}
-        {method === 'kmeans' && <path d={`M${[91, 260, 180][i] - 7} ${[100, 95, 203][i]}h14m-7-7v14`} stroke={colors[i]} strokeWidth="2.5" />}
+        {method === 'kmeans' && <path d={`M${[91, 260, 180][i]! - 7} ${[100, 95, 203][i]}h14m-7-7v14`} stroke={colors[i]} strokeWidth="2.5" />}
       </g>)}
     </>}
     {method === 'dbscan' && <>

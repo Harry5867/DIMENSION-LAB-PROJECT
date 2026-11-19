@@ -2,6 +2,8 @@
  * DBSCAN (Density-Based Spatial Clustering of Applications with Noise)
  */
 
+import { validateMatrix } from './unsupervised';
+
 export interface DBSCANResult {
   clusters: number[]; // -1 for noise/outlier, >= 0 for cluster index
   numClusters: number;
@@ -18,7 +20,7 @@ export function computeDBSCAN(
     return { clusters: [], numClusters: 0, noiseCount: 0 };
   }
 
-  const d = data[0].length;
+  const d = validateMatrix(data, true);
   const epsSq = epsilon * epsilon;
 
   const clusters = new Int32Array(n).fill(-2); // -2: unvisited
@@ -26,12 +28,12 @@ export function computeDBSCAN(
 
   // Helper to find neighbors within epsilon
   const getNeighbors = (pointIdx: number): number[] => {
-    const p = data[pointIdx];
+    const p = data[pointIdx]!;
     const neighbors: number[] = [];
     for (let i = 0; i < n; i++) {
       let d2 = 0;
       for (let j = 0; j < d; j++) {
-        const diff = p[j] - data[i][j];
+        const diff = p[j]! - data[i]![j]!;
         d2 += diff * diff;
         if (d2 > epsSq) break;
       }
@@ -57,7 +59,7 @@ export function computeDBSCAN(
       let head = 0;
 
       while (head < queue.length) {
-        const curr = queue[head++];
+        const curr = queue[head++]!;
 
         if (clusters[curr] === -1) {
           clusters[curr] = clusterId; // Border point

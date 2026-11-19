@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { once } from 'node:events';
 import { Readable, Writable } from 'node:stream';
 import { GridFSBucket, MongoClient, MongoServerError, ObjectId } from 'mongodb';
 
@@ -23,13 +24,15 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
     if (expected?.$exists !== undefined) return (doc[key] !== undefined) === expected.$exists;
     if (expected?.$type) return doc[key] instanceof ObjectId;
     if (expected?.$gt) return doc[key] > expected.$gt;
+    if (expected?.$lt !== undefined) return doc[key] < expected.$lt;
+    if (expected?.$ne !== undefined) return doc[key] !== expected.$ne;
     return String(doc[key]) === String(expected);
   });
   const database = { command: async () => ({ ok: 1 }), collection: (name: string) => ({
     createIndex: async (fields: object, options: unknown) => { indexes.push([name, fields, options]); },
     find: (filter: object) => {
       let rows = documents(name).filter(doc => matches(doc, filter));
-      const cursor = { sort: () => cursor, skip: (offset: number) => { rows = rows.slice(offset); return cursor; },
+      const cursor = { sort: () => cursor, collation: () => cursor, skip: (offset: number) => { rows = rows.slice(offset); return cursor; },
         limit: (limit: number) => { rows = rows.slice(0, limit); return cursor; }, toArray: async () => rows };
       return cursor;
     },
@@ -46,8 +49,15 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
       const index = documents(name).findIndex(doc => matches(doc, filter));
       return index < 0 ? null : documents(name).splice(index, 1)[0];
     },
+    updateOne: async (filter: object, update: { $inc: { attempts: number } }) => {
+      const doc = documents(name).find(item => matches(item, filter));
+      if (doc) doc.attempts += update.$inc.attempts;
+    },
     insertOne: async (doc: any) => {
       if (failCollection === name) throw new MongoServerError({ message: 'simulated storage failure' });
+      if (name === 'password_users' && documents(name).some(user => user.email === doc.email)) {
+        throw new MongoServerError({ message: 'duplicate password account', code: 11000 });
+      }
       documents(name).push(doc);
       return { insertedId: doc._id ?? new ObjectId() };
     },
@@ -75,7 +85,106 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   const { saveExperiment, getAllExperiments } = await import('../../backend/src/repositories/db');
   await connectAtlas();
   assert.ok(indexes.some(([name, fields, options]) => name === 'users' && 'googleSub' in fields && (options as any).unique));
+  assert.ok(indexes.some(([name, fields, options]) => name === 'password_users' && 'email' in fields && (options as { unique?: boolean }).unique));
   assert.ok(indexes.some(([name, fields, options]) => name === 'sessions' && 'expiresAt' in fields && (options as any).expireAfterSeconds === 0));
+
+  await t.test('password accounts use Atlas sessions and can only access their own datasets', async accountTest => {
+    const { createApp } = await import('../../backend/src/app');
+    const server = createApp().listen(0, '127.0.0.1');
+    try {
+      await once(server, 'listening');
+      const address = server.address();
+      assert.ok(address && typeof address === 'object');
+      const api = 'http://127.0.0.1:' + address.port + '/api';
+      const origin = 'http://localhost:3000';
+      const password = 'Research workspace test password';
+      const first = { email: 'first@example.test', displayName: 'First', password };
+      const second = { ...first, email: 'second@example.test', displayName: 'Second' };
+      const post = (endpoint: string, body: object, cookie?: string, requestOrigin = origin) => fetch(api + endpoint, {
+        method: 'POST', headers: { Origin: requestOrigin, 'Content-Type': 'application/json', ...(cookie && { Cookie: cookie }) },
+        body: JSON.stringify(body),
+      });
+      assert.equal((await post('/auth/register', first, undefined, 'https://elsewhere.test')).status, 403);
+      assert.equal((await post('/auth/register', { ...first, role: 'admin' })).status, 201);
+      assert.equal((await post('/auth/register', second)).status, 201);
+      assert.equal((await post('/auth/register', { ...first, email: first.email.toUpperCase() })).status, 409);
+      const stored = documents('password_users').find(user => user.email === first.email);
+      assert.equal(stored.role, 'researcher');
+      assert.match(stored.passwordHash, /^\$argon2id\$/);
+      assert.equal(stored.password, undefined);
+      assert.equal((await post('/auth/login', { ...first, password: 'Incorrect test password' })).status, 401);
+      async function login(account: typeof first) {
+        const result = await post('/auth/login', account);
+        assert.equal(result.status, 200);
+        const cookies = result.headers.getSetCookie();
+        assert.equal(cookies.length, 1);
+        assert.match(cookies[0], /HttpOnly/);
+        return cookies[0].split(';')[0];
+      }
+      const firstCookie = await login(first);
+      const secondCookie = await login(second);
+      const me = async (cookie: string) => (await fetch(api + '/auth/me', { headers: { Cookie: cookie } })).json();
+      assert.equal((await me(firstCookie)).data.user.name, first.displayName);
+      assert.equal((await me(secondCookie)).data.user.name, second.displayName);
+      await accountTest.test('email codes provision new accounts and preserve the owner of Google workspaces', async sub => {
+        process.env.RESEND_API_KEY = 'test-mail-key';
+        process.env.LAB_EMAIL_FROM = 'lab@example.test';
+        const originalFetch = globalThis.fetch;
+        let code = '';
+        sub.mock.method(globalThis, 'fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          if (input !== 'https://api.resend.com/emails') return originalFetch(input, init);
+          const mail = JSON.parse(String(init?.body)) as { text: string };
+          code = /code is (\d{6})/.exec(mail.text)![1]!;
+          return Promise.resolve(new Response('{}', { status: 200 }));
+        });
+        for (const google of [false, true]) {
+          const email = google ? 'oauth@example.test' : 'manual@example.test';
+          const owner = google ? await auth.upsertGoogleUser({ sub: 'enrollment-test', email, displayName: 'Google user' }) : null;
+          const start = await post('/auth/login', { email, password, enroll: true });
+          assert.equal(start.status, 202);
+          assert.equal(start.headers.get('set-cookie'), null);
+          const { challenge } = (await start.json()).data;
+          const verify = (digits: string) => post('/auth/verify-email', { challenge, code: digits });
+          assert.equal((await verify(code === '000000' ? '111111' : '000000')).status, 401);
+          const verified = await verify(code);
+          assert.equal(verified.status, 200);
+          const verifiedCookie = verified.headers.getSetCookie()[0]!.split(';')[0]!;
+          const account = (await me(verifiedCookie)).data.user;
+          if (owner) assert.equal(account.id, String(owner._id));
+          assert.equal((await verify(code)).status, 401);
+          const subsequent = await login({ email, password, displayName: '' });
+          assert.equal((await me(subsequent)).data.user.id, account.id);
+          await post('/auth/logout', {}, verifiedCookie);
+          await post('/auth/logout', {}, subsequent);
+        }
+        collections.set('users', documents('users').filter(user => user.googleSub !== 'enrollment-test'));
+        delete process.env.RESEND_API_KEY;
+        delete process.env.LAB_EMAIL_FROM;
+      });
+      const csv = 'a,b,c\r\n1,2,3\r\n4,5,6\r\n';
+      const form = new FormData();
+      form.append('file', new Blob([csv], { type: 'text/csv' }), 'password-auth-test.csv');
+      const upload = await fetch(api + '/datasets/upload', { method: 'POST', body: form, headers: { Origin: origin, Cookie: firstCookie } });
+      assert.equal(upload.status, 201);
+      const dataset = '/datasets/' + encodeURIComponent((await upload.json()).data.id);
+      const get = (path: string, cookie: string) => fetch(api + path, { headers: { Cookie: cookie } });
+      assert.equal((await get(dataset + '/download', firstCookie)).status, 200);
+      assert.equal((await get(dataset, secondCookie)).status, 404);
+      assert.equal((await get(dataset + '/download', secondCookie)).status, 404);
+      assert.equal((await post('/auth/logout', {}, firstCookie)).status, 200);
+      assert.equal((await me(firstCookie)).data.authenticated, false);
+      assert.equal((await post('/auth/logout', {}, secondCookie)).status, 200);
+    } finally {
+      const closed = once(server, 'close');
+      server.close();
+      await closed;
+      // Keep the original GridFS and session assertions independent of this flow.
+      collections.delete('datasets');
+      collections.delete('dataset_versions');
+      blobs.clear();
+    }
+  });
+
   const profile = { sub: 'google-a', email: 'a@example.test', displayName: 'A' };
   const [user, again] = await Promise.all([auth.upsertGoogleUser(profile), auth.upsertGoogleUser(profile)]);
   const other = await auth.upsertGoogleUser({ sub: 'google-b', email: profile.email, displayName: 'B' });
@@ -86,12 +195,12 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   const session = { tokenHash: createHash('sha256').update(secret).digest('hex'), userId: user!._id, expiresAt: new Date(Date.now() + 5000) };
   documents('sessions').push(session);
   const cookie = { headers: { cookie: 'lab_session=' + secret } } as any;
-  assert.equal((await auth.googleSessionUser(cookie))?.id, String(user!._id));
+  assert.equal((await auth.atlasSessionUser(cookie))?.id, String(user!._id));
   session.expiresAt = new Date(0);
-  assert.equal(await auth.googleSessionUser(cookie), null);
+  assert.equal(await auth.atlasSessionUser(cookie), null);
   session.expiresAt = new Date(Date.now() + 5000);
-  await auth.revokeGoogleSession(cookie, { clearCookie() {} } as any);
-  assert.equal(await auth.googleSessionUser(cookie), null);
+  await auth.revokeAtlasSession(cookie, { clearCookie() {} } as any);
+  assert.equal(await auth.atlasSessionUser(cookie), null);
   assert.throws(() => auth.protectCookieWrite({ method: 'POST', headers: { origin: 'https://elsewhere.test' } } as any), /application origin/);
   assert.doesNotThrow(() => auth.protectCookieWrite({ method: 'POST', headers: { origin: 'http://localhost:3000' } } as any));
   let rejectedCallback = '';
@@ -140,7 +249,7 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   }, redirect(_status: number, url: string) { completedRedirect = url; } };
   await auth.finishGoogleSignIn(callback as any, reply as any);
   assert.match(completedRedirect, /#\/overview/);
-  assert.equal((await auth.googleSessionUser({ headers: { cookie: 'lab_session=' + sessionKey } } as any))?.id, String(user!._id));
+  assert.equal((await auth.atlasSessionUser({ headers: { cookie: 'lab_session=' + sessionKey } } as any))?.id, String(user!._id));
   assert.equal(documents('users').length, 2);
   await auth.finishGoogleSignIn(callback as any, reply as any);
   assert.match(completedRedirect, /auth=google-error/);

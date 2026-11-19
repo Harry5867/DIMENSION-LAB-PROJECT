@@ -136,7 +136,7 @@ export function SectionTransition({ navigation, onCovered, onComplete }: {
       };
       const destinationReady = () => navigation.kind === 'back' || !!document.querySelector(model
         ? '.model-session:not([hidden]) :is(.workspace-header, .workspace-explore:not([hidden]) .workspace-stage)'
-        : '.portal-content-heading');
+        : ':is(.portal-content-heading, .member-gallery)');
       if (destinationReady()) scheduleReveal();
       else {
         // Let the cold Model chunk mount under the paper, without adding a WebGL snapshot.

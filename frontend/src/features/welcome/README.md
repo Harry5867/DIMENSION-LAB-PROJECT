@@ -10,7 +10,7 @@ Màn chào, intro và ba chế độ Atlas, Terrain và Stories.
 
 - [Animations](animations/welcomeGenesis.ts) — Timeline Genesis và giảm chuyển động.
 
-- [Settings](WelcomeSettings.tsx) — Các tùy chọn hiển thị và ngôn ngữ.
+- [Theme toggle](../../shared/ui/ThemeToggle.tsx) — Nút chuyển giao diện sáng và tối dùng chung với Workspace.
 
 ## Luồng dữ liệu và trạng thái
 

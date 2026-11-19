@@ -66,7 +66,9 @@ export async function loadOwnedDataset(id: string, ownerId: string): Promise<Dat
   try {
     const chunks: Buffer[] = [];
     let size = 0;
-    for await (const chunk of file.stream) {
+    const stream: AsyncIterable<unknown> = file.stream;
+    for await (const chunk of stream) {
+      if (!Buffer.isBuffer(chunk)) throw storageUnavailable();
       size += chunk.length;
       if (size > MAX_CSV_BYTES) throw storageUnavailable();
       chunks.push(chunk);

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { MongoClient, type Db, type ObjectId } from 'mongodb';
 import { AppError } from '../http/errors';
+import type { UserRole } from '../auth/auth';
 
 export const atlasMode = process.env.LAB_STORAGE_MODE === 'atlas';
 let database: Db | undefined;
@@ -25,9 +26,11 @@ export async function connectAtlas() {
     await db.command({ ping: 1 });
     await Promise.all([
       db.collection('users').createIndex({ googleSub: 1 }, { unique: true }),
+      db.collection('password_users').createIndex({ email: 1 }, { unique: true }),
       db.collection('sessions').createIndex({ tokenHash: 1 }, { unique: true }),
       db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       db.collection('oauth_attempts').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      db.collection('email_enrollments').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       db.collection('datasets').createIndex({ id: 1 }, { unique: true }),
       db.collection('datasets').createIndex({ ownerId: 1, createdAt: -1, id: 1 }),
       db.collection('dataset_versions').createIndex({ datasetId: 1, version: 1 }, { unique: true }),
@@ -42,13 +45,16 @@ export async function connectAtlas() {
   }
 }
 
-export interface AtlasUser {
+export interface AtlasProfile {
   _id: ObjectId;
-  googleSub: string;
   email: string;
   displayName: string;
-  role: 'researcher';
+  role: UserRole;
   createdAt: Date;
+}
+
+export interface AtlasUser extends AtlasProfile {
+  googleSub: string;
   lastLoginAt: Date;
 }
 
@@ -56,4 +62,5 @@ export interface AtlasSession {
   tokenHash: string;
   userId: ObjectId;
   expiresAt: Date;
+  provider?: 'password';
 }

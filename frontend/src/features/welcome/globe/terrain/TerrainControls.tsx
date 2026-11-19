@@ -58,7 +58,10 @@ export function TerrainControls({ data, error, settings, selected, onSettingsCha
                 <label htmlFor="terrain-sample">{t('Inspect sample', 'Xem mẫu dữ liệu')}</label>
                 <select id="terrain-sample" aria-label={t('Inspect a source sample', 'Xem một mẫu từ nguồn dữ liệu')} value={selected ?? ''} onChange={event => onInspect(event.currentTarget.value === '' ? null : Number(event.currentTarget.value))}>
                   <option value="">{t('Select a sample', 'Chọn mẫu dữ liệu')}</option>
-                  {data.featuredIndices.map(index => <option key={index} value={index}>{location(data.points[index].latitude, data.points[index].longitude)}</option>)}
+                  {data.featuredIndices.map(index => {
+                  const point = data.points[index];
+                  return point ? <option key={index} value={index}>{location(point.latitude, point.longitude)}</option> : null;
+                })}
                 </select>
                 {point ? <div ref={reading} className="terrain-reading" role="status" aria-label={t('Terrain sample', 'Mẫu địa hình')}><TerrainSampleDetails data={data} point={point} /></div>
                   : null}
@@ -86,8 +89,10 @@ function TerrainSampleDetails({ data, point }: { data: TerrainData; point: { lat
       const dot = capital.dot(position);
       if (dot > similarity) { index = candidate; similarity = dot; }
     });
+    const capital = capitals[index];
+    if (!capital) return null;
     const distance = Math.round(Math.acos(MathUtils.clamp(similarity, -1, 1)) * 6371);
-    return `${t('Nearest capital', 'Thủ đô gần nhất')}: ${capitals[index].city}, ${localizedCountry(capitals[index].iso || '', capitals[index].country, language)} · ${distance.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} km`;
+    return `${t('Nearest capital', 'Thủ đô gần nhất')}: ${capital.city}, ${localizedCountry(capital.iso || '', capital.country, language)} · ${distance.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} km`;
   }, [point, language, t]);
   return <>
     <strong>{point.density === null ? t('No data available', 'Chưa có dữ liệu') : <>{point.density.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US', { maximumFractionDigits: 2 })} <small>{t('people/km²', 'người/km²')}</small></>}</strong>

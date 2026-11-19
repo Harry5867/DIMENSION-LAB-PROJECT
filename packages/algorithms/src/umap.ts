@@ -3,6 +3,8 @@
  * Pure TypeScript implementation capturing local & global topological structure.
  */
 
+import { validateMatrix } from './unsupervised';
+
 export interface UMAPConfig {
   nNeighbors: number;
   minDist: number;
@@ -20,7 +22,7 @@ export function computeUMAP(
     return matrix.map(row => [row[0] || 0, row[1] || 0, row[2] || 0]);
   }
 
-  const d = matrix[0].length;
+  const d = validateMatrix(matrix, true);
   const k = Math.min(config.nNeighbors || 15, n - 1);
   const minDist = config.minDist ?? 0.1;
   const nEpochs = Math.min(config.nEpochs || 200, 400);
@@ -36,7 +38,7 @@ export function computeUMAP(
     for (let j = i + 1; j < n; j++) {
       let sum = 0;
       for (let m = 0; m < d; m++) {
-        const diff = matrix[i][m] - matrix[j][m];
+        const diff = matrix[i]![m]! - matrix[j]![m]!;
         sum += diff * diff;
       }
       const dist = Math.sqrt(sum);
@@ -58,13 +60,15 @@ export function computeUMAP(
     const neighbors: { idx: number; dist: number }[] = [];
     for (let j = 0; j < n; j++) {
       if (i !== j) {
-        neighbors.push({ idx: j, dist: distMatrix[i * n + j] });
+        neighbors.push({ idx: j, dist: distMatrix[i * n + j]! });
       }
     }
     neighbors.sort((a, b) => a.dist - b.dist);
     const kNeighbors = neighbors.slice(0, k);
 
-    const rho = kNeighbors[0].dist; // Distance to nearest neighbor
+    const nearest = kNeighbors[0];
+    if (!nearest) continue;
+    const rho = nearest.dist; // Distance to nearest neighbor
     // Binary search for sigma
     let sigma = 1.0;
     let lo = 0;
@@ -107,7 +111,7 @@ export function computeUMAP(
   edgeMap.forEach((weight, key) => {
     if (weight > 1e-4) {
       const [s, t] = key.split('-').map(Number);
-      edges.push({ source: s, target: t, weight });
+      if (s !== undefined && t !== undefined) edges.push({ source: s, target: t, weight });
     }
   });
 
@@ -126,22 +130,22 @@ export function computeUMAP(
       const i3 = edge.source * 3;
       const j3 = edge.target * 3;
 
-      const dx = Y[i3] - Y[j3];
-      const dy = Y[i3 + 1] - Y[j3 + 1];
-      const dz = Y[i3 + 2] - Y[j3 + 2];
+      const dx = Y[i3]! - Y[j3]!;
+      const dy = Y[i3 + 1]! - Y[j3 + 1]!;
+      const dz = Y[i3 + 2]! - Y[j3 + 2]!;
       const d2 = dx * dx + dy * dy + dz * dz;
 
       if (d2 > 0) {
         const gradCoeff = (-2.0 * a * b * Math.pow(d2, b - 1)) / (1.0 + a * Math.pow(d2, b));
         const force = gradCoeff * edge.weight * alpha;
 
-        Y[i3] += Math.max(-4, Math.min(4, force * dx));
-        Y[i3 + 1] += Math.max(-4, Math.min(4, force * dy));
-        Y[i3 + 2] += Math.max(-4, Math.min(4, force * dz));
+        Y[i3]! += Math.max(-4, Math.min(4, force * dx));
+        Y[i3 + 1]! += Math.max(-4, Math.min(4, force * dy));
+        Y[i3 + 2]! += Math.max(-4, Math.min(4, force * dz));
 
-        Y[j3] -= Math.max(-4, Math.min(4, force * dx));
-        Y[j3 + 1] -= Math.max(-4, Math.min(4, force * dy));
-        Y[j3 + 2] -= Math.max(-4, Math.min(4, force * dz));
+        Y[j3]! -= Math.max(-4, Math.min(4, force * dx));
+        Y[j3 + 1]! -= Math.max(-4, Math.min(4, force * dy));
+        Y[j3 + 2]! -= Math.max(-4, Math.min(4, force * dz));
       }
 
       // Repulsive forces (Negative Sampling)
@@ -150,18 +154,18 @@ export function computeUMAP(
         if (randTarget === edge.source) continue;
         const r3 = randTarget * 3;
 
-        const rdx = Y[i3] - Y[r3];
-        const rdy = Y[i3 + 1] - Y[r3 + 1];
-        const rdz = Y[i3 + 2] - Y[r3 + 2];
+        const rdx = Y[i3]! - Y[r3]!;
+        const rdy = Y[i3 + 1]! - Y[r3 + 1]!;
+        const rdz = Y[i3 + 2]! - Y[r3 + 2]!;
         const rd2 = rdx * rdx + rdy * rdy + rdz * rdz;
 
         if (rd2 > 0) {
           const repCoeff = (2.0 * b) / ((0.001 + rd2) * (1.0 + a * Math.pow(rd2, b)));
           const repForce = repCoeff * alpha;
 
-          Y[i3] += Math.max(-4, Math.min(4, repForce * rdx));
-          Y[i3 + 1] += Math.max(-4, Math.min(4, repForce * rdy));
-          Y[i3 + 2] += Math.max(-4, Math.min(4, repForce * rdz));
+          Y[i3]! += Math.max(-4, Math.min(4, repForce * rdx));
+          Y[i3 + 1]! += Math.max(-4, Math.min(4, repForce * rdy));
+          Y[i3 + 2]! += Math.max(-4, Math.min(4, repForce * rdz));
         }
       }
     }
@@ -174,7 +178,7 @@ export function computeUMAP(
   // Format result as [x, y, z]
   const result: [number, number, number][] = [];
   for (let i = 0; i < n; i++) {
-    result.push([Y[i * 3], Y[i * 3 + 1], Y[i * 3 + 2]]);
+    result.push([Y[i * 3]!, Y[i * 3 + 1]!, Y[i * 3 + 2]!]);
   }
 
   return result;

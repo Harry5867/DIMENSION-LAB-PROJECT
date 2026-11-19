@@ -1,35 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { loadWelcomePreferences, welcomePreferenceKeys, type WelcomeLanguage } from '../preferences/welcomePreferences';
-import { translateText } from '../preferences/localization';
+import type { WelcomeLanguage } from '../preferences/welcomePreferences';
 
 type Translation = (english: string, vietnamese: string) => string;
-interface LanguageContext {
+interface AppLanguage {
   language: WelcomeLanguage;
-  setLanguage: (language: WelcomeLanguage) => void;
   t: Translation;
   tr: (english: string) => string;
 }
-const AppLanguageContext = createContext<LanguageContext>({ language: 'en', setLanguage: () => {}, t: english => english, tr: english => english });
-
-export function AppLanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguage] = useState(() => loadWelcomePreferences().language);
-  const t = useCallback<Translation>((english, vietnamese) => language === 'vi' ? vietnamese : english, [language]);
-  const tr = useCallback((english: string) => translateText(english, language), [language]);
-  useEffect(() => {
-    document.documentElement.lang = language;
-    try { localStorage.setItem(welcomePreferenceKeys.language, language); } catch { /* Use the in-memory preference. */ }
-  }, [language]);
-  useEffect(() => {
-    const sync = (event: StorageEvent) => {
-      if (event.key === null || event.key === welcomePreferenceKeys.language) setLanguage(loadWelcomePreferences().language);
-    };
-    window.addEventListener('storage', sync);
-    return () => window.removeEventListener('storage', sync);
-  }, []);
-  const value = useMemo(() => ({ language, setLanguage, t, tr }), [language, t, tr]);
-  return <AppLanguageContext.Provider value={value}>{children}</AppLanguageContext.Provider>;
-}
-export const useAppLanguage = () => useContext(AppLanguageContext);
+const english: AppLanguage = { language: 'en', t: text => text, tr: text => text };
+export const useAppLanguage = () => english;
 export const useWelcomeLanguage = useAppLanguage;
 
 let vietnameseRegions: Intl.DisplayNames | undefined;

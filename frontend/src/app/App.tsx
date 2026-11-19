@@ -1,6 +1,7 @@
 import { projectionSettingsError } from '@dimension-lab/algorithms/projection';
 import { runAnalysis } from '../features/analysis/runAnalysis';
 import { useAppLanguage } from "../shared/providers/WelcomeLanguage";
+import { useAnalysisHistory } from '../features/analysis/useAnalysisHistory';
 import { UnsupervisedPanel, AnalysisOverlay } from '../features/analysis/components/UnsupervisedPanel';
 import { GMMResult } from '@dimension-lab/algorithms/gmm';
 import { useAppTheme } from '../shared/providers/ThemeProvider';
@@ -9,6 +10,7 @@ import { experimentConfiguration } from '../features/experiments/history';
 import { fetchWithTimeout } from '../shared/api/network';
 import { ExportModal } from '../features/experiments/components/ExportModal';
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ParsedDataset,
   DataPoint,
@@ -18,6 +20,8 @@ import {
   EvaluationMetrics,
   MIN_NUMERIC_FEATURES,
   DatasetSummary,
+  sampleDatasets,
+  getSampleDataset,
 } from '@dimension-lab/contracts';
 import { MAX_CSV_BYTES, parseCSVString, extractFeatureMatrix } from '@dimension-lab/algorithms/dataParser';
 import { initLiveTSNE, stepLiveTSNE, LiveTSNEState } from '../features/analysis/liveOptimization';
@@ -54,11 +58,23 @@ const ElbowModal = lazy(() =>
 const SecurityModal = lazy(() =>
   import('../features/auth/components/SecurityModal').then((module) => ({ default: module.SecurityModal }))
 );
+const DashboardPage = lazy(() => import('../features/experiments/components/DashboardPage')
+  .then(module => ({ default: module.DashboardPage })));
+
+const defaultReduction: ReductionConfig = {
+  method: 'PCA',
+  normalization: 'z-score',
+  perplexity: 30,
+  learningRate: 100,
+  iterations: 250,
+  nNeighbors: 15,
+  minDist: 0.1,
+};
 
 function makeRawPlotPoints(dataset: ParsedDataset, features: string[]) {
   if (features.length < MIN_NUMERIC_FEATURES) return [];
   const coordinates = extractFeatureMatrix(dataset.rawRows, features.slice(0, 3), 'none')
-    .map(([x, y, z]): [number, number, number] => [x, y, z]);
+    .map(([x, y, z]): [number, number, number] => [x ?? 0, y ?? 0, z ?? 0]);
   return makePoints(dataset, coordinates);
 }
 
@@ -71,7 +87,10 @@ function openWorkspacePage(page: WorkspaceRoute) {
   window.location.hash = '/' + page;
 }
 
-export function App({ active = true, persistent = false }: { active?: boolean; persistent?: boolean }) {
+export function App({ active = true, persistent = false, importsHost = null }: {
+  active?: boolean; persistent?: boolean; importsHost?: HTMLDivElement | null;
+}) {
+  const analysisHistory = useAnalysisHistory(persistent);
   const [openSetupMethod, setOpenSetupMethod] = useState<SetupMethod | null>(null);
   const { tr } = useAppLanguage();
   const [page, setPage] = useState(readWorkspacePage);
@@ -144,15 +163,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
   const [experiments, setExperiments] = useState<ExperimentRecord[]>([]);
   const [isSavingExperiment, setIsSavingExperiment] = useState(false);
 
-  const [reductionConfig, setReductionConfig] = useState<ReductionConfig>({
-    method: 'PCA',
-    normalization: 'z-score',
-    perplexity: 30,
-    learningRate: 100,
-    iterations: 250,
-    nNeighbors: 15,
-    minDist: 0.1,
-  });
+  const [reductionConfig, setReductionConfig] = useState(defaultReduction);
 
   const [clusteringConfig, setClusteringConfig] = useState<ClusteringConfig>({
     method: 'K-Means',
@@ -204,8 +215,8 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
         setDbStatus('Browser only');
       }
     };
-    checkDbHealth();
-    const interval = setInterval(checkDbHealth, 10000);
+    void checkDbHealth();
+    const interval = setInterval(() => void checkDbHealth(), 10000);
     return () => clearInterval(interval);
   }, [active]);
 
@@ -232,16 +243,11 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     liveStateRef.current = null;
   }, [handleSelectPoint]);
 
-  // Datasets kept in this tab remain selectable even when the server is unavailable.
-  const builtinDatasets: DatasetSummary[] = [
-    { id: 'cancer_wdbc', name: 'Wisconsin Breast Cancer', filename: 'data.csv', total_rows: 569, features_count: 30, label_column: 'diagnosis', id_column: 'id', created_at: '2024-01-01', is_preloaded: true },
-    { id: 'wholesale_customers', name: 'Wholesale Customers', filename: 'wholesale.csv', total_rows: 440, features_count: 7, label_column: 'Channel', id_column: null, created_at: '2024-01-02', is_preloaded: true },
-  ];
   const [nextDatasetOffset, setNextDatasetOffset] = useState<number | null>(null);
   const datasetListRequest = useRef(0);
   const fetchDatasetList = useCallback(async (offset = 0) => {
     const request = ++datasetListRequest.current;
-    let list: DatasetSummary[] = [];
+    let list: DatasetSummary[] | undefined;
     try {
       const res = await fetchWithTimeout('/api/datasets?offset=' + offset);
       if (res.ok) {
@@ -259,12 +265,14 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
       if (persistent) setNotice({ type: 'error', message: getErrorMessage(error) });
       if (offset > 0) return;
     }
-    const merged = new Map(builtinDatasets.map(item => [item.id, item]));
-    list.forEach(item => merged.set(item.id, item));
+    const merged = new Map<string, DatasetSummary>(sampleDatasets.map(item => [item.id, item]));
+    list?.forEach(item => merged.set(item.id, item));
     localDatasets.current.forEach((item, id) => merged.set(id, { id, name: item.name, filename: item.name,
       total_rows: item.totalRows, features_count: item.featureColumns.length, label_column: item.labelColumn,
       id_column: item.idColumn, created_at: new Date().toISOString(), is_local: true }));
-    setDatasetList(previous => offset ? [...new Map([...previous, ...merged.values()].map(item => [item.id, item])).values()] : [...merged.values()]);
+    setDatasetList(previous => offset || !list
+      ? [...new Map([...previous.filter(item => !item.is_local), ...merged.values()].map(item => [item.id, item])).values()]
+      : [...merged.values()]);
   }, [persistent]);
 
   const datasetRequestRef = useRef(0);
@@ -285,6 +293,11 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     currentDatasetId.current = id;
     setDataset({ ...parsed, id }); setActiveDatasetId(id);
     setSelectedFeatures(parsed.featureColumns); setSelectedColorFeature(parsed.featureColumns[0] ?? '');
+    const preset = getSampleDataset(id)?.preset;
+    if (preset) {
+      setReductionConfig({ ...defaultReduction, ...preset.reduction });
+      setClusteringConfig(preset.clustering);
+    }
     setColorMode('ground-truth');
     return true;
   }, [resetComputationState]);
@@ -298,6 +311,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     setIsExportModalOpen(false);
     setIsComputing(true); setLoadingMessage('Loading dataset…');
     try {
+      const sample = getSampleDataset(id);
       let parsed = localDatasets.current.get(id);
       if (!parsed) {
         try {
@@ -308,25 +322,25 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
             if (isDatasetDocument(data)) parsed = { id: data.id, name: data.name, totalRows: data.totalRows,
               headers: Object.keys(data.rawRows[0] ?? {}), idColumn: data.idColumn, labelColumn: data.labelColumn,
               featureColumns: data.features, rawRows: data.rawRows };
-          } else if (!['cancer_wdbc', 'wholesale_customers'].includes(id)) {
+          } else if (!sample) {
             throw new Error('Could not load this dataset (HTTP ' + response.status + ').');
           }
         } catch (error) {
-          if (!['cancer_wdbc', 'wholesale_customers'].includes(id)) throw error;
+          if (!sample) throw error;
         }
       }
-      if (!parsed && (id === 'cancer_wdbc' || id === 'wholesale_customers')) {
-        const cancer = id === 'cancer_wdbc';
-        const response = await fetchWithTimeout(cancer ? '/data.csv' : '/wholesale.csv');
+      if (!parsed && sample) {
+        const response = await fetchWithTimeout(import.meta.env.BASE_URL + sample.assetPath);
         if (!response.ok) throw new Error('Could not load the sample dataset.');
-        parsed = parseCSVString(await response.text(), cancer ? 'Wisconsin Breast Cancer' : 'Wholesale Customers');
+        parsed = parseCSVString(await response.text(), sample.name);
       }
       if (!parsed) throw new Error('This dataset is no longer available.');
-      if (request !== datasetRequestRef.current) return;
+      if (request !== datasetRequestRef.current) return undefined;
       return await activateDataset(parsed, id, request);
 
     } catch (error) {
       if (request === datasetRequestRef.current) setNotice({ type: 'error', message: getErrorMessage(error) });
+      return undefined;
     } finally {
       if (request === datasetRequestRef.current) { setIsComputing(false); setLoadingMessage(''); }
     }
@@ -387,11 +401,27 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     }
   };
 
-  // Initial Load: Fetch list and Wisconsin Breast Cancer
+  // A library preview can open its matching sample directly in Explore.
   useEffect(() => {
+    const linkedSample = () => portalRoute(window.location.hash) === 'explore'
+      ? getSampleDataset(new URLSearchParams(window.location.hash.split('?')[1]).get('dataset') ?? '')?.id : undefined;
+    const followLink = () => {
+      const id = linkedSample();
+      if (id && id !== currentDatasetId.current) void handleSelectDataset(id);
+    };
     void fetchDatasetList();
-    void handleSelectDataset('cancer_wdbc');
+    void handleSelectDataset(linkedSample() ?? 'cancer_wdbc');
+    window.addEventListener('hashchange', followLink);
+    return () => window.removeEventListener('hashchange', followLink);
   }, [fetchDatasetList, handleSelectDataset]);
+
+  const showImportedDataset = (item: DatasetSummary) => {
+    setDatasetList(previous => [
+      ...previous.filter(dataset => dataset.is_preloaded),
+      item,
+      ...previous.filter(dataset => !dataset.is_preloaded && dataset.id !== item.id),
+    ]);
+  };
 
   const handleFileUpload = async (file: File) => {
     if (isComputing) return;
@@ -406,8 +436,13 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
         if (request !== datasetRequestRef.current) return;
         const id = 'local_' + crypto.randomUUID();
         localDatasets.current.set(id, { ...parsed, id });
+        showImportedDataset({ id, name: parsed.name, filename: file.name, total_rows: parsed.totalRows,
+          features_count: parsed.featureColumns.length, label_column: parsed.labelColumn,
+          id_column: parsed.idColumn, created_at: new Date().toISOString(), is_local: true });
+        const refresh = fetchDatasetList();
         if (!await activateDataset(parsed, id, request)) return;
-        await fetchDatasetList();
+        await refresh;
+        if (request !== datasetRequestRef.current) return;
         setNotice({ type: 'info', message: 'CSV opened for this session. The server is unavailable.' });
       };
       const form = new FormData(); form.append('file', file);
@@ -423,10 +458,15 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
       }
       const data = isRecord(body) && 'data' in body ? body.data : body;
       if (!isDatasetDocument(data)) throw new Error('The server returned an invalid dataset.');
+      showImportedDataset({ id: data.id, name: data.name, filename: data.filename, total_rows: data.totalRows,
+        features_count: data.features.length, label_column: data.labelColumn,
+        id_column: data.idColumn, created_at: data.createdAt });
+      const refresh = fetchDatasetList();
       if (request !== datasetRequestRef.current) return;
       if (!await activateDataset({ ...parsed, name: data.name, rawRows: data.rawRows, featureColumns: data.features,
         idColumn: data.idColumn, labelColumn: data.labelColumn }, data.id, request)) return;
-      await fetchDatasetList();
+      await refresh;
+      if (request !== datasetRequestRef.current) return;
       setNotice({ type: 'success', message: 'Imported ' + data.name + ' (' + data.totalRows + ' rows).' });
     } catch (error) {
       if (request === datasetRequestRef.current) setNotice({ type: 'error', message: 'Could not open CSV: ' + getErrorMessage(error) });
@@ -474,8 +514,9 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
       if (token !== operationRef.current) return;
       const computed = await runAnalysis({
         dataset, run, points: backupPointsRef.current ?? dataPoints,
-        components: pcaComponents, explainedVariance: metrics.explainedVariance,
-        totalExplainedVariance: metrics.totalVarianceExplained,
+        ...(pcaComponents !== undefined && { components: pcaComponents }),
+        ...(metrics.explainedVariance !== undefined && { explainedVariance: metrics.explainedVariance }),
+        ...(metrics.totalVarianceExplained !== undefined && { totalExplainedVariance: metrics.totalVarianceExplained }),
         reuseEmbedding: reuseEmbedding && !reductionDirty,
         signal: controller.signal, isCurrent: () => token === operationRef.current, setLoadingMessage,
       });
@@ -498,8 +539,12 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
       handleSelectPoint(selectedRow === undefined ? null : result.points.find(point => point.rowIndex === selectedRow) ?? null);
       setAnalysisOverlay(null); setGmmResult(result.gmm ?? null);
       setDataPoints(result.points);
-      setMetrics({ ...result.metrics, explainedVariance, totalVarianceExplained: totalVariance,
-        executionTimeMs });
+      setMetrics({
+        ...result.metrics,
+        ...(explainedVariance !== undefined && { explainedVariance }),
+        ...(totalVariance !== undefined && { totalVarianceExplained: totalVariance }),
+        executionTimeMs,
+      });
       setCompletedRun(run);
       setColorMode(nextColorMode);
       setNotice({ type: 'success', message: run.clustering.method === 'None'
@@ -705,9 +750,13 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     setNotice({ type: 'info', message: 'Configuration restored. Run analysis to generate new results.' });
   };
 
+  const exportReady = dataset !== null && completedRun !== null && completedRun.datasetId === activeDatasetId
+    && dataPoints.length > 0 && !isComputing && !isLiveAnimating && !livePreview;
+  const dashboardInput = useMemo(() => exportReady && page === 'dashboard'
+    ? { dataset, points: dataPoints, run: completedRun, metrics, ...(gmmResult && { gmm: gmmResult }) } : null,
+  [exportReady, page, dataset, dataPoints, completedRun, metrics, gmmResult]);
   const handleExport = (format: 'csv' | 'json') => {
-    if (!dataset || !completedRun || completedRun.datasetId !== activeDatasetId
-      || dataPoints.length === 0 || isComputing || isLiveAnimating || livePreview) return;
+    if (!exportReady) return;
     try {
       const name = safeFilename(dataset.name);
       if (format === 'csv') downloadText(csvText(resultRows(dataset, dataPoints, hasClustering)), name + '_3D_Clustered_Results.csv', 'text/csv;charset=utf-8');
@@ -721,14 +770,25 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
   const overlayPoints = useMemo(() => {
     if (!analysisOverlay || livePreview) return visiblePoints;
     const rows = new Set(analysisOverlay.rows);
-    return visiblePoints.map(p => ({ ...p, cluster: 0, isOutlier: Boolean(analysisOverlay.scores) && rows.has(p.rowIndex ?? -1),
-      anomalyScore: analysisOverlay.scores?.[p.rowIndex ?? -1], analysisMatch: analysisOverlay.scores ? undefined : rows.has(p.rowIndex ?? -1),
-      originalFeatures: { ...p.originalFeatures, __anomaly_score: analysisOverlay.scores?.[p.rowIndex ?? -1] ?? 0, __rule_match: rows.has(p.rowIndex ?? -1) ? 1 : 0 } }));
+    const { scores } = analysisOverlay;
+    return visiblePoints.map(({ anomalyScore: _previousScore, analysisMatch: _previousMatch, ...point }) => {
+      const rowIndex = point.rowIndex ?? -1;
+      const matched = rows.has(rowIndex);
+      const score = scores?.[rowIndex];
+      return {
+        ...point,
+        cluster: 0,
+        isOutlier: Boolean(scores) && matched,
+        ...(score !== undefined && { anomalyScore: score }),
+        ...(!scores && { analysisMatch: matched }),
+        originalFeatures: { ...point.originalFeatures, __anomaly_score: score ?? 0, __rule_match: matched ? 1 : 0 },
+      };
+    });
   }, [analysisOverlay, livePreview, visiblePoints]);
   const renderSetup = (methodsOnly = false) => {
-    const accordion = methodsOnly ? undefined : { open: openSetupMethod, setOpen: setOpenSetupMethod };
-    return <ControlSidebar embedded methodsOnly={methodsOnly} accordion={accordion}
-        additionalMethods={dataset && <UnsupervisedPanel active={active} accordion={accordion} key={activeDatasetId + dataset.name} dataset={dataset} projection={completedRun ? completedRun.reduction.method + ' projection' : rawPreviewPoints.length ? 'Raw first three selected numeric features' : 'Unavailable until at least three numeric features are selected'} onRestoreSettings={(features, normalization) => { setSelectedFeatures(features); setReductionConfig(previous => ({ ...previous, normalization })); }} features={selectedFeatures} normalization={reductionConfig.normalization} points={dataPoints.length ? dataPoints : rawPreviewPoints} onSelect={handleSelectPoint} onOverlay={overlay => { if (overlay) { handleResetLiveAnimation(); setFocusedCluster(null); } setAnalysisOverlay(overlay); }} />}
+    const accordionProps = methodsOnly ? {} : { accordion: { open: openSetupMethod, setOpen: setOpenSetupMethod } };
+    return <ControlSidebar embedded methodsOnly={methodsOnly} {...accordionProps}
+        additionalMethods={dataset && <UnsupervisedPanel history={analysisHistory} active={active} {...accordionProps} key={activeDatasetId + dataset.name} dataset={dataset} projection={completedRun ? completedRun.reduction.method + ' projection' : rawPreviewPoints.length ? 'Raw first three selected numeric features' : 'Unavailable until at least three numeric features are selected'} onRestoreSettings={(features, normalization) => { setSelectedFeatures(features); setReductionConfig(previous => ({ ...previous, normalization })); }} features={selectedFeatures} normalization={reductionConfig.normalization} points={dataPoints.length ? dataPoints : rawPreviewPoints} onSelect={handleSelectPoint} onOverlay={overlay => { if (overlay) { handleResetLiveAnimation(); setFocusedCluster(null); } setAnalysisOverlay(overlay); }} />}
         datasetName={datasetTitle ?? tr('Loading…')}
         totalRows={dataset ? dataset.totalRows : 0}
         featureColumns={dataset ? dataset.featureColumns : []}
@@ -744,11 +804,11 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
         onChangeColorMode={setColorMode}
         selectedColorFeature={selectedColorFeature}
         onChangeSelectedColorFeature={setSelectedColorFeature}
-        onFileUpload={handleFileUpload}
+        onFileUpload={file => void handleFileUpload(file)}
         isComputing={isComputing}
         hasResults={dataPoints.length > 0}
-        onRunComputation={runPipeline}
-        onApplyClustering={handleApplyClustering}
+        onRunComputation={() => void runPipeline()}
+        onApplyClustering={() => void handleApplyClustering()}
         isLiveAnimating={isLiveAnimating}
         onToggleLiveAnimation={handleToggleLiveAnimation}
         onResetLiveAnimation={handleResetLiveAnimation}
@@ -762,21 +822,23 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
         onChangeBiplotTopK={setBiplotTopK}
         datasetList={datasetList}
         activeDatasetId={activeDatasetId}
-        onSelectDataset={handleSelectDataset}
+        onSelectDataset={id => void handleSelectDataset(id)}
         onOpenRawDataModal={() => setIsRawDataModalOpen(true)}
         onOpenDatasetManager={() => openWorkspacePage('datasets')}
       />;
   };
 
-  const pageContent = page === 'datasets' ? (
-    <DatasetsPage datasets={datasetList} activeDatasetId={dataset ? activeDatasetId : ''} busy={isComputing}
-      onLoadMore={nextDatasetOffset === null ? undefined : () => fetchDatasetList(nextDatasetOffset)}
+  const renderDatasetManager = (importedOnly = false) => (
+    <DatasetsPage importedOnly={importedOnly} datasets={datasetList} activeDatasetId={dataset ? activeDatasetId : ''} busy={isComputing}
+      {...(nextDatasetOffset !== null && { onLoadMore: () => fetchDatasetList(nextDatasetOffset) })}
       activity={tr(loadingMessage)} notice={notice && { ...notice, message: tr(notice.message) }} onDismissNotice={() => setNotice(null)} onUpload={handleFileUpload}
       onRename={handleRenameDataset} onDelete={handleDeleteDataset} onSelect={async id => {
         const opened = (dataset && id === activeDatasetId) || await handleSelectDataset(id);
-        if (opened && readWorkspacePage() === 'datasets') openWorkspacePage('explore');
+        const route = portalRoute(window.location.hash);
+        if (opened && (route === 'datasets' || (importedOnly && route === 'library'))) openWorkspacePage('explore');
       }} />
-  ) : page === 'methods' ? (
+  );
+  const pageContent = page === 'datasets' ? renderDatasetManager() : page === 'methods' ? (
     <WorkspacePage title={tr("Methods")} description={datasetTitle ? tr("Configure the next analysis for ") + datasetTitle + '.' : tr("Choose methods for your next analysis.")}
       actions={<a className="lab-action lab-action-primary" href="#/explore">{tr("Review in Explore")}</a>}>
       {isComputing && <p className="lab-page-state" role="status">{tr(loadingMessage || 'Working…')}</p>}
@@ -784,16 +846,23 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
     </WorkspacePage>
   ) : page === 'experiments' ? (
     <Suspense fallback={<WorkspacePage title={tr("Experiments")} description={tr("Find saved runs and reuse their settings.")}><p className="lab-page-state" role="status">{tr("Loading experiments…")}</p></WorkspacePage>}>
-      <ExperimentsPage experiments={experiments} onRefresh={fetchExperiments} isLoading={historyLoading} error={historyError && tr(historyError)}
+      <ExperimentsPage experiments={experiments} onRefresh={() => void fetchExperiments()} isLoading={historyLoading} error={historyError && tr(historyError)}
         storageLabel={dbStatus} activeDatasetId={dataset ? activeDatasetId : ''} availableFeatures={dataset?.featureColumns ?? []}
         isBusy={isComputing || isLiveAnimating}
         onApply={handleApplyExperiment} />
     </Suspense>
+  ) : page === 'dashboard' ? (
+    <Suspense fallback={<p className="lab-page-state" role="status">{tr('Preparing dashboard…')}</p>}>
+      <DashboardPage input={dashboardInput} />
+    </Suspense>
   ) : null;
 
+  const plotTitleBadge = analysisOverlay && !livePreview ? analysisOverlay.title
+    : livePreview ? tr('t-SNE preview') : isRawDataArea ? tr('Viewing · Raw data') : undefined;
   return (
     <div className="explorer-app font-sans">
-      {notice && page !== 'datasets' && (
+      {importsHost && createPortal(renderDatasetManager(true), importsHost)}
+      {notice && page !== 'datasets' && page !== 'dashboard' && (
         <div
           role={notice.type === 'error' ? 'alert' : 'status'}
           aria-live={notice.type === 'error' ? 'assertive' : 'polite'}
@@ -818,12 +887,12 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
       )}
       <WorkspaceLayout active={active} page={page} pageContent={pageContent}
         activity={loadingMessage}
-        analyzingConfiguration={analyzingRun ? describeRun(analyzingRun) : undefined}
+        {...(analyzingRun && { analyzingConfiguration: describeRun(analyzingRun) })}
         pendingChanges={pendingChanges}
         previousResult={previousResult}
         analysisError={analysisError}
         onDismissError={() => setAnalysisError(null)}
-        onRetry={() => executeAnalysis(clusteringConfig)}
+        onRetry={() => void executeAnalysis(clusteringConfig)}
         selectedPoint={selectedPoint}
         focusedCluster={focusedCluster}
         resultsDirty={resultsDirty}
@@ -831,7 +900,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
         isComputing={isComputing}
         canRun={Boolean(dataset) && selectedFeatures.length >= MIN_NUMERIC_FEATURES}
         canExport={!livePreview && (visiblePoints.length > 0 || Boolean(completedRun && dataPoints.length > 0))}
-        onRun={() => executeAnalysis(clusteringConfig)}
+        onRun={() => void executeAnalysis(clusteringConfig)}
         onExport={handleExportCSV}
         onHelp={() => setIsSecurityModalOpen(true)}
         controls={renderSetup()}
@@ -866,15 +935,16 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
                   onSelectPoint={handleSelectPoint}
                   selectedPoint={selectedPoint}
                   reductionMethod={livePreview ? 't-SNE' : isRawDataArea ? 'RAW' : resultMethod}
-                  titleBadge={analysisOverlay && !livePreview ? analysisOverlay.title : livePreview ? tr("t-SNE preview") : isRawDataArea ? tr("Viewing · Raw data") : undefined}
+                  {...(plotTitleBadge !== undefined && { titleBadge: plotTitleBadge })}
                   showProjectionBadge={isRawDataArea || Boolean(livePreview)}
-                  axisFeatures={isRawDataArea && !livePreview ? rawAxisFeatures : undefined}
-                  pcaComponents={isRawDataArea || livePreview ? undefined : pcaComponents}
+                  {...(isRawDataArea && !livePreview && { axisFeatures: rawAxisFeatures })}
+                  {...(!isRawDataArea && !livePreview && pcaComponents && { pcaComponents })}
                   featureNames={completedRun?.features ?? selectedFeatures}
                   showBiplot={biplotVisible}
                   biplotTopK={biplotTopK}
                   theme={theme}
-                  gmm={showGmm && !analysisOverlay && !livePreview && !isRawDataArea && !isPruned && completedRun?.clustering.method === 'GMM' ? gmmResult ?? undefined : undefined}
+                  {...(showGmm && !analysisOverlay && !livePreview && !isRawDataArea && !isPruned
+                    && completedRun?.clustering.method === 'GMM' && gmmResult && { gmm: gmmResult })}
                   showOutliersSpotlight={spotlightOutliers}
                   onToggleOutliersSpotlight={() => setSpotlightOutliers((prev) => !prev)}
                 />
@@ -913,21 +983,23 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
               {completedRun.clustering.method === 'DBSCAN' && <p className="insights-hint">{tr("Radius (ε):")} {completedRun.clustering.epsilon} {tr("· Minimum points:")} {completedRun.clustering.minPts}</p>}
             </details>}
             focusedCluster={focusedCluster}
-            onFocusCluster={livePreview ? undefined : handleFocusCluster}
+            {...(!livePreview && {
+              onFocusCluster: handleFocusCluster,
+              onPruneOutliers: handlePruneOutliers,
+              onRestorePoints: handleRestorePoints,
+              onSelectPoint: handleSelectPoint,
+              ...(dataPoints.length > 0 && { onDeletePoint: handleDeleteSinglePoint }),
+            })}
             datasetName={datasetTitle ?? tr('No dataset')}
             totalRows={dataset ? dataset.totalRows : 0}
             hasGroundTruth={Boolean(dataset?.labelColumn)}
             hasResults={completedRun !== null}
             isComputing={isComputing || isLiveAnimating}
             normalization={completedRun ? tr(normalizationLabels[completedRun.reduction.normalization]) : '—'}
-            onPruneOutliers={livePreview ? undefined : handlePruneOutliers}
-            onRestorePoints={livePreview ? undefined : handleRestorePoints}
             isPruned={isPruned}
             prunedCount={prunedCount}
             dataPoints={dataPoints}
-            onSelectPoint={livePreview ? undefined : handleSelectPoint}
-            onDeletePoint={!livePreview && dataPoints.length > 0 ? handleDeleteSinglePoint : undefined}
-            onSaveExperiment={handleSaveExperiment}
+            onSaveExperiment={() => void handleSaveExperiment()}
             onOpenHistory={() => openWorkspacePage('experiments')}
             isSaving={isSavingExperiment}
             theme={theme}
@@ -942,7 +1014,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
           point={analysisOverlay && selectedPoint ? overlayPoints.find(p => p.rowIndex === selectedPoint.rowIndex) ?? selectedPoint : selectedPoint}
           hasClustering={!livePreview && !analysisOverlay && hasClustering}
           onClose={() => handleSelectPoint(null)}
-          onDeletePoint={completedRun && !livePreview && !isComputing ? handleDeleteSinglePoint : undefined}
+          {...(completedRun && !livePreview && !isComputing && { onDeletePoint: handleDeleteSinglePoint })}
           theme={theme}
         />
               {!selectedPoint && <div className="workspace-inspector-empty"><p>{tr("Select a point to look closer.")}</p></div>}
@@ -951,7 +1023,16 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
         )}
       />
 
-      {active && isExportModalOpen && <ExportModal onClose={() => setIsExportModalOpen(false)} onDownload={handleExport} onSnapshot={() => primarySnapshotRef.current?.()} hasImage={visiblePoints.length > 0} hasResults={Boolean(completedRun && dataPoints.length > 0)} previousResult={previousResult} configuration={completedRun ? describeRun(completedRun) : undefined} focused={focusedCluster !== null} />}
+      {active && page === 'explore' && isExportModalOpen && <ExportModal
+        onClose={() => setIsExportModalOpen(false)} onDownload={handleExport} onSnapshot={() => primarySnapshotRef.current?.()}
+        onOpenDashboard={() => {
+          if (!exportReady) return;
+          setIsExportModalOpen(false);
+          openWorkspacePage('dashboard');
+        }}
+        hasImage={visiblePoints.length > 0} hasResults={exportReady} previousResult={previousResult}
+        {...(completedRun && { configuration: describeRun(completedRun) })}
+        focused={focusedCluster !== null} />}
 
       {/* Elbow Method & Silhouette Analysis Modal */}
       {active && isElbowModalOpen && (
@@ -964,7 +1045,7 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
             onApplyK={(k) => {
               const updatedConfig = { ...clusteringConfig, k };
               setClusteringConfig(updatedConfig);
-              if (dataPoints.length > 0) handleApplyClustering(updatedConfig);
+              if (dataPoints.length > 0) void handleApplyClustering(updatedConfig);
             }}
             theme={theme}
           />
@@ -982,8 +1063,8 @@ export function App({ active = true, persistent = false }: { active?: boolean; p
               try {
                 const res = await fetchWithTimeout('/api/health');
                 if (res.ok) {
-                  const data = await res.json();
-                  setDbStatus(data.database || 'Online');
+                  const data: unknown = await res.json();
+                  setDbStatus(isRecord(data) && typeof data.database === 'string' && data.database ? data.database : 'Online');
                 }
               } catch {
                 setDbStatus('In-Memory Mode');

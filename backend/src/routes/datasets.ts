@@ -127,7 +127,7 @@ export function registerDatasetRoutes(app: Express) {
       if (typeof name !== 'string' || !name.trim() || name.trim().length > 200) {
         throw new BadRequestError('Invalid dataset name.');
       }
-      if (id === 'cancer_wdbc' || id === 'wholesale_customers') throw new ForbiddenError('Sample datasets are read-only.');
+      if (isSampleDataset(id)) throw new ForbiddenError('Sample datasets are read-only.');
       const demo = atlasMode ? null : renameDemoDataset(id, name.trim());
       const updated = atlasMode ? await renameOwnedDataset(id, req.user!.id, name.trim()) : demo && summarizeDataset(demo);
       if (!updated) {
@@ -143,7 +143,7 @@ export function registerDatasetRoutes(app: Express) {
   app.delete('/api/datasets/:id', requireRole(atlasMode ? ['researcher', 'admin'] : ['admin']), async (req: AuthenticatedRequest, res, next) => {
     try {
       const id = String(req.params.id);
-      if (id === 'cancer_wdbc' || id === 'wholesale_customers') throw new ForbiddenError('Sample datasets are read-only.');
+      if (isSampleDataset(id)) throw new ForbiddenError('Sample datasets are read-only.');
       const success = atlasMode ? await deleteOwnedDataset(id, req.user!.id) : deleteDemoDataset(id);
       if (!success) {
         throw new NotFoundError(`Dataset [${id}]`);

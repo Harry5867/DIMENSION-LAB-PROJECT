@@ -16,6 +16,7 @@ export interface ApiResponse<T = unknown> {
 export interface AuthOptions {
   mode: 'demo' | 'atlas';
   google: boolean;
+  registration: boolean;
 }
 
 export interface SystemHealth {

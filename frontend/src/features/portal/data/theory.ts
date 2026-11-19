@@ -169,7 +169,7 @@ export function theorySelection(hash: string) {
   const chapter = theoryChapters.find(item => item.id === params.get('chapter'));
   if (!chapter) return null;
   const method = chapter.methods.find(item => item.id === params.get('method')) ?? chapter.methods[0];
-  return { chapter, method };
+  return method ? { chapter, method } : null;
 }
 
 export const exampleTransactions = [

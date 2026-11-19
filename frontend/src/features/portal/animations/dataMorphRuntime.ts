@@ -14,14 +14,17 @@ interface Surface {
 
 function writePose(buffer: Float32Array, sources: readonly Float32Array[], pose: MorphPose) {
   if (typeof pose === 'number') {
-    buffer.set(sources[pose]);
+    const source = sources[pose];
+    if (source) buffer.set(source);
+    else buffer.fill(0);
     return;
   }
   buffer.fill(0);
   pose.forEach((weight, scene) => {
     if (!weight) return;
     const source = sources[scene];
-    for (let i = 0; i < buffer.length; i++) buffer[i] += source[i] * weight;
+    if (!source) return;
+    for (let i = 0; i < buffer.length; i++) buffer[i]! += source[i]! * weight;
   });
 }
 
@@ -98,9 +101,10 @@ function createWebGLSurface(host: HTMLElement): Surface {
   const scene = new THREE.Scene(), group = new THREE.Group(); group.position.y = .1; scene.add(group);
   const camera = new THREE.PerspectiveCamera(36, 1, .1, 100);
   const geometry = new THREE.BufferGeometry();
+  const uniforms = { blend: { value: 0 }, time: { value: 0 }, pixelRatio: { value: 1 }, pointSize: { value: morphSettings.pointSize } };
   const material = new THREE.ShaderMaterial({ vertexShader, fragmentShader, vertexColors: true,
     transparent: true, depthWrite: false, toneMapped: false,
-    uniforms: { blend: { value: 0 }, time: { value: 0 }, pixelRatio: { value: 1 }, pointSize: { value: morphSettings.pointSize } },
+    uniforms,
   });
   const points = new THREE.Points(geometry, material); points.frustumCulled = false; group.add(points);
   const linePositions = new Float32Array(associationEdges.length * 6);
@@ -142,7 +146,7 @@ function createWebGLSurface(host: HTMLElement): Surface {
     resize(width, height, dpr, lowPower) {
       const budget = morphBudget(width, height, dpr, lowPower);
       renderer.setPixelRatio(budget.dpr); renderer.setSize(Math.max(1, width), Math.max(1, height), false);
-      material.uniforms.pixelRatio.value = budget.dpr;
+      uniforms.pixelRatio.value = budget.dpr;
       camera.aspect = width / Math.max(1, height);
       if (count !== budget.count) {
         // Release the previous buffers before a responsive particle-count change.
@@ -150,11 +154,11 @@ function createWebGLSurface(host: HTMLElement): Surface {
         count = budget.count;
         const prepared = prepareMorphShapes(count); shapes = prepared.shapes;
         positionArrays = shapes.map(shape => shape.positions);
-        const associationScale = prepared.scales[prepared.scales.length - 1];
+        const associationScale = prepared.scales.at(-1) ?? 1;
         associationEdges.forEach(([from, to], i) => {
           for (let axis = 0; axis < 3; axis++) {
-            linePositions[i * 6 + axis] = associationCenters[from][axis] * associationScale;
-            linePositions[i * 6 + 3 + axis] = associationCenters[to][axis] * associationScale;
+            linePositions[i * 6 + axis] = associationCenters[from][axis]! * associationScale;
+            linePositions[i * 6 + 3 + axis] = associationCenters[to][axis]! * associationScale;
           }
         });
         lineGeometry.getAttribute('position').needsUpdate = true;
@@ -175,7 +179,7 @@ function createWebGLSurface(host: HTMLElement): Surface {
       group.rotation.set(-.1 + Math.sin(seconds * .17) * morphSettings.idlePitch + pitch,
         Math.sin(seconds * .14) * morphSettings.idleYaw + yaw, Math.sin(seconds * .1) * .035);
       group.position.y = .1 + Math.sin(seconds * .85) * morphSettings.bob;
-      material.uniforms.time.value = seconds; material.uniforms.blend.value = frame.blend;
+      uniforms.time.value = seconds; uniforms.blend.value = frame.blend;
       lineMaterial.opacity = associationOpacity(frame) * .34;
       lines.visible = lineMaterial.opacity > .005;
       lines.scale.setScalar(1 + Math.sin(seconds * 1.06) * morphSettings.breathe);
@@ -202,7 +206,7 @@ function createCanvasSurface(host: HTMLElement): Surface {
   const paintColor = new THREE.Color();
   let cached = new WeakMap<readonly number[], CanvasPose>();
   const lookup = (pose: MorphPose): CanvasPose => {
-    if (typeof pose === 'number') return { positions: positions[pose], colors: palette[pose], linearColors: colors[pose] };
+    if (typeof pose === 'number') return { positions: positions[pose]!, colors: palette[pose]!, linearColors: colors[pose]! };
     const existing = cached.get(pose);
     if (existing) return existing;
     const projected = new Float32Array(morphSettings.fallbackPoints * 3), blended = new Float32Array(projected.length);
@@ -242,7 +246,7 @@ function createCanvasSurface(host: HTMLElement): Surface {
         ctx.strokeStyle = lineColor; ctx.lineWidth = .8; ctx.globalAlpha = lineAlpha; ctx.beginPath();
         associationEdges.forEach(([a, b]) => {
           const from = associationCenters[a], to = associationCenters[b];
-          const factor = scale * breathe * prepared.scales[prepared.scales.length - 1];
+          const factor = scale * breathe * (prepared.scales.at(-1) ?? 1);
           ctx.moveTo(width/2 + (from[0] * cos + from[2] * sin) * factor, height/2 - (from[1] - from[2] * pitch) * factor - scale * (.1 + bob));
           ctx.lineTo(width/2 + (to[0] * cos + to[2] * sin) * factor, height/2 - (to[1] - to[2] * pitch) * factor - scale * (.1 + bob));
         });
@@ -251,16 +255,16 @@ function createCanvasSurface(host: HTMLElement): Surface {
       ctx.globalAlpha = .8;
       for (let i = 0; i < morphSettings.fallbackPoints; i++) {
         const k = i * 3;
-        const x = (source.positions[k] * (1-t) + target.positions[k] * t) * breathe;
-        const y = (source.positions[k+1] * (1-t) + target.positions[k+1] * t) * breathe + Math.cos(seconds * .8 + (i % 4) * 1.57) * .025;
-        const z = source.positions[k+2] * (1-t) + target.positions[k+2] * t;
+        const x = (source.positions[k]! * (1-t) + target.positions[k]! * t) * breathe;
+        const y = (source.positions[k+1]! * (1-t) + target.positions[k+1]! * t) * breathe + Math.cos(seconds * .8 + (i % 4) * 1.57) * .025;
+        const z = source.positions[k+2]! * (1-t) + target.positions[k+2]! * t;
         ctx.beginPath(); ctx.arc(width/2 + (x * cos + z * sin) * scale, height/2 - (y - z * pitch + .1 + bob) * scale, 1.7, 0, Math.PI * 2);
-        if (t === 0) ctx.fillStyle = source.colors[i];
-        else if (t === 1) ctx.fillStyle = target.colors[i];
+        if (t === 0) ctx.fillStyle = source.colors[i]!;
+        else if (t === 1) ctx.fillStyle = target.colors[i]!;
         else {
           const a = source.linearColors, b = target.linearColors;
-          ctx.fillStyle = paintColor.setRGB(a[k] + (b[k] - a[k]) * t,
-            a[k+1] + (b[k+1] - a[k+1]) * t, a[k+2] + (b[k+2] - a[k+2]) * t).getStyle();
+          ctx.fillStyle = paintColor.setRGB(a[k]! + (b[k]! - a[k]!) * t,
+            a[k+1]! + (b[k+1]! - a[k+1]!) * t, a[k+2]! + (b[k+2]! - a[k+2]!) * t).getStyle();
         }
         ctx.fill();
       }
