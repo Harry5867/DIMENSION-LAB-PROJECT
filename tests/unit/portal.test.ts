@@ -450,7 +450,7 @@ test('portal separates content pages and legacy workspace routes, with a safe ov
   assert.equal(portalSections.length, 5);
   assert.equal(new Set(portalSections.map(section => section.href)).size, 5);
   assert.deepEqual(portalSections.map(section => isModelRoute(portalRoute(section.href))), [false, true, false, false, false]);
-  for (const route of ['explore', 'datasets', 'methods', 'experiments']) assert.equal(isModelRoute(portalRoute('#/' + route)), true);
+  for (const route of ['explore', 'datasets', 'methods', 'experiments', 'dashboard']) assert.equal(isModelRoute(portalRoute('#/' + route)), true);
   for (const hash of ['', '#/', '#/missing', '#portal-main', '#/overview/extra']) assert.equal(portalRoute(hash), 'overview');
   assert.equal(portalRoute('#/library?example=1'), 'library');
 });
@@ -489,7 +489,10 @@ test('malformed and unknown profiles stay in About while other sign-in destinati
 });
 
 test('prepared data stories reproduce PCA and seeded GMM from the exact bundled source files', () => {
-  assert.deepEqual(caseStudies.map(story => story.rowCount), [569, 440]);
+  assert.deepEqual(caseStudies.map(story => [story.id, story.rowCount]), [
+    ['cancer_wdbc', 569], ['wholesale_customers', 440], ['palmer_penguins', 344],
+    ['wheat_seeds', 210], ['banknote_authentication', 900], ['smartphone_activity', 600], ['handwritten_digits', 900],
+  ]);
   for (const story of caseStudies) {
     const csv = readFileSync(new URL('../../public/' + story.file, import.meta.url), 'utf8');
     assert.equal(createHash('sha256').update(csv).digest('hex'), story.sourceHash);

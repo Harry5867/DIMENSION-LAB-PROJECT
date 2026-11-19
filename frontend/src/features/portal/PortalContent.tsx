@@ -28,16 +28,17 @@ function Guide({ hash, onOpenChapter }: { hash: string; onOpenChapter: OpenGuide
   );
 }
 
-export function PortalContent({ route, hash, profile, onOpenMember, onChangeProfile, onOpenGuideChapter }: {
+export function PortalContent({ route, hash, profile, onOpenMember, onChangeProfile, onOpenGuideChapter, onImportsHost }: {
   route: PortalRoute; hash: string; profile?: TeamMember | null;
   onOpenMember: (member: TeamMember, source: HTMLAnchorElement) => void;
   onChangeProfile: (member: TeamMember) => void;
   onOpenGuideChapter: OpenGuideChapter;
+  onImportsHost?: (host: HTMLDivElement | null) => void;
 }) {
   const { tr } = useAppLanguage();
   if (route === 'theory') return <Suspense fallback={<p role="status">{tr("Loading theory…")}</p>}><Theory /></Suspense>;
   if (route === 'guide') return <Guide hash={hash} onOpenChapter={onOpenGuideChapter} />;
   if (route === 'about') return profile === undefined ? <TeamBrowser key={hash} hash={hash} onOpenMember={onOpenMember} /> : <TeamProfile member={profile} onChangeProfile={onChangeProfile} />;
-  if (route === 'library') return <Suspense fallback={<p role="status">{tr("Loading data stories…")}</p>}><DatasetStories /></Suspense>;
+  if (route === 'library') return <Suspense fallback={<p role="status">{tr("Loading data stories…")}</p>}><DatasetStories {...(onImportsHost && { onImportsHost })} /></Suspense>;
   return null;
 }

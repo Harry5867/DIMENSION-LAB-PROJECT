@@ -2,6 +2,26 @@ import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { openDemoPage, uploadCsv } from './support';
+import { sampleDatasets } from '@dimension-lab/contracts';
+
+test('lists all samples and runs the Wheat Seeds preset through Explore', async ({ page }) => {
+  await openDemoPage(page, '/#/datasets');
+  const library = page.getByRole('region', { name: 'Sample datasets' });
+  await expect(library.getByRole('listitem')).toHaveCount(sampleDatasets.length);
+  const wheat = library.getByRole('listitem').filter({ has: page.getByRole('heading', { name: 'Wheat Seeds', exact: true }) });
+  await expect(wheat).toContainText('PCA + GMM');
+  await wheat.getByLabel('Actions for Wheat Seeds', { exact: true }).click();
+  await wheat.getByRole('button', { name: 'Preview first 20 rows' }).click();
+  await expect(page.getByRole('dialog')).toContainText('First 20 of 210 rows');
+  await page.getByRole('button', { name: 'Close raw data' }).click();
+  // Exercise the static CSV fallback as well as the real compute worker.
+  await page.route('**/api/datasets/wheat_seeds', route => route.fulfill({ status: 503 }));
+  await wheat.getByRole('button', { name: 'Use dataset' }).click();
+  await expect(page).toHaveURL(/#\/explore$/);
+  await page.getByRole('button', { name: 'Run analysis', exact: true }).click();
+  await expect(page.locator('.workspace-viewing')).toContainText('PCA / GMM / Z-score');
+  await expect(page.getByText('GMM · diagonal covariance', { exact: true })).toBeAttached();
+});
 
 test('previews, searches, downloads, renames, and deletes an imported dataset', async ({ page }) => {
   await openDemoPage(page, '/#/datasets');

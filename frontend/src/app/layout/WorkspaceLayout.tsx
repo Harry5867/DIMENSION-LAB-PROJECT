@@ -6,8 +6,8 @@ import { ArrowDownToLine, PanelLeft, PanelRight, Play, HelpCircle, ArrowLeft } f
 import { ThemeToggle } from '../../shared/ui/ThemeToggle';
 import { modelRoutes } from '../../shared/navigation/portalNavigation';
 
-export const workspacePages = modelRoutes;
-export type WorkspacePage = typeof workspacePages[number];
+const workspacePages = modelRoutes.filter(page => page !== 'dashboard');
+export type WorkspacePage = typeof modelRoutes[number];
 
 interface WorkspaceLayoutProps {
   active?: boolean;
@@ -155,7 +155,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         event.preventDefault();
         pageRef.current?.focus();
       }}>{tr("Skip to content")}</a>
-      {props.page !== 'explore' && <header className="workspace-header">
+      {props.page !== 'explore' && props.page !== 'dashboard' && <header className="workspace-header">
         <nav aria-label={tr("Main navigation")}>
           {workspacePages.map(page => <a key={page} href={'#/' + page} aria-current={props.page === page ? 'page' : undefined}>{tr(page.toUpperCase())}</a>)}
         </nav>

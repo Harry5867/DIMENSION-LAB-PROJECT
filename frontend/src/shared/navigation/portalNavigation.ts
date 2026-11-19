@@ -3,7 +3,7 @@ export const portalSections = [
   { id: 'model', number: '02', title: 'Model', subtitle: 'Practice with your data.', href: '#/explore' },
   { id: 'about', number: '03', title: 'About us', subtitle: 'Meet the people behind the lab.', href: '#/about' },
   { id: 'guide', number: '04', title: 'User Guide', subtitle: 'Find your way, step by step.', href: '#/guide' },
-  { id: 'library', number: '05', title: 'Datasets', subtitle: 'Explore prepared data stories.', href: '#/library' },
+  { id: 'library', number: '05', title: 'Datasets', subtitle: 'Explore sample datasets and your CSV uploads.', href: '#/library' },
 ] as const;
 export type PortalSection = typeof portalSections[number];
 export const guideChapters = [
@@ -20,7 +20,7 @@ export function guideChapter(hash: string): GuideChapter | undefined {
   return guideChapters.find(chapter => path === '#/guide/' + chapter.slug);
 }
 
-export const modelRoutes = ['explore', 'datasets', 'methods', 'experiments'] as const;
+export const modelRoutes = ['explore', 'datasets', 'methods', 'experiments', 'dashboard'] as const;
 export type PortalRoute = 'overview' | 'theory' | 'about' | 'guide' | 'library' | typeof modelRoutes[number];
 export function isWelcomeRoute(hash: string) {
   const path = hash.split('?')[0];

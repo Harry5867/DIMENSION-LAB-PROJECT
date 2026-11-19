@@ -43,6 +43,8 @@ export function Entry() {
   const showPortal = signedIn && !atWelcome;
   const openingId = sectionNavigation?.phase === 'covering' ? sectionNavigation.section?.id : undefined;
   const modelActive = showPortal && isModelRoute(route);
+  const libraryActive = showPortal && route === 'library';
+  const [importsHost, setImportsHost] = useState<HTMLDivElement | null>(null);
   const [modelVisited, setModelVisited] = useState(modelActive);
   useEffect(() => {
     const navigate = () => {
@@ -56,7 +58,7 @@ export function Entry() {
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
-  useEffect(() => { if (modelActive) setModelVisited(true); }, [modelActive]);
+  useEffect(() => { if (modelActive || libraryActive) setModelVisited(true); }, [modelActive, libraryActive]);
   useEffect(() => {
     const expire = () => {
       entrancePhaseRef.current = 'idle'; setEntrancePhase('idle');
@@ -259,10 +261,10 @@ export function Entry() {
         {!modelActive && <Portal key={route} route={route} hash={hash} onReturnToWelcome={returnToWelcome} entering={workspaceEntering} interactive={!transitioning}
           onOpenSection={openSection} {...(openingId !== undefined && { openingId })}
           sectionEntering={arrivingRoute === route && route !== 'overview'} returning={arrivingRoute === 'overview'}
-          titleInTransit={Boolean(sectionNavigation?.source?.title && sectionNavigation.phase === 'revealing')} />}
+          titleInTransit={Boolean(sectionNavigation?.source?.title && sectionNavigation.phase === 'revealing')} onImportsHost={setImportsHost} />}
       </> : <Welcome onSignIn={signIn} onSignOut={() => void signOut()} signedIn={signedIn} arrival={homeArrival} authOptions={authOptions} />}
-      {signedIn && (modelVisited || modelActive) && <div className={'model-session' + (modelActive && arrivingRoute === route ? ' model-session--arriving' : '')} hidden={!modelActive}>
-        <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} persistent={authOptions?.mode === 'atlas'} /></Suspense>
+      {signedIn && (modelVisited || modelActive || libraryActive) && <div className={'model-session' + (modelActive && arrivingRoute === route ? ' model-session--arriving' : '')} hidden={!modelActive}>
+        <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} persistent={authOptions?.mode === 'atlas'} importsHost={libraryActive ? importsHost : null} /></Suspense>
       </div>}
     </div>
     <div className="welcome-signout-veil" data-active={logoutPending} aria-hidden="true">

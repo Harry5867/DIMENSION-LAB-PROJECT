@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en" data-theme="%%THEME%%">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-%%NONCE%%'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+  <title>Analysis Dashboard · Dimension Lab</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --base: #edf3ef; --panel: #fcfefc; --tint: #e9f3ee; --ink: #13271f;
+      --muted: #486459; --line: #c9dcd1; --accent: #087455; --plot: #f2f8f4;
+    }
+    :root[data-theme=dark] {
+      color-scheme: dark;
+      --base: #0b1814; --panel: #11231c; --tint: #1a342a; --ink: #edf7ef;
+      --muted: #abc6b8; --line: #2c493c; --accent: #82e0bd; --plot: #0c1c16;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--base); color: var(--ink); font: 14px/1.55 system-ui, sans-serif; }
+    main { width: min(1600px, 100%); margin: auto; padding: clamp(14px, 2vw, 30px); display: grid; gap: 14px; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(1.65rem, 3.4vw, 2.6rem); line-height: 1.12; letter-spacing: -.04em; overflow-wrap: anywhere; }
+    h2 { font-size: 1rem; letter-spacing: -.012em; }
+    .report-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
+    .report-header > div { min-width: 0; }
+    .brand { color: var(--accent); font-size: 12px; font-weight: 650; margin-bottom: 5px; }
+    html[data-embedded] .brand { display: none; }
+    .report-nav { display: flex; gap: 8px; }
+    .report-nav button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; }
+    .report-nav button[aria-current=location] { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+    #summary { color: var(--muted); margin-top: 4px; }
+    .card { min-width: 0; padding: clamp(12px, 1.4vw, 18px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(240px, 1fr); gap: 14px; }
+    .aside { display: grid; gap: 12px; min-width: 0; }
+    .projection-card { display: flex; flex-direction: column; }
+    .plot-surface { position: relative; flex: 1; min-height: clamp(285px, 46vh, 520px);
+      background: radial-gradient(ellipse at 50% 45%, var(--tint), var(--plot) 80%); border-radius: 10px; }
+    #zoom-level { min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px;
+      margin: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--line); overflow: hidden; }
+    .metric { display: flex; gap: 10px; flex-direction: row-reverse; justify-content: flex-end; align-items: baseline; flex-wrap: wrap;
+      padding: 8px 12px; background: var(--panel); }
+    .metric dt, .hint { color: var(--muted); font-size: 12px; }
+    .metric dd { margin: 0; color: var(--accent); font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    button, input, select { font: inherit; color: inherit; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); padding: 6px 10px; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: .5; }
+    button:not(:disabled):hover, button[aria-pressed=true] { background: var(--tint); }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+      border: 1px solid var(--line); border-radius: 10px; cursor: grab; touch-action: pan-y; }
+    canvas:active { cursor: grabbing; }
+    .plot-hint { margin-top: 8px; }
+    #picked { margin-top: 4px; overflow-wrap: anywhere; }
+    #picked:empty { margin-top: 0; }
+    #groups, #variance { display: grid; gap: 6px; margin-top: 8px; }
+    .bar-row { width: 100%; display: grid; grid-template-columns: auto minmax(32px, 1fr) auto; align-items: center; gap: 8px; }
+    .track { height: 7px; border-radius: 99px; background: var(--tint); overflow: hidden; }
+    .bar { display: block; height: 100%; border-radius: 99px; }
+    .parameters { margin: 8px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(102px, 1fr)); gap: 6px 14px; }
+    .parameters dt { color: var(--muted); font-size: 12px; }
+    .parameters dd { margin: 0; overflow-wrap: anywhere; }
+    details { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 7px; }
+    summary { cursor: pointer; font-weight: 600; }
+    #features { margin-top: 8px; overflow-wrap: anywhere; }
+    .table-scroll { overflow: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); min-width: 76px; overflow-wrap: anywhere; }
+    th { background: var(--tint); white-space: normal; }
+    td { max-width: 340px; font-variant-numeric: tabular-nums; }
+    tbody tr:nth-child(even) { background: var(--plot); }
+    tbody tr:last-child td { border-bottom: 0; }
+    #search { width: min(260px, 100%); }
+    .pager { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; align-items: center; }
+    [hidden] { display: none !important; }
+    @media (max-width: 740px) {
+      .grid { grid-template-columns: minmax(0, 1fr); }
+      .plot-surface { min-height: clamp(240px, 58vw, 385px); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="report-header" id="overview">
+      <div><p class="brand">Dimension Lab · Analysis Dashboard</p>
+        <h1 id="dataset" tabindex="-1"></h1><p id="summary"></p></div>
+      <nav class="report-nav" aria-label="Dashboard sections">
+        <button type="button" id="jump-overview" aria-current="location">Overview</button>
+        <button type="button" id="jump-rows">Point details</button>
+      </nav>
+    </header>
+    <dl class="metrics" id="metrics" aria-label="Analysis metrics"></dl>
+    <div class="grid">
+      <section class="card projection-card" aria-labelledby="plot-title">
+        <div class="section-head"><h2 id="plot-title">3D projection</h2>
+          <div class="tools" aria-label="Projection controls">
+            <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+            <output id="zoom-level" class="hint" aria-label="Zoom level">100%</output>
+            <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+            <button id="reset" type="button">Reset view</button>
+          </div>
+        </div>
+        <div class="plot-surface"><canvas tabindex="0" aria-label="Interactive 3D scatter plot" aria-describedby="plot-help"></canvas></div>
+        <p class="hint plot-hint" id="plot-help">Drag or use the arrow keys to rotate. Focus the plot to zoom with the scroll wheel. Click a point for its ID.</p>
+        <p class="hint" id="picked" aria-live="polite"></p>
+      </section>
+      <div class="aside">
+        <section class="card" id="group-card" aria-labelledby="group-title">
+          <h2 id="group-title">Cluster distribution</h2>
+          <p class="hint">Select a group to highlight it and filter the table.</p>
+          <div id="groups"></div>
+        </section>
+        <section class="card" id="variance-card" aria-labelledby="variance-title">
+          <div class="section-head"><h2 id="variance-title">PCA explained variance</h2><p class="hint" id="variance-total"></p></div>
+          <div id="variance"></div>
+        </section>
+        <section class="card" aria-labelledby="config-title">
+          <h2 id="config-title">Run configuration</h2>
+          <dl class="parameters" id="parameters"></dl>
+          <details id="parameter-details"><summary>Algorithm details</summary><dl class="parameters" id="advanced"></dl></details>
+          <details><summary id="feature-summary">Selected columns</summary><p id="features"></p></details>
+        </section>
+      </div>
+    </div>
+    <section class="card" aria-labelledby="rows-title">
+      <div class="section-head">
+        <h2 id="rows-title" tabindex="-1">Point details</h2>
+        <div class="tools">
+          <input type="search" id="search" placeholder="Search points…" aria-label="Search points">
+          <select id="filter" aria-label="Filter by cluster"><option value="">All groups</option></select>
+        </div>
+      </div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Result points table">
+        <table aria-labelledby="rows-title"><thead><tr id="headings"></tr></thead><tbody id="rows"></tbody></table>
+      </div>
+      <div class="pager">
+        <p class="hint" id="row-count" aria-live="polite"></p>
+        <div class="tools"><button id="previous" type="button">Previous</button><button id="next" type="button">Next</button></div>
+      </div>
+    </section>
+  </main>
+  <script type="application/json" id="report">%%PAYLOAD%%</script>
+  <script nonce="%%NONCE%%">
+    (() => {
+      'use strict';
+      const find = id => document.getElementById(id);
+      const report = JSON.parse(find('report').textContent);
+      const count = new Intl.NumberFormat();
+      const decimal = new Intl.NumberFormat(undefined, { maximumSignificantDigits: 6 });
+      const percent = value => (value * 100).toFixed(1) + '%';
+      const labels = id => id === -1 ? 'Noise' : 'Cluster ' + id;
+      const palette = ['#429d79', '#c47d47', '#7a9de1', '#c66b98', '#9e873f', '#528fb4', '#c76760', '#9577cf', '#849f5b', '#c5883a'];
+      const color = id => id === -1 ? '#84948d' : id === null ? palette[0] : palette[id % palette.length];
+
+      function element(tag, content, className) {
+        const node = document.createElement(tag);
+        if (content !== undefined) node.textContent = String(content);
+        if (className) node.className = className;
+        return node;
+      }
+
+      function addPair(list, label, value, boxed = false) {
+        const pair = document.createElement('div');
+        if (boxed) pair.className = 'metric';
+        pair.append(element('dt', label), element('dd', value));
+        list.append(pair);
+      }
+
+      function bar(label, value, ratio, shade, tag = 'div') {
+        const row = element(tag, undefined, 'bar-row');
+        const track = element('span', undefined, 'track');
+        const fill = element('span', undefined, 'bar');
+        fill.style.width = Math.max(0, Math.min(ratio, 1)) * 100 + '%';
+        fill.style.background = shade;
+        track.append(fill);
+        row.append(element('span', label), track, element('span', value));
+        return row;
+      }
+
+      find('dataset').textContent = report.dataset.name;
+      const removed = report.dataset.sourceRows - report.rows.length;
+      const normalization = report.parameters[0][1];
+      const clustering = report.hasClusters ? report.clustering : 'No clustering';
+      find('summary').textContent = [report.reduction, normalization, clustering].join(' · ')
+        + (removed > 0 ? ' · ' + count.format(removed) + ' of ' + count.format(report.dataset.sourceRows) + ' source rows excluded' : '');
+      const metrics = find('metrics');
+      addPair(metrics, 'Result points', count.format(report.rows.length), true);
+      addPair(metrics, 'Selected features', count.format(report.features.length), true);
+      if (report.hasClusters) {
+        addPair(metrics, 'Clusters found', count.format(report.groups.filter(group => group.id !== -1).length), true);
+        addPair(metrics, 'Silhouette', report.metrics.silhouette == null ? 'Unavailable' : report.metrics.silhouette.toFixed(3), true);
+      }
+      if (report.hasLabels && report.hasClusters) {
+        addPair(metrics, 'ARI', report.metrics.ari == null ? 'Unavailable' : report.metrics.ari.toFixed(3), true);
+      }
+      if (report.clustering === 'DBSCAN') {
+        const noise = report.groups.find(group => group.id === -1)?.count ?? 0;
+        addPair(metrics, 'Noise', count.format(noise) + ' · ' + percent(noise / report.rows.length), true);
+      }
+      if (report.metrics.variance) {
+        find('variance-total').textContent = percent(report.metrics.variance.reduce((sum, value) => sum + value, 0)) + ' retained';
+        if (!report.hasClusters) addPair(metrics, 'Principal components', report.metrics.variance.length, true);
+        report.metrics.variance.forEach((value, index) => find('variance').append(bar('PC' + (index + 1), percent(value), value, 'var(--accent)')));
+      } else find('variance-card').hidden = true;
+      if (report.metrics.executionTimeMs != null) {
+        addPair(metrics, 'Workspace run time', count.format(report.metrics.executionTimeMs) + ' ms', true);
+      }
+
+      const parameters = find('parameters');
+      const advanced = find('advanced');
+      for (const [label, value] of report.parameters.slice(0, 3)) addPair(parameters, label, value);
+      for (const [label, value] of report.parameters.slice(3)) addPair(advanced, label, value);
+      if (report.metrics.gmm) {
+        const fit = report.metrics.gmm;
+        addPair(advanced, 'Original GMM fit', fit.converged ? 'Converged' : 'Iteration limit reached');
+        for (const [label, value] of [['Log likelihood', fit.logLikelihood], ['AIC', fit.aic], ['BIC', fit.bic]]) {
+          if (Number.isFinite(value)) addPair(advanced, label, decimal.format(value));
+        }
+      }
+      find('parameter-details').hidden = !advanced.childElementCount;
+      find('feature-summary').textContent = 'Selected columns (' + report.features.length + ')';
+      find('features').textContent = report.features.join(', ');
+
+      const canvas = document.querySelector('canvas');
+      const context = canvas.getContext('2d');
+      const filter = find('filter');
+      const search = find('search');
+      const status = find('picked');
+      const groups = new Map();
+      const axisNames = report.reduction === 'PCA' ? ['PC1', 'PC2', 'PC3'] : ['X', 'Y', 'Z'];
+      const columns = ['ID', 'CSV row', ...axisNames];
+      if (report.hasClusters) columns.push('Predicted cluster');
+      if (report.hasLabels) columns.push('Source label');
+      if (report.clustering === 'GMM') columns.push('GMM confidence');
+      if (report.source) columns.push(...report.source.columns.map(name => 'Source · ' + name));
+      for (const column of columns) {
+        const heading = element('th', column);
+        heading.scope = 'col';
+        find('headings').append(heading);
+      }
+
+      const points = report.rows.map((row, i) => {
+        const cells = [String(row.id), row.sourceRow ?? '—', decimal.format(row.x), decimal.format(row.y), decimal.format(row.z)];
+        if (report.hasClusters) cells.push(labels(row.cluster));
+        if (report.hasLabels) cells.push(row.label ?? '—');
+        if (report.clustering === 'GMM') cells.push(row.confidence == null ? '—' : percent(row.confidence));
+        if (report.source) cells.push(...report.source.values[i].map(value => value ?? '—'));
+        return { row, cells };
+      });
+      const pageSize = report.source ? 25 : 50;
+      let selection = '';
+      let currentPage = 0;
+      let matching = points;
+      let picked = null;
+
+      function showPage() {
+        const start = currentPage * pageSize;
+        const end = Math.min(start + pageSize, matching.length);
+        const rows = document.createDocumentFragment();
+        for (const point of matching.slice(start, end)) {
+          const tr = document.createElement('tr');
+          for (const value of point.cells) tr.append(element('td', value));
+          rows.append(tr);
+        }
+        if (!matching.length) {
+          const row = document.createElement('tr');
+          const cell = element('td', 'No matching points.');
+          cell.colSpan = columns.length;
+          row.append(cell);
+          rows.append(row);
+        }
+        find('rows').replaceChildren(rows);
+        find('row-count').textContent = matching.length
+          ? count.format(start + 1) + '–' + count.format(end) + ' of ' + count.format(matching.length) + ' points' : '0 points';
+        find('previous').disabled = currentPage === 0;
+        find('next').disabled = end === matching.length;
+      }
+
+      function updateResults() {
+        const query = search.value.trim().toLowerCase();
+        matching = points.filter(point => (selection === '' || String(point.row.cluster) === selection)
+          && (!query || point.cells.some(value => String(value).toLowerCase().includes(query))));
+        currentPage = 0;
+        showPage();
+      }
+
+      function selectGroup(value) {
+        selection = value;
+        filter.value = value;
+        picked = null;
+        status.textContent = '';
+        for (const [id, button] of groups) button.setAttribute('aria-pressed', String(id === selection));
+        updateResults();
+        queueDraw();
+      }
+
+      if (report.hasClusters) {
+        for (const group of report.groups) {
+          const id = String(group.id);
+          const option = element('option', labels(group.id));
+          option.value = id;
+          filter.append(option);
+          const share = group.count / report.rows.length;
+          const button = bar(labels(group.id), count.format(group.count) + ' · ' + percent(share), share, color(group.id), 'button');
+          button.type = 'button';
+          button.setAttribute('aria-pressed', 'false');
+          button.addEventListener('click', () => selectGroup(selection === id ? '' : id));
+          groups.set(id, button);
+          find('groups').append(button);
+        }
+      } else {
+        find('group-card').hidden = true;
+        filter.hidden = true;
+      }
+      filter.addEventListener('change', () => selectGroup(filter.value));
+      search.addEventListener('input', updateResults);
+      find('previous').addEventListener('click', () => { currentPage--; showPage(); });
+      find('next').addEventListener('click', () => { currentPage++; showPage(); });
+      showPage();
+
+      const overviewLink = find('jump-overview');
+      const rowsLink = find('jump-rows');
+      function jump(link, target) {
+        overviewLink.removeAttribute('aria-current');
+        rowsLink.removeAttribute('aria-current');
+        link.setAttribute('aria-current', 'location');
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: 'start' });
+      }
+      overviewLink.addEventListener('click', () => jump(overviewLink, find('dataset')));
+      rowsLink.addEventListener('click', () => jump(rowsLink, find('rows-title')));
+
+      // Canvas treats Y as vertical. For PCA, place PC3 vertically and PC2 in depth.
+      const axes = report.reduction === 'PCA' ? ['x', 'z', 'y'] : ['x', 'y', 'z'];
+      const gridLabels = axes.map(axis => axisNames['xyz'.indexOf(axis)]);
+      const lows = axes.map(axis => Math.min(...report.rows.map(row => row[axis])));
+      const highs = axes.map(axis => Math.max(...report.rows.map(row => row[axis])));
+      const spans = highs.map((high, i) => high - lows[i]);
+      const extent = Math.max(...spans) || 1;
+      const cloud = report.rows.map(row => axes.map((axis, i) => (2 * (row[axis] - lows[i]) - spans[i]) / extent));
+      const initialView = { yaw: -.55, pitch: -.28, zoom: 1 };
+      let view = { ...initialView };
+      let frame = 0;
+      let rendered = [];
+      let pointer = null;
+      const style = getComputedStyle(document.documentElement);
+      const gridColor = style.getPropertyValue('--line').trim();
+      const tickColor = style.getPropertyValue('--muted').trim();
+      const inkColor = style.getPropertyValue('--ink').trim();
+      const [gx, gy, gz] = spans.map(span => Math.max(.28, span / extent + .12));
+      const corners = [-gx, gx].flatMap(x => [-gy, gy].flatMap(y => [-gz, gz].map(z => [x, y, z])));
+      const gridLines = [-1, -.5, 0, .5, 1].flatMap(t => [
+        [[-gx, -gy, t * gz], [gx, -gy, t * gz]], [[t * gx, -gy, -gz], [t * gx, -gy, gz]],
+        [[-gx, t * gy, -gz], [gx, t * gy, -gz]], [[t * gx, -gy, -gz], [t * gx, gy, -gz]],
+        [[-gx, t * gy, -gz], [-gx, t * gy, gz]], [[-gx, -gy, t * gz], [-gx, gy, t * gz]],
+      ]);
+      const gridOrigin = [-gx, -gy, -gz];
+      const gridEnds = [[gx, -gy, -gz], [-gx, gy, -gz], [-gx, -gy, gz]];
+      function draw() {
+        frame = 0;
+        if (!context) return;
+        const width = canvas.clientWidth, height = canvas.clientHeight;
+        if (!width || !height) return;
+        const dpr = Math.min(2, window.devicePixelRatio || 1, Math.sqrt(4_000_000 / (width * height)), 8192 / Math.max(width, height));
+        if (canvas.width !== Math.round(width * dpr)) canvas.width = Math.round(width * dpr);
+        if (canvas.height !== Math.round(height * dpr)) canvas.height = Math.round(height * dpr);
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        context.clearRect(0, 0, width, height);
+        const cy = Math.cos(view.yaw), sy = Math.sin(view.yaw);
+        const cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
+        const camera = ([px, py, pz]) => {
+          const x = cy * px + sy * pz;
+          const depth = -sy * px + cy * pz;
+          const y = cp * py - sp * depth;
+          const z = sp * py + cp * depth;
+          const perspective = 4 / (4 - z);
+          return { x: x * perspective, y: -y * perspective, z, perspective };
+        };
+        const bounds = corners.map(camera);
+        const left = Math.min(...bounds.map(p => p.x)), right = Math.max(...bounds.map(p => p.x));
+        const top = Math.min(...bounds.map(p => p.y)), bottom = Math.max(...bounds.map(p => p.y));
+        const pad = Math.max(24, Math.min(width, height) * .085);
+        const size = Math.max(1, Math.min((width - 2 * pad) / (right - left), (height - 2 * pad) / (bottom - top))) * view.zoom;
+        const centerX = (left + right) / 2, centerY = (top + bottom) / 2;
+        const project = point => {
+          const p = camera(point);
+          p.x = width / 2 + (p.x - centerX) * size;
+          p.y = height / 2 + (p.y - centerY) * size;
+          return p;
+        };
+        context.globalAlpha = .58;
+        context.strokeStyle = gridColor;
+        context.beginPath();
+        for (const [from, to] of gridLines) {
+          const a = project(from), b = project(to);
+          context.moveTo(a.x, a.y); context.lineTo(b.x, b.y);
+        }
+        context.stroke();
+        context.globalAlpha = .85;
+        context.strokeStyle = tickColor;
+        context.beginPath();
+        const origin = project(gridOrigin);
+        for (const end of gridEnds) {
+          const point = project(end);
+          context.moveTo(origin.x, origin.y); context.lineTo(point.x, point.y);
+        }
+        context.stroke();
+        context.globalAlpha = 1;
+        context.fillStyle = tickColor;
+        context.font = '600 12px system-ui, sans-serif';
+        context.textAlign = 'center';
+        gridEnds.forEach((end, i) => {
+          const point = project(end);
+          context.fillText(gridLabels[i], point.x, point.y + (i === 1 ? -6 : 14));
+        });
+        rendered = cloud.map((point, index) => ({ index, ...project(point) })).sort((a, b) => a.z - b.z);
+        for (const point of rendered) {
+          const cluster = report.rows[point.index].cluster;
+          const emphasized = selection === '' || selection === String(cluster);
+          const radius = (report.rows.length > 3000 ? 1.55 : Math.max(2.55, Math.min(3.45, height / 120))) * point.perspective;
+          context.globalAlpha = emphasized ? Math.min(.96, .72 * point.perspective) : .13;
+          context.fillStyle = color(cluster);
+          context.beginPath();
+          context.arc(point.x, point.y, radius, 0, 2 * Math.PI);
+          context.fill();
+          if (point.index === picked) {
+            context.globalAlpha = 1;
+            context.strokeStyle = inkColor;
+            context.beginPath();
+            context.arc(point.x, point.y, radius + 4, 0, 2 * Math.PI);
+            context.stroke();
+          }
+        }
+        context.globalAlpha = 1;
+      }
+
+      function queueDraw() {
+        if (!frame && context) frame = requestAnimationFrame(draw);
+      }
+
+      function rotate(dx, dy) {
+        view.yaw += dx;
+        view.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, view.pitch + dy));
+        queueDraw();
+      }
+
+      function zoom(scale) {
+        view.zoom = Math.max(.5, Math.min(3, view.zoom * scale));
+        find('zoom-level').value = Math.round(view.zoom * 100) + '%';
+        queueDraw();
+      }
+
+      find('zoom-out').addEventListener('click', () => zoom(1 / 1.2));
+      find('zoom-in').addEventListener('click', () => zoom(1.2));
+      find('reset').addEventListener('click', () => { view = { ...initialView }; zoom(1); });
+      canvas.addEventListener('wheel', event => {
+        if (document.activeElement !== canvas || event.ctrlKey || event.metaKey) return;
+        event.preventDefault();
+        const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1);
+        zoom(Math.exp(-Math.max(-180, Math.min(180, delta)) / 600));
+      }, { passive: false });
+      canvas.addEventListener('keydown', event => {
+        const steps = { ArrowLeft: [-.14, 0], ArrowRight: [.14, 0], ArrowUp: [0, -.14], ArrowDown: [0, .14] };
+        const step = steps[event.key];
+        if (Array.isArray(step)) { event.preventDefault(); rotate(...step); }
+      });
+      canvas.addEventListener('pointerdown', event => {
+        if (pointer || event.button !== 0) return;
+        pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, distance: 0 };
+        canvas.setPointerCapture(event.pointerId);
+      });
+      canvas.addEventListener('pointermove', event => {
+        if (pointer?.id !== event.pointerId) return;
+        const dx = event.clientX - pointer.x, dy = event.clientY - pointer.y;
+        pointer.x = event.clientX;
+        pointer.y = event.clientY;
+        pointer.distance += Math.hypot(dx, dy);
+        if (pointer.distance >= 4) rotate(dx * .009, dy * .009);
+      });
+      canvas.addEventListener('pointerup', event => {
+        if (pointer?.id !== event.pointerId) return;
+        if (pointer.distance < 4) {
+          const rect = canvas.getBoundingClientRect();
+          let closestDistance = 10;
+          picked = null;
+          for (let i = rendered.length - 1; i >= 0; i--) {
+            const point = rendered[i];
+            if (selection !== '' && String(report.rows[point.index].cluster) !== selection) continue;
+            const distance = Math.hypot(point.x - (event.clientX - rect.left), point.y - (event.clientY - rect.top));
+            if (distance < closestDistance) { closestDistance = distance; picked = point.index; }
+          }
+          const row = picked === null ? null : report.rows[picked];
+          status.textContent = row ? 'ID ' + row.id
+            + (row.sourceRow === null ? '' : ' · CSV row ' + row.sourceRow)
+            + (row.cluster === null ? '' : ' · ' + labels(row.cluster)) : '';
+          queueDraw();
+        }
+        pointer = null;
+      });
+      canvas.addEventListener('lostpointercapture', () => { pointer = null; });
+      const resize = new ResizeObserver(queueDraw);
+      resize.observe(canvas);
+      queueDraw();
+    })();
+  </script>
+</body>
+</html>

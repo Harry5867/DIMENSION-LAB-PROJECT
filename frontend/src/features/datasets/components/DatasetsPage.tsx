@@ -1,7 +1,8 @@
 import { useAppLanguage } from "../../../shared/providers/WelcomeLanguage";
 import { useId, useRef, useState } from 'react';
 import { ArrowRight, MoreHorizontal, Search, Upload } from 'lucide-react';
-import type { DatasetRow, DatasetSummary } from '@dimension-lab/contracts';
+import { getSampleDataset, type DatasetRow, type DatasetSummary } from '@dimension-lab/contracts';
+import { parseCSVString } from '@dimension-lab/algorithms/dataParser';
 import { useDialogFocus } from '../../../shared/hooks/useDialogFocus';
 import { fetchWithTimeout } from '../../../shared/api/network';
 import { getApiDataRecord, getErrorMessage, isDatasetRow, isRecord } from '../../../shared/api/typeGuards';
@@ -9,6 +10,7 @@ import { WorkspacePage } from '../../../shared/ui/WorkspacePage';
 import { RawDataModal } from './RawDataModal';
 
 interface Props {
+  importedOnly?: boolean;
   datasets: DatasetSummary[];
   activeDatasetId: string;
   onSelect: (id: string) => Promise<void>;
@@ -33,20 +35,25 @@ export function DatasetsPage(props: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const deleteDialog = useDialogFocus(Boolean(deleting), () => setDeleting(null), '[data-cancel-delete]');
   const rowMenuName = useId();
+  const sectionId = useId();
   const query = search.trim().toLowerCase();
   const displayName = (dataset: DatasetSummary) => dataset.is_preloaded ? tr(dataset.name) : dataset.name;
-  const datasets = props.datasets.filter(dataset => [dataset.name, displayName(dataset), dataset.filename].some(value => value.toLowerCase().includes(query)));
+  const datasets = props.datasets.filter(dataset => [dataset.name, displayName(dataset), dataset.filename,
+    getSampleDataset(dataset.id)?.preset?.topic ?? ''].some(value => value.toLowerCase().includes(query)));
   const requestDataset = async (dataset: DatasetSummary, action: 'preview' | 'download') => {
     setRequesting(true); setRequestError('');
     try {
-      const response = await fetchWithTimeout('/api/datasets/' + encodeURIComponent(dataset.id) + '/' + action);
+      const sample = getSampleDataset(dataset.id);
+      const response = await fetchWithTimeout(sample ? import.meta.env.BASE_URL + sample.assetPath
+        : '/api/datasets/' + encodeURIComponent(dataset.id) + '/' + action);
       if (!response.ok) {
         const body: unknown = await response.json().catch(() => null);
         const message = isRecord(body) && isRecord(body.error) ? body.error.message : undefined;
         throw new Error(typeof message === 'string' ? message : 'Could not open the dataset (HTTP ' + response.status + ').');
       }
       if (action === 'preview') {
-        const rows = getApiDataRecord(await response.json())?.rows;
+        const rows = sample ? parseCSVString(await response.text(), sample.name).rawRows.slice(0, 20)
+          : getApiDataRecord(await response.json())?.rows;
         if (!Array.isArray(rows) || !rows.every(isDatasetRow)) throw new Error('Invalid dataset preview.');
         setPreview({ dataset, rows });
       } else {
@@ -61,8 +68,7 @@ export function DatasetsPage(props: Props) {
     finally { setRequesting(false); }
   };
 
-  return <WorkspacePage title={tr("Datasets")} description={tr("Choose a sample dataset or import your own CSV.")}
-    actions={<>
+  const actions = <>
       <button type="button" className="lab-action lab-action-primary" disabled={props.busy} onClick={() => fileInput.current?.click()}>
         <Upload size={16} /> {tr("Import CSV")}
       </button>
@@ -71,20 +77,26 @@ export function DatasetsPage(props: Props) {
         event.currentTarget.value = '';
         if (file) void props.onUpload(file);
       }} />
-    </>}>
+    </>;
+  const content = <>
     {props.busy && <div className="lab-page-state" role="status"><progress aria-label={props.activity || tr("Working")} /> {props.activity || tr("Working…")}</div>}
     {props.notice && <div className="lab-page-state lab-page-notice" data-type={props.notice.type} role={props.notice.type === 'error' ? 'alert' : 'status'}>
       <span>{props.notice.message}</span><button type="button" onClick={props.onDismissNotice} aria-label={tr("Dismiss notification")}>×</button>
     </div>}
     {requestError && <p className="lab-page-state" role="alert">{tr(requestError)}</p>}
     <label className="lab-search"><Search size={16} /><input aria-label={tr("Search datasets")} placeholder={tr("Search datasets…")} value={search} onChange={event => setSearch(event.target.value)} /></label>
-    {([true, false] as const).map(sample => {
+    {(props.importedOnly ? [false] : [true, false]).map(sample => {
       const rows = datasets.filter(dataset => Boolean(dataset.is_preloaded) === sample);
-      return <section key={String(sample)} className="lab-page-section" aria-labelledby={sample ? 'sample-datasets' : 'imported-datasets'}>
-        <h2 id={sample ? 'sample-datasets' : 'imported-datasets'}>{sample ? tr("Sample datasets") : tr("Imported datasets")}</h2>
+      const heading = sectionId + (sample ? '-sample' : '-imported');
+      return <section key={String(sample)} className="lab-page-section" aria-labelledby={heading}>
+        <div className="lab-dataset-section-heading">
+          <h2 id={heading}>{sample ? tr("Sample datasets") : tr("Imported datasets")}</h2>
+          {props.importedOnly && actions}
+        </div>
         {rows.length === 0 ? <p className="lab-page-state">{query ? tr("No matching datasets.") : sample ? tr("No samples available.") : tr("No CSV files imported yet.")}</p> :
           <ul className="lab-list">{rows.map(dataset => {
             const active = dataset.id === props.activeDatasetId;
+            const preset = getSampleDataset(dataset.id)?.preset;
             return <li key={dataset.id} className="lab-list-row">
               <div className="lab-row-main">
                 {editing?.id === dataset.id ? <form className="lab-inline-form" onSubmit={event => {
@@ -98,6 +110,12 @@ export function DatasetsPage(props: Props) {
                   <button className="lab-action" type="button" onClick={() => setEditing(null)}>{tr("Cancel")}</button>
                 </form> : <h3>{displayName(dataset)}{active && <span className="lab-tag">{tr("Active")}</span>}{dataset.is_local && <span className="lab-tag">{tr("Session only")}</span>}</h3>}
                 <p>{dataset.total_rows.toLocaleString(language)} {tr("rows ·")} {dataset.features_count ?? '—'} {tr("numeric features")}</p>
+                {preset && <>
+                  <p>{tr(preset.topic)} · {tr(preset.description)}</p>
+                  <p>{t('Suggested run', 'Phân tích gợi ý')} · {preset.reduction.method} + {preset.clustering.method}
+                    {' · '}<a href={preset.source} target="_blank" rel="noreferrer" title={preset.credit}>{t('Source', 'Nguồn')} ({preset.license})</a>
+                  </p>
+                </>}
               </div>
               <div className="lab-row-actions">
                 <button type="button" className="lab-action" disabled={props.busy}
@@ -141,5 +159,7 @@ export function DatasetsPage(props: Props) {
         </footer>
       </div>
     </div>}
-  </WorkspacePage>;
+  </>;
+  if (props.importedOnly) return <div className="lab-dataset-library">{content}</div>;
+  return <WorkspacePage title={tr("Datasets")} description={tr("Choose a sample dataset or import your own CSV.")} actions={actions}>{content}</WorkspacePage>;
 }

@@ -7,7 +7,7 @@ import { Activity, GitBranch, ChevronDown, ChevronRight, Play } from 'lucide-rea
 import { RangeNumber } from '../../../shared/ui/RangeNumber';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { SetupAccordion } from './ControlSidebar';
-import { DataPoint, NormalizationMethod, ParsedDataset } from '@dimension-lab/contracts';
+import { DataPoint, NormalizationMethod, ParsedDataset, getSampleDataset } from '@dimension-lab/contracts';
 import type { AnalysisTask } from '@dimension-lab/algorithms/analysisTasks';
 import { isRecord } from '../../../shared/api/typeGuards';
 import { isAnalysisResult, type SavedRun } from '@dimension-lab/algorithms/savedRuns';
@@ -26,9 +26,13 @@ export function UnsupervisedPanel({ history, active = true, accordion, dataset, 
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [kind, setKind] = useState<'anomaly' | 'association'>(() => accordion?.open === 'association' ? 'association' : 'anomaly');
-  const [trees, setTrees] = useState(100), [sampleSize, setSampleSize] = useState(256), [contamination, setContamination] = useState(0.05), [seed, setSeed] = useState(42);
+  const [trees, setTrees] = useState(100), [sampleSize, setSampleSize] = useState(Math.min(256, dataset.totalRows)), [contamination, setContamination] = useState(0.05), [seed, setSeed] = useState(42);
   const [support, setSupport] = useState(0.15), [confidence, setConfidence] = useState(0.7), [lift, setLift] = useState(1), [bins, setBins] = useState(3), [maxSize, setMaxSize] = useState(3);
-  const [columns, setColumns] = useState<string[]>(() => dataset.headers.filter(f => f !== dataset.idColumn && f !== dataset.labelColumn).slice(0, 10));
+  const [columns, setColumns] = useState<string[]>(() => {
+    const suggested = dataset.id ? getSampleDataset(dataset.id)?.preset?.associationColumns : undefined;
+    return suggested ? suggested.filter(column => dataset.headers.includes(column))
+      : dataset.headers.filter(column => column !== dataset.idColumn && column !== dataset.labelColumn).slice(0, 10);
+  });
   const [runs, setRuns] = useState<Partial<Record<'anomaly' | 'association', SavedRun>>>({});
   const run = runs[kind] ?? null;
   const setRun = (r: SavedRun) => setRuns(previous => ({ ...previous, [r.task.kind]: r }));

@@ -31,10 +31,11 @@ function centerMemberZoom(content: HTMLElement) {
 }
 
 export function Portal({ route, hash, onReturnToWelcome, entering = false, interactive = true, onOpenSection, openingId,
-  sectionEntering = false, titleInTransit = false, returning = false }: {
+  sectionEntering = false, titleInTransit = false, returning = false, onImportsHost }: {
   route: PortalRoute; hash: string; onReturnToWelcome: () => void; entering?: boolean; interactive?: boolean;
   onOpenSection?: (section: PortalSection, link: HTMLAnchorElement) => void; openingId?: PortalSection['id'];
   sectionEntering?: boolean; titleInTransit?: boolean; returning?: boolean;
+  onImportsHost?: (host: HTMLDivElement | null) => void;
 }) {
   const { tr } = useAppLanguage();
   const main = useRef<HTMLElement>(null);
@@ -205,7 +206,8 @@ export function Portal({ route, hash, onReturnToWelcome, entering = false, inter
     return undefined;
   }, [route, hash, teamPage, hasMember, teamSelection, interactive]);
   const content = <PortalContent route={route} hash={hash} {...(profilePage && { profile: member })}
-    onOpenMember={openMember} onChangeProfile={changeProfile} onOpenGuideChapter={openGuideChapter} />;
+    onOpenMember={openMember} onChangeProfile={changeProfile} onOpenGuideChapter={openGuideChapter}
+    {...(onImportsHost && { onImportsHost })} />;
   return <div data-opening-section={openingId} className={`portal-page${route === 'theory' ? ' portal-page--theory' : ''}${teamPage ? ' portal-page--team' : hasMember ? ' portal-page--profile' : ''}${overview ? ' portal-page--workspace' : ''}${overview && entering ? ' portal-page--entering' : ''}${openingId ? ' portal-page--opening' : ''}${sectionEntering ? ' portal-page--section-arriving' : ''}${titleInTransit ? ' portal-page--title-in-transit' : ''}${overview && returning ? ' portal-page--returning' : ''}`}>
     <a className="portal-skip" href="#portal-main" onClick={e => { e.preventDefault(); main.current?.focus(); }}>{tr("Skip to content")}</a>
     {overview && <header className="portal-header">

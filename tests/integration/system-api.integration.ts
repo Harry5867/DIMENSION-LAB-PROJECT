@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '@dimension-lab/contracts/demo';
+import { sampleDatasets } from '@dimension-lab/contracts';
 import { MAX_CSV_BYTES, parseCSVString } from '@dimension-lab/algorithms/dataParser';
 import { reduceMatrix } from '@dimension-lab/algorithms/projection';
 import { computeDBSCAN } from '@dimension-lab/algorithms/dbscan';
@@ -81,15 +82,26 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
     assert.equal((await call('/auth/me', 'GET', undefined, admin)).data.authenticated, true);
     assert.equal((await call('/cache', 'DELETE')).status, 401);
     assert.equal((await call('/cache', 'DELETE', undefined, viewer)).status, 403);
-    assert.equal((await call('/datasets/cancer_wdbc', 'DELETE', undefined, admin)).status, 403);
-
-    for (const [id, file, rows] of [['cancer_wdbc', 'data.csv', 569], ['wholesale_customers', 'wholesale.csv', 440]] as const) {
-      const local = parseCSVString(readFileSync('public/' + file, 'utf8'));
-      const result = await call('/datasets/' + id, 'GET', undefined, viewer);
-      assert.equal(result.data.totalRows, rows);
+    const sampleList = await call('/datasets', 'GET', undefined, viewer);
+    assert.deepEqual(sampleList.data.filter((item: { is_preloaded?: boolean }) => item.is_preloaded)
+      .map((item: { id: string }) => item.id).sort(), sampleDatasets.map(sample => sample.id).sort());
+    for (const sample of sampleDatasets) {
+      const source = readFileSync('public/' + sample.assetPath, 'utf8');
+      const local = parseCSVString(source);
+      const samplePath = '/datasets/' + sample.id;
+      const result = await call(samplePath, 'GET', undefined, viewer);
+      assert.equal(result.data.totalRows, sample.total_rows);
       assert.deepEqual(result.data.rawRows, local.rawRows);
       assert.deepEqual(result.data.features, local.featureColumns);
       assert.equal(result.data.labelColumn, local.labelColumn);
+      assert.equal((await call(samplePath, 'PATCH', { name: 'Renamed' }, admin)).status, 403);
+      assert.equal((await call(samplePath, 'DELETE', undefined, admin)).status, 403);
+      const preview = await call(samplePath + '/preview', 'GET', undefined, viewer);
+      assert.deepEqual(preview.data.rows, local.rawRows.slice(0, 20));
+      const download = await fetch(api + samplePath + '/download', { headers: { Authorization: 'Bearer ' + viewer } });
+      assert.equal(download.status, 200);
+      assert.ok(download.headers.get('Content-Disposition')?.includes(sample.filename));
+      assert.equal(await download.text(), source);
     }
     const content = 'id,label,a,b,c\n001,A,0,2,3\n002,B,,3,4\n003,B,2,4,5';
     assert.equal((await call('/datasets/upload', 'POST', csv(content))).status, 401);
