@@ -3,11 +3,11 @@
   "type": "module",
   "name": "@dimension-lab/frontend",
   "dependencies": {
-    "lucide-react": "^1.16.0",
-    "papaparse": "^5.4.1",
+    "lucide-react": "^1.77.0",
+    "papaparse": "^5.7.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "three": "^0.169.0",
+    "three": "^0.187.0",
     "@dimension-lab/algorithms": "*",
     "@dimension-lab/contracts": "*"
   }
