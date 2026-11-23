@@ -1,0 +1,16 @@
+.git
+.github
+**/node_modules
+**/.env
+**/.env.*
+**/.npmrc
+**/*.pem
+**/*.key
+**/*.pfx
+**/*.p12
+dist
+test-results
+playwright-report
+coverage
+docs
+tests
