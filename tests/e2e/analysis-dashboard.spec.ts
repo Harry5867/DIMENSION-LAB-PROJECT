@@ -22,12 +22,12 @@ test('exports a searchable 3D dashboard for a newly uploaded CSV and opens the H
   const preview = dashboard.frameLocator('iframe');
   await expect(preview.getByRole('heading', { name: dataset, exact: true })).toBeVisible();
   await expect(preview.getByRole('heading', { name: 'PCA explained variance' })).toBeVisible();
+  await preview.getByRole('button', { name: 'Point details', exact: true }).click();
+  await expect(preview.getByRole('heading', { name: 'Point details', exact: true })).toBeFocused();
   await expect(preview.getByRole('columnheader', { name: 'PC1', exact: true })).toBeInViewport();
   await expect(preview.locator('#row-count')).toContainText('of 32 points');
   await expect(preview.getByRole('columnheader', { name: 'Source · feature_d', exact: true })).toHaveCount(0);
   await expect(dashboard.getByLabel('Include original CSV columns')).toBeHidden();
-  await preview.getByRole('button', { name: 'Point details', exact: true }).click();
-  await expect(preview.getByRole('heading', { name: 'Point details', exact: true })).toBeFocused();
   const cluster = preview.getByRole('button', { name: /^Cluster 0 / });
   await cluster.click();
   await expect(cluster).toHaveAttribute('aria-pressed', 'true');
