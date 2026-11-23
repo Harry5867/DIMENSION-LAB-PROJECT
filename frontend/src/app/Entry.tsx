@@ -1,11 +1,11 @@
-import type { AuthOptions } from '@dimension-lab/contracts';
 import { useAppLanguage } from "../shared/providers/WelcomeLanguage";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Welcome } from '../features/welcome/Welcome';
 import { TeamLogo } from '../shared/ui/TeamLogo';
-import { clearDemoSession, getAccessToken, hasDemoSession, saveDemoSession } from '../shared/api/demoSession';
-import { fetchWithTimeout, SESSION_EXPIRED_EVENT } from '../shared/api/network';
-import { getApiDataRecord } from '../shared/api/typeGuards';
+import { clearDemoSession, getAccessToken, saveDemoSession } from '../shared/api/demoSession';
+import { SESSION_EXPIRED_EVENT } from '../shared/api/network';
+import { logout } from '../features/auth/authApi';
+import { useAuthSession } from '../features/auth/useAuthSession';
 import { Portal } from '../features/portal/Portal';
 import { isModelRoute, isWelcomeRoute, portalRoute, signInDestination, type PortalRoute, type PortalSection } from '../shared/navigation/portalNavigation';
 import { captureSectionSource, shouldAnimateLink, type SectionNavigation } from '../features/portal/navigation/sectionTransition';
@@ -20,8 +20,7 @@ const glassControlSelector = '.control-glass, .liquid-glass, button:not(.workspa
 
 export function Entry() {
   const { tr, t } = useAppLanguage();
-  const [signedIn, setSignedIn] = useState(false);
-  const [authOptions, setAuthOptions] = useState<AuthOptions | null>(null);
+  const { signedIn, setSignedIn, authOptions } = useAuthSession();
   const [signOutError, setSignOutError] = useState(false);
   const signingOut = useRef(false);
   const [logoutPending, setLogoutPending] = useState(false);
@@ -69,40 +68,7 @@ export function Entry() {
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, expire);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
-  }, []);
-  useEffect(() => {
-    const controller = new AbortController();
-    const signal = controller.signal;
-    void (async () => {
-      const response = await fetchWithTimeout('/api/auth/options', { signal }, 5000);
-      if (!response.ok) throw new Error('Could not read sign-in options.');
-      const data = getApiDataRecord(await response.json());
-      if (signal.aborted) return;
-      if (data?.mode === 'atlas') {
-        clearDemoSession();
-        setSignedIn(false);
-      }
-      setAuthOptions({
-        mode: data?.mode === 'atlas' ? 'atlas' : 'demo',
-        google: data?.google === true,
-        registration: data?.registration === true,
-      });
-      if (data?.mode !== 'atlas' && !getAccessToken()) {
-        setSignedIn(hasDemoSession());
-        return;
-      }
-      const session = await fetchWithTimeout('/api/auth/me', { signal });
-      if (!session.ok) return;
-      const current = getApiDataRecord(await session.json());
-      if (!signal.aborted) setSignedIn(current?.authenticated === true);
-    })().catch(() => {
-      if (!signal.aborted) {
-        setAuthOptions(options => options ?? { mode: 'demo', google: false, registration: false });
-        setSignedIn(hasDemoSession());
-      }
-    });
-    return () => controller.abort();
-  }, []);
+  }, [setSignedIn]);
   const coverSection = useCallback((id: number) => {
     const pending = navigationRef.current;
     if (!pending || pending.id !== id || pending.phase !== 'covering') return;
@@ -168,7 +134,7 @@ export function Entry() {
     } else if (entrancePhaseRef.current === 'revealing') {
       entrancePhaseRef.current = 'idle'; setEntrancePhase('idle');
     }
-  }, []);
+  }, [setSignedIn]);
   const signIn = (token?: string | null) => {
     if (entrancePhaseRef.current !== 'idle') return;
     if (token !== undefined) saveDemoSession(token);
@@ -197,10 +163,7 @@ export function Entry() {
     setSignOutError(false);
     const revealWelcomeAt = performance.now() + 3500;
     try {
-      if (authOptions?.mode === 'atlas' || getAccessToken()) {
-        const response = await fetchWithTimeout('/api/auth/logout', { method: 'POST' });
-        if (!response.ok && response.status !== 401) throw new Error('Sign-out failed.');
-      }
+      if (authOptions?.mode === 'atlas' || getAccessToken()) await logout();
       clearDemoSession();
       setSignedIn(false); setModelVisited(false);
       const remaining = revealWelcomeAt - performance.now();

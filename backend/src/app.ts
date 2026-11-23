@@ -9,6 +9,7 @@ import { registerDatasetRoutes } from './routes/datasets';
 import { registerAnalysisRoutes } from './routes/analysis';
 import { registerExperimentRoutes } from './routes/experiments';
 import { registerDocsRoutes } from './routes/docs';
+import { NotFoundError } from './http/errors';
 
 export function createApp() {
   const app = express();
@@ -19,6 +20,7 @@ export function createApp() {
   registerDatasetRoutes(app);
   registerAnalysisRoutes(app);
   registerExperimentRoutes(app);
+  app.use('/api', (_req, _res, next) => next(new NotFoundError('API endpoint')));
   if (process.env.NODE_ENV === 'production') {
     const frontendDirectory = fileURLToPath(new URL('../../dist', import.meta.url));
     app.use(express.static(frontendDirectory));

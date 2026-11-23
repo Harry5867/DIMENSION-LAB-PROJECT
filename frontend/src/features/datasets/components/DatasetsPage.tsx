@@ -1,17 +1,17 @@
 import { useAppLanguage } from "../../../shared/providers/WelcomeLanguage";
 import { useId, useRef, useState } from 'react';
 import { ArrowRight, MoreHorizontal, Search, Upload } from 'lucide-react';
-import { getSampleDataset, type DatasetRow, type DatasetSummary } from '@dimension-lab/contracts';
-import { parseCSVString } from '@dimension-lab/algorithms/dataParser';
+import { getSampleDataset, type DatasetRow, type DatasetSummary, type DatasetUsage } from '@dimension-lab/contracts';
 import { useDialogFocus } from '../../../shared/hooks/useDialogFocus';
-import { fetchWithTimeout } from '../../../shared/api/network';
-import { getApiDataRecord, getErrorMessage, isDatasetRow, isRecord } from '../../../shared/api/typeGuards';
+import { getErrorMessage } from '../../../shared/api/typeGuards';
 import { WorkspacePage } from '../../../shared/ui/WorkspacePage';
+import { downloadDataset, previewDataset, readSample } from '../datasetsApi';
 import { RawDataModal } from './RawDataModal';
 
 interface Props {
   importedOnly?: boolean;
   datasets: DatasetSummary[];
+  usage: DatasetUsage | null;
   activeDatasetId: string;
   onSelect: (id: string) => Promise<void>;
   onRename: (id: string, name: string) => Promise<void>;
@@ -26,6 +26,8 @@ interface Props {
 
 export function DatasetsPage(props: Props) {
   const { language, tr, t } = useAppLanguage();
+  const formatMiB = (bytes: number) => new Intl.NumberFormat(language === 'vi' ? 'vi-VN' : 'en-US',
+    { maximumFractionDigits: 2 }).format(bytes / (1024 * 1024));
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<DatasetSummary | null>(null);
@@ -44,20 +46,12 @@ export function DatasetsPage(props: Props) {
     setRequesting(true); setRequestError('');
     try {
       const sample = getSampleDataset(dataset.id);
-      const response = await fetchWithTimeout(sample ? import.meta.env.BASE_URL + sample.assetPath
-        : '/api/datasets/' + encodeURIComponent(dataset.id) + '/' + action);
-      if (!response.ok) {
-        const body: unknown = await response.json().catch(() => null);
-        const message = isRecord(body) && isRecord(body.error) ? body.error.message : undefined;
-        throw new Error(typeof message === 'string' ? message : 'Could not open the dataset (HTTP ' + response.status + ').');
-      }
       if (action === 'preview') {
-        const rows = sample ? parseCSVString(await response.text(), sample.name).rawRows.slice(0, 20)
-          : getApiDataRecord(await response.json())?.rows;
-        if (!Array.isArray(rows) || !rows.every(isDatasetRow)) throw new Error('Invalid dataset preview.');
+        const rows = sample ? (await readSample(sample.assetPath, sample.name)).rawRows.slice(0, 20)
+          : await previewDataset(dataset.id);
         setPreview({ dataset, rows });
       } else {
-        const url = URL.createObjectURL(await response.blob());
+        const url = URL.createObjectURL(await downloadDataset(dataset.id, sample?.assetPath));
         const link = document.createElement('a');
         link.href = url;
         link.download = dataset.filename;
@@ -93,6 +87,10 @@ export function DatasetsPage(props: Props) {
           <h2 id={heading}>{sample ? tr("Sample datasets") : tr("Imported datasets")}</h2>
           {props.importedOnly && actions}
         </div>
+        {!sample && props.usage && <p className="lab-page-state">
+          {t('Storage used', 'Dung lượng đã dùng')} · {props.usage.fileCount} / {props.usage.maxFiles} {t('files', 'tệp')}
+          {' · '}{formatMiB(props.usage.usedBytes)} / {formatMiB(props.usage.maxBytes)} MiB
+        </p>}
         {rows.length === 0 ? <p className="lab-page-state">{query ? tr("No matching datasets.") : sample ? tr("No samples available.") : tr("No CSV files imported yet.")}</p> :
           <ul className="lab-list">{rows.map(dataset => {
             const active = dataset.id === props.activeDatasetId;

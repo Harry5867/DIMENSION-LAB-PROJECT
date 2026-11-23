@@ -1,18 +1,17 @@
-import { isRecord } from '../http/validation';
 import { atlasMode } from '../database/atlas';
 import { beginGoogleSignIn, finishGoogleSignIn, googleEnabled, issueAtlasSession, protectCookieWrite, revokeAtlasSession } from '../auth/googleAuth';
-import { finishEnrollment, passwordRegistrationEnabled, registerPasswordUser, verifyPasswordUser } from '../auth/passwordAuth';
-import { DEMO_EMAIL, DEMO_PASSWORD } from '@dimension-lab/contracts/demo';
+import { finishEnrollment, passwordRegistrationEnabled, registerPasswordUser } from '../auth/passwordAuth';
+import { DEMO_EMAIL } from '@dimension-lab/contracts/demo';
 import { sendSuccess } from '../http/response';
-import { BadRequestError, UnauthorizedError } from '../http/errors';
-import { AuthenticatedRequest, issueSession, revokeSession } from '../auth/auth';
+import { AuthenticatedRequest, revokeSession } from '../auth/auth';
+import { signInWithPassword } from '../services/auth';
 import type { Express } from 'express';
 
 export function registerAuthRoutes(app: Express) {
   app.post('/api/auth/verify-email', async (req, res, next) => {
     try {
       protectCookieWrite(req);
-      const user = await finishEnrollment(req);
+      const user = await finishEnrollment(req.body, req.ip);
       await issueAtlasSession(req, res, user, user.linkedGoogle ? undefined : 'password');
       sendSuccess(res, { authenticated: true });
     } catch (error) { next(error); }
@@ -20,38 +19,23 @@ export function registerAuthRoutes(app: Express) {
   app.post('/api/auth/register', async (req, res, next) => {
     try {
       protectCookieWrite(req);
-      await registerPasswordUser(req);
+      await registerPasswordUser(req.body, req.ip);
       sendSuccess(res, { registered: true }, 201);
     } catch (error) { next(error); }
   });
 
   app.post('/api/auth/login', async (req, res, next) => {
     try {
-      if (atlasMode) {
-        protectCookieWrite(req);
-        const user = await verifyPasswordUser(req, isRecord(req.body) && req.body.enroll === true);
-        if ('challenge' in user) return sendSuccess(res, { verificationRequired: true, challenge: user.challenge }, 202);
+      if (atlasMode) protectCookieWrite(req);
+      const result = await signInWithPassword(req.body, req.ip);
+      if (result.kind === 'challenge') return sendSuccess(res, { verificationRequired: true, challenge: result.challenge }, 202);
+      if (result.kind === 'atlas') {
+        const { user } = result;
         await issueAtlasSession(req, res, user, user.linkedGoogle ? undefined : 'password');
         return sendSuccess(res, { authenticated: true });
       }
-      const { email, password, role = 'admin' } = isRecord(req.body) ? req.body : {};
-      const expectedEmail = process.env.LAB_AUTH_EMAIL || DEMO_EMAIL;
-      const expectedPassword = process.env.LAB_AUTH_PASSWORD || (process.env.NODE_ENV === 'production' ? undefined : DEMO_PASSWORD);
-      if (!expectedPassword || typeof email !== 'string' || email.trim().toLowerCase() !== expectedEmail.toLowerCase()
-        || password !== expectedPassword) {
-        throw new UnauthorizedError('Invalid email or password.');
-      }
-      if (role !== 'admin' && role !== 'researcher' && role !== 'viewer') {
-        throw new BadRequestError('Unknown workspace role.');
-      }
-
-      const { token, user } = issueSession(role);
-      res.setHeader('Cache-Control', 'no-store');
-      sendSuccess(res, {
-        token,
-        user,
-        message: `Signed in as ${user.name} (${user.role}).`,
-      });
+      const { token, user } = result;
+      sendSuccess(res, { token, user, message: 'Signed in as ' + user.name + ' (' + user.role + ').' });
     } catch (err) {
       next(err);
     }
@@ -87,9 +71,4 @@ export function registerAuthRoutes(app: Express) {
     } catch (error) { next(error); }
   });
 
-  // -------------------------------------------------------------
-  // CORE BUSINESS & SCIENTIFIC DATA ENDPOINTS
-  // -------------------------------------------------------------
-
-  // 3. Health check & DB status
 }

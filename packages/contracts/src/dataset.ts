@@ -37,3 +37,9 @@ export interface ParsedDataset {
   featureColumns: string[];
   rawRows: DatasetRow[];
 }
+export interface DatasetUsage {
+  fileCount: number;
+  usedBytes: number;
+  maxFiles: number;
+  maxBytes: number;
+}

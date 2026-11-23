@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { once } from 'node:events';
+import { request as httpRequest } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '@dimension-lab/contracts/demo';
@@ -31,7 +32,8 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
       method, headers, body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(10_000),
     });
-    return { ...await response.json(), status: response.status, cache: response.headers.get('X-Cache') };
+    return { ...await response.json(), status: response.status, cache: response.headers.get('X-Cache'),
+      requestId: response.headers.get('X-Request-Id') };
   }
   const csv = (content: string) => {
     const form = new FormData();
@@ -57,12 +59,22 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
 
     const health = await call('/health');
     assert.match(health.data.database, /In-Memory/);
+    assert.equal(health.database, undefined);
+    assert.match(health.requestId, /^[\da-f-]{36}$/);
     const crossOrigin = await fetch(api + '/auth/login', {
       method: 'OPTIONS', headers: { Origin: 'https://example.test', 'Access-Control-Request-Method': 'POST' },
     });
     assert.equal(crossOrigin.headers.get('Access-Control-Allow-Origin'), null);
     assert.deepEqual((await call('/auth/me')).data, { authenticated: false, user: null });
-    for (const path of ['/datasets', '/datasets/cancer_wdbc', '/experiments', '/system-health']) {
+    const unauthorized = await call('/datasets?marker=private-test-marker');
+    assert.equal(unauthorized.status, 401);
+    assert.equal(unauthorized.message, undefined);
+    assert.equal(typeof unauthorized.error.message, 'string');
+    assert.notEqual(unauthorized.requestId, health.requestId);
+    for (let i = 0; i < 30 && !logs.includes(unauthorized.requestId); i++) await delay(20);
+    assert.ok(logs.includes('"requestId":"' + unauthorized.requestId + '"'));
+    assert.ok(!logs.includes('private-test-marker'));
+    for (const path of ['/datasets', '/datasets/usage', '/datasets/cancer_wdbc', '/experiments', '/system-health']) {
       assert.equal((await call(path)).status, 401);
     }
     assert.equal((await call('/auth/login', 'POST', { role: 'admin' })).status, 401);
@@ -79,6 +91,17 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
     const admin = await login('admin');
     const researcher = await login('researcher');
     const viewer = await login('viewer');
+    assert.equal((await call('/system-health', 'GET', undefined, admin)).status, 200);
+    assert.equal((await call('/system-health', 'GET', undefined, researcher)).status, 403);
+    assert.equal((await call('/datasets/usage', 'GET', undefined, researcher)).data, null);
+    const missing = await call('/no-such-api', 'GET', undefined, admin);
+    assert.equal(missing.status, 404);
+    assert.equal(missing.error.code, 'NOT_FOUND');
+    const malformed = await fetch(api + '/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{',
+    });
+    assert.equal(malformed.status, 400);
+    assert.ok(malformed.headers.get('X-Request-Id'));
     assert.equal((await call('/auth/me', 'GET', undefined, admin)).data.authenticated, true);
     assert.equal((await call('/cache', 'DELETE')).status, 401);
     assert.equal((await call('/cache', 'DELETE', undefined, viewer)).status, 403);
@@ -110,6 +133,9 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
     assert.equal((await call('/datasets/upload', 'POST', csv('x'.repeat(MAX_CSV_BYTES + 1)), admin)).status, 413);
     const upload = await call('/datasets/upload', 'POST', csv(content), researcher);
     assert.equal(upload.status, 201);
+    assert.equal(upload.id, undefined);
+    assert.equal(upload.rawRows, undefined);
+    assert.equal(upload.data.rawRows.length, 3);
     const path = '/datasets/' + upload.data.id;
     const firstPage = await fetch(api + '/datasets?limit=1', { headers: { Authorization: 'Bearer ' + admin } });
     assert.equal((await firstPage.json()).data.length, 1);
@@ -156,6 +182,78 @@ test('isolated HTTP: sessions, roles, sample data, CSV CRUD and compute contract
     assert.equal((await run()).cache, 'MISS');
     assert.equal((await call('/auth/logout', 'POST', undefined, admin)).status, 200);
     assert.equal((await call('/datasets', 'GET', undefined, admin)).status, 401);
+  } finally {
+    server.kill();
+    await closed;
+  }
+});
+
+test('production headers and workload limits apply to authenticated requests', { timeout: 25_000 }, async () => {
+  const port = process.env.LAB_LIMIT_TEST_PORT || '5321';
+  const local = 'http://127.0.0.1:' + port;
+  const origin = 'https://workspace.test';
+  const server = spawn(process.execPath, ['--import', 'tsx', 'backend/src/index.ts'], {
+    env: { ...process.env, NODE_ENV: 'production', LAB_STORAGE_MODE: 'demo', PORT: port, LAB_BIND_HOST: '127.0.0.1',
+      LAB_AUTH_EMAIL: DEMO_EMAIL, LAB_AUTH_PASSWORD: DEMO_PASSWORD, LAB_ALLOWED_ORIGIN: origin,
+      LAB_ENABLE_HSTS: '1', LAB_UPLOADS_PER_MINUTE: '1', LAB_ANALYSES_PER_MINUTE: '2', LAB_ANALYSIS_CONCURRENCY: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const closed = once(server, 'close');
+  let logs = '';
+  server.stdout.on('data', chunk => { logs += chunk; });
+  server.stderr.on('data', chunk => { logs += chunk; });
+  try {
+    for (let i = 0; !logs.includes('Running on'); i++) {
+      assert.ok(i < 100 && server.exitCode === null, logs);
+      await delay(100);
+    }
+    const getHealth = (requestOrigin: string) => fetch(local + '/api/health', { headers: { Origin: requestOrigin } });
+    const health = await getHealth(origin);
+    assert.equal(health.headers.get('Access-Control-Allow-Origin'), origin);
+    assert.equal((await getHealth('http://localhost:3000')).headers.get('Access-Control-Allow-Origin'), null);
+    assert.equal(health.headers.get('X-Powered-By'), null);
+    assert.equal(health.headers.get('X-Content-Type-Options'), 'nosniff');
+    assert.match(health.headers.get('Content-Security-Policy-Report-Only') ?? '', /default-src 'self'/);
+    assert.match(health.headers.get('Strict-Transport-Security') ?? '', /max-age=/);
+    const post = (path: string, data: object, token?: string) => fetch(local + '/api' + path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+      body: JSON.stringify(data),
+    });
+    const login = await post('/auth/login', { email: DEMO_EMAIL, password: DEMO_PASSWORD });
+    const token = (await login.json()).data.token as string;
+    assert.equal((await post('/compute', {})).status, 401);
+    const pending = httpRequest(local + '/api/compute', { method: 'POST', headers: {
+      Expect: '100-continue', Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': '2',
+    } });
+    const receiving = once(pending, 'continue');
+    const completed = once(pending, 'response');
+    try {
+      pending.flushHeaders();
+      await receiving;
+      const busy = await post('/unsupervised', {}, token);
+      assert.equal(busy.status, 429);
+      assert.equal(busy.headers.get('Retry-After'), '2');
+      assert.equal((await busy.json()).error.code, 'WORKLOAD_BUSY');
+    } finally {
+      pending.end('{}');
+      const [response] = await completed;
+      response.resume();
+      assert.equal(response.statusCode, 400);
+    }
+    assert.equal((await post('/compute', {}, token)).status, 400);
+    const throttle = await post('/unsupervised', {}, token);
+    assert.equal(throttle.status, 429);
+    assert.ok(Number(throttle.headers.get('Retry-After')) > 0);
+    assert.equal((await throttle.json()).error.code, 'RATE_LIMITED');
+    assert.equal((await post('/datasets/upload', {}, token)).status, 400);
+    assert.equal((await post('/datasets/upload', {}, token)).status, 429);
+    if (process.platform !== 'win32') {
+      server.kill('SIGTERM');
+      const [code, signal] = await closed;
+      assert.equal(code, 0);
+      assert.equal(signal, null);
+      assert.ok(logs.includes('"event":"server.shutdown","signal":"SIGTERM"'));
+    }
   } finally {
     server.kill();
     await closed;

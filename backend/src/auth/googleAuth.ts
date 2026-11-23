@@ -2,8 +2,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { MongoServerError } from 'mongodb';
 import * as oidc from 'openid-client';
-import { atlasDatabase, atlasMode, type AtlasProfile, type AtlasSession, type AtlasUser } from '../database/atlas';
+import { atlasDatabase, atlasMode, type AtlasProfile } from '../database/atlas';
+import { consumeGoogleAttempt, deleteSession, findActiveSession, findGoogleUser, findPasswordUser, findSessionProfile, insertGoogleAttempt, insertSession, updateGoogleProfile } from '../repositories/auth';
 import { AppError, ForbiddenError } from '../http/errors';
+import { mayAccessAccount } from './accountAccess';
 
 const callbackPath = '/api/auth/google/callback';
 const sessionCookie = 'lab_session';
@@ -47,14 +49,6 @@ export function protectCookieWrite(req: Request) {
   }
 }
 
-interface Attempt {
-  _id: string;
-  state: string;
-  nonce: string;
-  verifier: string;
-  expiresAt: Date;
-}
-
 let configuration: Promise<oidc.Configuration> | undefined;
 function googleConfiguration() {
   configuration ??= oidc.discovery(new URL('https://accounts.google.com'), process.env.GOOGLE_CLIENT_ID!,
@@ -68,11 +62,11 @@ function googleConfiguration() {
 
 export async function beginGoogleSignIn(_req: Request, res: Response) {
   if (!googleEnabled()) throw new AppError('Google sign-in is not configured.', 503, 'GOOGLE_UNAVAILABLE');
-  const db = atlasDatabase();
+  atlasDatabase();
   const config = await googleConfiguration();
   const key = token(), state = oidc.randomState(), nonce = oidc.randomNonce(), verifier = oidc.randomPKCECodeVerifier();
   const challenge = await oidc.calculatePKCECodeChallenge(verifier);
-  await db.collection<Attempt>('oauth_attempts').insertOne({ _id: hash(key), state, nonce, verifier, expiresAt: new Date(Date.now() + attemptLifetime) });
+  await insertGoogleAttempt({ _id: hash(key), state, nonce, verifier, expiresAt: new Date(Date.now() + attemptLifetime) });
   res.cookie(attemptCookie, key, { ...cookieOptions(callbackPath), maxAge: attemptLifetime });
   res.redirect(oidc.buildAuthorizationUrl(config, {
     redirect_uri: redirectUri()!.href, scope: 'openid email profile', state, nonce,
@@ -81,42 +75,38 @@ export async function beginGoogleSignIn(_req: Request, res: Response) {
 }
 
 export async function upsertGoogleUser(profile: { sub: string; email: string; displayName: string; authoritativeEmail?: boolean }) {
-  const users = atlasDatabase().collection<AtlasUser>('users');
   const now = new Date();
-  const filter = { googleSub: profile.sub };
   const fields = { email: profile.email, displayName: profile.displayName, lastLoginAt: now };
-  const previous = await users.findOneAndUpdate(filter, { $set: fields }, { returnDocument: 'after' });
+  const previous = await updateGoogleProfile(profile.sub, fields);
   if (previous) return previous;
-  const verified = profile.authoritativeEmail && await atlasDatabase().collection<AtlasProfile & { verifiedEmail: boolean }>('password_users')
-    .findOne({ email: profile.email.trim().toLowerCase(), verifiedEmail: true });
-  const owner = verified && !await users.findOne({ _id: verified._id }) ? verified : undefined;
-  const update = { $set: fields, $setOnInsert: { ...(owner && { _id: owner._id }), role: 'researcher' as const, createdAt: now } };
+  const verified = profile.authoritativeEmail && await findPasswordUser(profile.email.trim().toLowerCase(), true);
+  const owner = verified && !await findGoogleUser(verified._id) ? verified : undefined;
+  const onInsert = { ...(owner && { _id: owner._id }), role: 'researcher' as const, createdAt: now };
   try {
-    return await users.findOneAndUpdate(filter, update, { upsert: true, returnDocument: 'after' });
+    return await updateGoogleProfile(profile.sub, fields, onInsert);
   } catch (error) {
     if (!(error instanceof MongoServerError) || error.code !== 11000) throw error;
-    return users.findOneAndUpdate(filter, update, { returnDocument: 'after' });
+    return updateGoogleProfile(profile.sub, fields);
   }
 }
 
 export async function finishGoogleSignIn(req: Request, res: Response) {
   if (!googleEnabled()) throw new AppError('Google sign-in is not configured.', 503, 'GOOGLE_UNAVAILABLE');
-  const db = atlasDatabase(), uri = redirectUri()!;
+  atlasDatabase();
+  const uri = redirectUri()!;
   const key = readCookie(req, attemptCookie);
   const callback = new URL(uri);
   callback.search = req.originalUrl.split('?').slice(1).join('?');
   const state = callback.searchParams.get('state');
   res.clearCookie(attemptCookie, cookieOptions(callbackPath));
-  const attempt = key && state && await db.collection<Attempt>('oauth_attempts').findOneAndDelete({
-    _id: hash(key), state, expiresAt: { $gt: new Date() },
-  });
+  const attempt = key && state && await consumeGoogleAttempt(hash(key), state, new Date());
   const failed = () => res.redirect(303, new URL('/?auth=google-error', uri).href);
   if (!attempt) return failed();
   const config = await googleConfiguration();
   const claims = await oidc.authorizationCodeGrant(config, callback, {
     pkceCodeVerifier: attempt.verifier, expectedState: attempt.state, expectedNonce: attempt.nonce,
   }).then(result => result.claims(), () => undefined);
-  if (!claims?.sub || typeof claims.email !== 'string' || claims.email_verified !== true) return failed();
+  if (!claims?.sub || typeof claims.email !== 'string' || claims.email_verified !== true || !mayAccessAccount(claims.email)) return failed();
   const user = await upsertGoogleUser({ sub: claims.sub, email: claims.email,
     authoritativeEmail: claims.email.toLowerCase().endsWith('@gmail.com') || typeof claims.hd === 'string',
     displayName: typeof claims.name === 'string' ? claims.name : claims.email });
@@ -126,9 +116,8 @@ export async function finishGoogleSignIn(req: Request, res: Response) {
 }
 
 export async function issueAtlasSession(req: Request, res: Response, user: AtlasProfile, provider?: 'password') {
-  const db = atlasDatabase();
   const secret = token();
-  await db.collection<AtlasSession>('sessions').insertOne({
+  await insertSession({
     tokenHash: hash(secret), userId: user._id, expiresAt: new Date(Date.now() + sessionLifetime), ...(provider && { provider }),
   });
   await deleteAtlasSession(req);
@@ -138,20 +127,18 @@ export async function issueAtlasSession(req: Request, res: Response, user: Atlas
 export async function atlasSessionUser(req: Request) {
   const secret = readCookie(req, sessionCookie);
   if (!secret || !/^[\w-]{43}$/.test(secret)) return null;
-  const db = atlasDatabase();
-  const session = await db.collection<AtlasSession>('sessions').findOne({
-    tokenHash: hash(secret), expiresAt: { $gt: new Date() },
-  });
+  const session = await findActiveSession(hash(secret), new Date());
   if (!session) return null;
-  const user = await db.collection<AtlasProfile>(session.provider === 'password' ? 'password_users' : 'users')
-    .findOne({ _id: session.userId }, { projection: { email: 1, displayName: 1, role: 1 } });
-  return user && { id: user._id.toHexString(), username: user.email, name: user.displayName, role: user.role };
+  const user = await findSessionProfile(session);
+  return user && mayAccessAccount(user.email)
+    ? { id: user._id.toHexString(), username: user.email, name: user.displayName, role: user.role }
+    : null;
 }
 
 async function deleteAtlasSession(req: Request) {
   const secret = readCookie(req, sessionCookie);
   if (secret && /^[\w-]{43}$/.test(secret)) {
-    await atlasDatabase().collection<AtlasSession>('sessions').deleteOne({ tokenHash: hash(secret) });
+    await deleteSession(hash(secret));
   }
 }
 

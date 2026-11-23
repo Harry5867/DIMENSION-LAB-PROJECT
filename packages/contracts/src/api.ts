@@ -2,16 +2,10 @@
  * Standardized API Response Contract
  * Chuẩn hóa toàn bộ cấu trúc phản hồi HTTP RESTful
  */
-export interface ApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-    details?: unknown;
-  };
-  timestamp: string;
-}
+export type ApiResponse<T = unknown> = { timestamp: string } & (
+  { success: true; data: T }
+  | { success: false; error: { code: string; message: string; details?: unknown } }
+);
 
 export interface AuthOptions {
   mode: 'demo' | 'atlas';

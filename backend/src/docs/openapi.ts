@@ -1,7 +1,12 @@
 import type { OpenAPIV3 } from 'openapi-types';
 
+const requestIdHeaders = {
+  'X-Request-Id': { description: 'Server-generated ID for correlating this HTTP response with logs.', schema: { type: 'string', format: 'uuid' } },
+} satisfies NonNullable<OpenAPIV3.ResponseObject['headers']>;
+
 const successResponse = (description: string): OpenAPIV3.ResponseObject => ({
   description,
+  headers: requestIdHeaders,
   content: {
     'application/json': {
       schema: { $ref: '#/components/schemas/SuccessEnvelope' },
@@ -11,6 +16,7 @@ const successResponse = (description: string): OpenAPIV3.ResponseObject => ({
 
 const errorResponse = (description: string): OpenAPIV3.ResponseObject => ({
   description,
+  headers: requestIdHeaders,
   content: {
     'application/json': {
       schema: { $ref: '#/components/schemas/ErrorEnvelope' },
@@ -73,7 +79,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           data: { description: 'Endpoint-specific response payload.' },
           timestamp: { type: 'string', format: 'date-time' },
         },
-        additionalProperties: true,
+        additionalProperties: false,
       },
       ErrorEnvelope: {
         type: 'object',
@@ -89,9 +95,9 @@ export const openApiSpec: OpenAPIV3.Document = {
               details: {},
             },
           },
-          message: { type: 'string', description: 'Legacy-compatible error message.' },
           timestamp: { type: 'string', format: 'date-time' },
         },
+        additionalProperties: false,
       },
       LoginRequest: {
         type: 'object',
@@ -181,7 +187,8 @@ export const openApiSpec: OpenAPIV3.Document = {
     },
     '/api/system-health': {
       get: {
-        tags: ['Health'], summary: 'Read system health details', responses: { '200': successResponse('Health details.'), ...authResponses },
+        tags: ['Health'], summary: 'Read system health details', description: 'Admin only.',
+        responses: { '200': successResponse('Health details.'), ...authResponses },
       },
     },
     '/api/test-db': {
@@ -259,13 +266,21 @@ export const openApiSpec: OpenAPIV3.Document = {
         responses: { '200': successResponse('Dataset page; X-Next-Offset is set when more rows are available.'), ...authResponses },
       },
     },
+    '/api/datasets/usage': {
+      get: {
+        tags: ['Datasets'], summary: 'Read your dataset storage usage',
+        responses: { '200': successResponse('File count, source bytes and quota limits in Atlas mode. Null in demo mode.'), ...authResponses },
+      },
+    },
     '/api/datasets/upload': {
       post: {
         tags: ['Datasets'], summary: 'Upload and parse a CSV dataset', description: 'Admin or researcher only; maximum file size is 5 MiB.',
         requestBody: { required: true, content: { 'multipart/form-data': { schema: {
           type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } },
         } } } },
-        responses: { '201': successResponse('Dataset created.'), '400': errorResponse('CSV is invalid.'), '413': errorResponse('CSV exceeds the file limit.'), ...authResponses },
+        responses: { '201': successResponse('Dataset created.'), '400': errorResponse('CSV is invalid.'),
+          '409': errorResponse('The account storage quota is reached.'), '413': errorResponse('CSV exceeds the file limit.'),
+          '429': errorResponse('Upload capacity is busy or the account request rate is exceeded. See Retry-After.'), ...authResponses },
       },
     },
     '/api/datasets/{id}': {
@@ -300,7 +315,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ['Analysis'], summary: 'Run dimensionality reduction and clustering',
         description: 'Requires a signed-in user. A cache hit is indicated by X-Cache: HIT; a new computation returns X-Cache: MISS.',
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/ComputeRequest' } } } },
-        responses: { '200': successResponse('Analysis result.'), '400': errorResponse('Input or algorithm settings are invalid.'), ...authResponses },
+        responses: { '200': successResponse('Analysis result.'), '400': errorResponse('Input or algorithm settings are invalid.'),
+          '429': errorResponse('Analysis concurrency or account rate limit reached. See Retry-After.'), ...authResponses },
       },
     },
     '/api/unsupervised': {
@@ -308,7 +324,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ['Analysis'], summary: 'Run an unsupervised analysis task',
         description: 'Requires a signed-in user. The task payload is validated by the analysis-task schema.',
         requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: true } } } },
-        responses: { '200': successResponse('Unsupervised analysis result.'), '400': errorResponse('Task is invalid.'), ...authResponses },
+        responses: { '200': successResponse('Unsupervised analysis result.'), '400': errorResponse('Task is invalid.'),
+          '429': errorResponse('Analysis concurrency or account rate limit reached. See Retry-After.'), ...authResponses },
       },
     },
     '/api/unsupervised/history': {

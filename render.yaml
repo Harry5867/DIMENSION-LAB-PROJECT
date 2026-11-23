@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci --include=dev && npm run build
-    startCommand: npm exec -- tsx backend/src/index.ts
+    startCommand: node --import tsx backend/src/index.ts
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV

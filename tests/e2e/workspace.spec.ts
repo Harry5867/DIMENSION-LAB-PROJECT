@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '../../packages/contracts/src/demo';
-import { openAnalysisDataset } from './support';
+import { openAnalysisDataset, openDemoPage } from './support';
 
 async function signIn(page: Page) {
   await page.goto('/');
@@ -30,7 +30,7 @@ async function expectGlass(control: Locator) {
 test('uses the welcome rim on Google sign-in and glass on the return arrow', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.route('**/api/auth/options', route => route.fulfill({
-    json: { data: { mode: 'atlas', google: true, registration: true } },
+    json: { success: true, data: { mode: 'atlas', google: true, registration: true } },
   }));
   await page.goto('/');
   await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
@@ -41,11 +41,13 @@ test('uses the welcome rim on Google sign-in and glass on the return arrow', asy
 });
 
 test('manual enrollment verifies a code after the password step and keeps Google on the email screen', async ({ page }) => {
-  await page.route('**/api/auth/options', route => route.fulfill({ json: { data: { mode: 'atlas', google: true, registration: false } } }));
-  await page.route('**/api/auth/login', route => route.fulfill({ status: 202, json: { data: { verificationRequired: true, challenge: 'test-challenge' } } }));
+  await page.route('**/api/auth/options', route => route.fulfill({ json: { success: true, data: { mode: 'atlas', google: true, registration: false } } }));
+  await page.route('**/api/auth/login', route => route.fulfill({ status: 202, json: { success: true, data: { verificationRequired: true, challenge: 'test-challenge' } } }));
   await page.route('**/api/auth/verify-email', route => {
     const verified = route.request().postDataJSON().code === '123456';
-    return route.fulfill({ status: verified ? 200 : 401, json: { data: { authenticated: verified } } });
+    return route.fulfill({ status: verified ? 200 : 401, json: verified
+      ? { success: true, data: { authenticated: true } }
+      : { success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid verification code.' } } });
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
@@ -159,6 +161,17 @@ test('imports a CSV through the API and runs a PCA projection', async ({ page })
   await page.getByRole('button', { name: 'No clustering', exact: true }).click();
   await page.getByRole('button', { name: 'Run analysis', exact: true }).click();
   await expect(page.getByText(/Projection complete: PCA/)).toBeVisible();
+});
+
+test('updates the database status when the API health check stops succeeding', async ({ page }) => {
+  await openDemoPage(page, '/#/explore');
+  await page.getByRole('button', { name: 'Workspace help', exact: true }).click();
+  const help = page.getByRole('dialog', { name: 'Workspace help' });
+  await expect(help.getByText('In-Memory (Ready for MongoDB)', { exact: true })).toBeVisible();
+
+  await page.route('**/api/health', route => route.fulfill({ status: 503, json: { success: false } }));
+  await help.getByRole('button', { name: 'Check connection', exact: true }).click();
+  await expect(help.getByText('Browser only', { exact: true })).toBeVisible();
 });
 
 test('opens a member profile from About Us', async ({ page }) => {

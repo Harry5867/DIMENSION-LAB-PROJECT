@@ -58,8 +58,23 @@ test('previews, searches, downloads, renames, and deletes an imported dataset', 
 test('rejects a CSV without enough numeric features', async ({ page }) => {
   await openDemoPage(page, '/#/datasets');
   const datasets = page.getByRole('main', { name: 'Datasets' });
+  await expect(datasets.getByRole('button', { name: 'Import CSV', exact: true })).toBeEnabled();
   const invalid = fileURLToPath(new URL('../fixtures/invalid.csv', import.meta.url));
   await datasets.locator('input[type="file"]').setInputFiles(invalid);
   await expect(page.getByRole('alert')).toContainText('Could not open CSV');
   await expect(datasets.getByLabel('Actions for invalid', { exact: true })).toHaveCount(0);
+});
+
+test('opens a CSV for the current demo session when storage is unavailable', async ({ page }) => {
+  await openDemoPage(page, '/#/datasets');
+  const datasets = page.getByRole('main', { name: 'Datasets' });
+  await expect(datasets.getByRole('button', { name: 'Import CSV', exact: true })).toBeEnabled();
+  await page.route('**/api/datasets/upload', route => route.fulfill({ status: 503, json: {
+    success: false, error: { code: 'STORAGE_UNAVAILABLE', message: 'Storage is unavailable.' },
+  } }));
+  const buffer = await readFile(new URL('../fixtures/round2-demo.csv', import.meta.url));
+  await datasets.locator('input[type="file"]').setInputFiles({ name: 'demo-fallback.csv', mimeType: 'text/csv', buffer });
+  const row = datasets.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^demo-fallback\.csv\b/ }) });
+  await expect(row).toContainText('Session only');
+  await expect(datasets.getByRole('status')).toContainText('CSV opened for this session.');
 });

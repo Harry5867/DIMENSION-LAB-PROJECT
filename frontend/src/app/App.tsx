@@ -7,7 +7,9 @@ import { GMMResult } from '@dimension-lab/algorithms/gmm';
 import { useAppTheme } from '../shared/providers/ThemeProvider';
 import { analysisReport, csvText, downloadText, resultRows, safeFilename } from '../features/experiments/exportData';
 import { experimentConfiguration } from '../features/experiments/history';
-import { fetchWithTimeout } from '../shared/api/network';
+import { useDatasets } from '../features/datasets/useDatasets';
+import { getDatabaseStatus } from '../features/health/healthApi';
+import { useExperiments } from '../features/experiments/useExperiments';
 import { ExportModal } from '../features/experiments/components/ExportModal';
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -19,11 +21,9 @@ import {
   ColorMode,
   EvaluationMetrics,
   MIN_NUMERIC_FEATURES,
-  DatasetSummary,
-  sampleDatasets,
   getSampleDataset,
 } from '@dimension-lab/contracts';
-import { MAX_CSV_BYTES, parseCSVString, extractFeatureMatrix } from '@dimension-lab/algorithms/dataParser';
+import { extractFeatureMatrix } from '@dimension-lab/algorithms/dataParser';
 import { initLiveTSNE, stepLiveTSNE, LiveTSNEState } from '../features/analysis/liveOptimization';
 import { ControlSidebar, type SetupMethod } from '../features/analysis/components/ControlSidebar';
 import { AnalysisSnapshot, reductionKey, describeRun, normalizationLabels, pendingAnalysisChanges, makePoints, focusPoints, evaluatePointSet } from '../features/analysis/exploration';
@@ -38,13 +38,7 @@ import { DataInspector } from '../features/visualization/components/DataInspecto
 import { RawDataModal } from '../features/datasets/components/RawDataModal';
 import { DatasetsPage } from '../features/datasets/components/DatasetsPage';
 import { ExperimentRecord } from '@dimension-lab/contracts';
-import {
-  getErrorMessage,
-  isDatasetDocument,
-  isDatasetSummary,
-  isExperimentRecord,
-  isRecord,
-} from '../shared/api/typeGuards';
+import { getErrorMessage } from '../shared/api/typeGuards';
 
 const ThreeCanvas = lazy(() =>
   import('../features/visualization/components/ThreeCanvas').then((module) => ({ default: module.ThreeCanvas }))
@@ -117,21 +111,19 @@ export function App({ active = true, persistent = false, importsHost = null }: {
   const operationRef = useRef(0);
   const computingRef = useRef(false);
   const computeAbortRef = useRef<AbortController | null>(null);
-  const localDatasets = useRef(new Map<string, ParsedDataset>());
   const [selectedPoint, setSelectedPoint] = useState<DataPoint | null>(null);
   const selectionRef = useRef<DataPoint | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const historyRequestRef = useRef(0);
   const [isComputing, setIsComputing] = useState<boolean>(false);
   const [loadingMessage, setLoadingMessage] = useState<string>('');
   const [dbStatus, setDbStatus] = useState<string>('Checking connection…');
   const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   // Dataset Management & Theme State
-  const [datasetList, setDatasetList] = useState<DatasetSummary[]>([]);
+  const showDatasetError = useCallback((message: string) => setNotice({ type: 'error', message }), []);
+  const { datasetList, nextDatasetOffset, usage, fetchDatasetList, openDataset, importFile, renameDataset, removeDataset } =
+    useDatasets(persistent, showDatasetError);
   const [activeDatasetId, setActiveDatasetId] = useState<string>('cancer_wdbc');
   const [isRawDataModalOpen, setIsRawDataModalOpen] = useState<boolean>(false);
 
@@ -160,8 +152,6 @@ export function App({ active = true, persistent = false, importsHost = null }: {
   const animFrameRef = useRef<number | null>(null);
 
   // Experiments & MongoDB Database state
-  const [experiments, setExperiments] = useState<ExperimentRecord[]>([]);
-  const [isSavingExperiment, setIsSavingExperiment] = useState(false);
 
   const [reductionConfig, setReductionConfig] = useState(defaultReduction);
 
@@ -201,24 +191,21 @@ export function App({ active = true, persistent = false, importsHost = null }: {
   }, []);
   const rawAxisFeatures = useMemo(() => selectedFeatures.slice(0, 3), [selectedFeatures]);
 
-  // Check Database connection health while Model is visible.
+  const checkDbHealth = useCallback(async () => {
+    try {
+      setDbStatus(await getDatabaseStatus());
+    } catch {
+      setDbStatus('Browser only');
+    }
+  }, []);
+
+  // Check database connection health while Model is visible.
   useEffect(() => {
     if (!active) return;
-    const checkDbHealth = async () => {
-      try {
-        const res = await fetchWithTimeout('/api/health');
-        if (res.ok) {
-          const data: unknown = await res.json();
-          setDbStatus(isRecord(data) && typeof data.database === 'string' ? data.database : 'Online');
-        }
-      } catch {
-        setDbStatus('Browser only');
-      }
-    };
     void checkDbHealth();
     const interval = setInterval(() => void checkDbHealth(), 10000);
     return () => clearInterval(interval);
-  }, [active]);
+  }, [active, checkDbHealth]);
 
   // Reset all computation & analytical states to ensure 100% data consistency
   const resetComputationState = useCallback(() => {
@@ -242,38 +229,6 @@ export function App({ active = true, persistent = false, importsHost = null }: {
     setIsLiveAnimating(false);
     liveStateRef.current = null;
   }, [handleSelectPoint]);
-
-  const [nextDatasetOffset, setNextDatasetOffset] = useState<number | null>(null);
-  const datasetListRequest = useRef(0);
-  const fetchDatasetList = useCallback(async (offset = 0) => {
-    const request = ++datasetListRequest.current;
-    let list: DatasetSummary[] | undefined;
-    try {
-      const res = await fetchWithTimeout('/api/datasets?offset=' + offset);
-      if (res.ok) {
-        const response: unknown = await res.json();
-        if (request !== datasetListRequest.current) return;
-        const body = isRecord(response) && 'data' in response ? response.data : response;
-        if (Array.isArray(body)) list = body.filter(isDatasetSummary);
-        const next = res.headers.get('X-Next-Offset');
-        setNextDatasetOffset(next && Number(next) > offset ? Number(next) : null);
-      } else if (persistent) {
-        throw new Error('Could not load the dataset list (HTTP ' + res.status + ').');
-      }
-    } catch (error) {
-      if (request !== datasetListRequest.current) return;
-      if (persistent) setNotice({ type: 'error', message: getErrorMessage(error) });
-      if (offset > 0) return;
-    }
-    const merged = new Map<string, DatasetSummary>(sampleDatasets.map(item => [item.id, item]));
-    list?.forEach(item => merged.set(item.id, item));
-    localDatasets.current.forEach((item, id) => merged.set(id, { id, name: item.name, filename: item.name,
-      total_rows: item.totalRows, features_count: item.featureColumns.length, label_column: item.labelColumn,
-      id_column: item.idColumn, created_at: new Date().toISOString(), is_local: true }));
-    setDatasetList(previous => offset || !list
-      ? [...new Map([...previous.filter(item => !item.is_local), ...merged.values()].map(item => [item.id, item])).values()]
-      : [...merged.values()]);
-  }, [persistent]);
 
   const datasetRequestRef = useRef(0);
   const datasetTransitionRef = useRef<AbortController | null>(null);
@@ -311,30 +266,7 @@ export function App({ active = true, persistent = false, importsHost = null }: {
     setIsExportModalOpen(false);
     setIsComputing(true); setLoadingMessage('Loading dataset…');
     try {
-      const sample = getSampleDataset(id);
-      let parsed = localDatasets.current.get(id);
-      if (!parsed) {
-        try {
-          const response = await fetchWithTimeout('/api/datasets/' + encodeURIComponent(id));
-          if (response.ok) {
-            const body: unknown = await response.json();
-            const data = isRecord(body) && 'data' in body ? body.data : body;
-            if (isDatasetDocument(data)) parsed = { id: data.id, name: data.name, totalRows: data.totalRows,
-              headers: Object.keys(data.rawRows[0] ?? {}), idColumn: data.idColumn, labelColumn: data.labelColumn,
-              featureColumns: data.features, rawRows: data.rawRows };
-          } else if (!sample) {
-            throw new Error('Could not load this dataset (HTTP ' + response.status + ').');
-          }
-        } catch (error) {
-          if (!sample) throw error;
-        }
-      }
-      if (!parsed && sample) {
-        const response = await fetchWithTimeout(import.meta.env.BASE_URL + sample.assetPath);
-        if (!response.ok) throw new Error('Could not load the sample dataset.');
-        parsed = parseCSVString(await response.text(), sample.name);
-      }
-      if (!parsed) throw new Error('This dataset is no longer available.');
+      const parsed = await openDataset(id);
       if (request !== datasetRequestRef.current) return undefined;
       return await activateDataset(parsed, id, request);
 
@@ -344,26 +276,14 @@ export function App({ active = true, persistent = false, importsHost = null }: {
     } finally {
       if (request === datasetRequestRef.current) { setIsComputing(false); setLoadingMessage(''); }
     }
-  }, [activateDataset]);
+  }, [activateDataset, openDataset]);
 
   // Rename a dataset
   const handleRenameDataset = async (id: string, newName: string) => {
     try {
-      const local = localDatasets.current.get(id);
-      if (local) {
-        localDatasets.current.set(id, { ...local, name: newName });
-        setDataset(prev => prev?.id === id ? { ...prev, name: newName } : prev);
-        await fetchDatasetList(); return;
-      }
-      const res = await fetchWithTimeout(`/api/datasets/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName }),
-      });
-      if (!res.ok) throw new Error('Could not rename the dataset.');
-      await fetchDatasetList();
+      const remote = await renameDataset(id, newName);
       setDataset(prev => prev?.id === id ? { ...prev, name: newName } : prev);
-      setNotice({ type: 'success', message: `Renamed dataset to "${newName}".` });
+      if (remote) setNotice({ type: 'success', message: 'Renamed dataset to "' + newName + '".' });
     } catch (err: unknown) {
       setNotice({ type: 'error', message: `Could not rename dataset: ${getErrorMessage(err)}` });
     }
@@ -378,23 +298,8 @@ export function App({ active = true, persistent = false, importsHost = null }: {
       }
     };
     try {
-      if (localDatasets.current.delete(id)) {
-        await fetchDatasetList();
-        await openSampleIfDeleted();
-        return;
-      }
-      const res = await fetchWithTimeout(`/api/datasets/${id}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        const data: unknown = await res.json().catch(() => null);
-        const errMsg = isRecord(data) && typeof data.error === 'string' ? data.error : 'Could not delete the dataset';
-        throw new Error(errMsg);
-      }
-      await fetchDatasetList();
-      setNotice({ type: 'success', message: 'Dataset deleted.' });
-
-      // If active dataset was deleted, switch back to cancer_wdbc
+      const remote = await removeDataset(id);
+      if (remote) setNotice({ type: 'success', message: 'Dataset deleted.' });
       await openSampleIfDeleted();
     } catch (err: unknown) {
       setNotice({ type: 'error', message: `Could not delete dataset: ${getErrorMessage(err)}` });
@@ -415,59 +320,21 @@ export function App({ active = true, persistent = false, importsHost = null }: {
     return () => window.removeEventListener('hashchange', followLink);
   }, [fetchDatasetList, handleSelectDataset]);
 
-  const showImportedDataset = (item: DatasetSummary) => {
-    setDatasetList(previous => [
-      ...previous.filter(dataset => dataset.is_preloaded),
-      item,
-      ...previous.filter(dataset => !dataset.is_preloaded && dataset.id !== item.id),
-    ]);
-  };
-
   const handleFileUpload = async (file: File) => {
     if (isComputing) return;
     const request = ++datasetRequestRef.current;
     setNotice(null);
     setIsComputing(true); setLoadingMessage('Checking CSV…');
     try {
-      if (file.size > MAX_CSV_BYTES) throw new Error('The CSV exceeds the 5 MiB file limit.');
-      const parsed = parseCSVString(new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()), file.name);
-      if (request !== datasetRequestRef.current) return;
-      const openLocally = async () => {
-        if (request !== datasetRequestRef.current) return;
-        const id = 'local_' + crypto.randomUUID();
-        localDatasets.current.set(id, { ...parsed, id });
-        showImportedDataset({ id, name: parsed.name, filename: file.name, total_rows: parsed.totalRows,
-          features_count: parsed.featureColumns.length, label_column: parsed.labelColumn,
-          id_column: parsed.idColumn, created_at: new Date().toISOString(), is_local: true });
-        const refresh = fetchDatasetList();
-        if (!await activateDataset(parsed, id, request)) return;
-        await refresh;
-        if (request !== datasetRequestRef.current) return;
-        setNotice({ type: 'info', message: 'CSV opened for this session. The server is unavailable.' });
-      };
-      const form = new FormData(); form.append('file', file);
-      let response: Response;
-      try { response = await fetchWithTimeout('/api/datasets/upload', { method: 'POST', body: form }); }
-      catch (error) { if (persistent) throw error; await openLocally(); return; }
-      if (!persistent && ([502, 503, 504].includes(response.status)
-        || (response.status === 500 && !response.headers.get('content-type')?.includes('application/json')))) { await openLocally(); return; }
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        const error = isRecord(body) ? body.error : undefined;
-        throw new Error(isRecord(error) && typeof error.message === 'string' ? error.message : 'The server rejected the CSV (HTTP ' + response.status + ').');
-      }
-      const data = isRecord(body) && 'data' in body ? body.data : body;
-      if (!isDatasetDocument(data)) throw new Error('The server returned an invalid dataset.');
-      showImportedDataset({ id: data.id, name: data.name, filename: data.filename, total_rows: data.totalRows,
-        features_count: data.features.length, label_column: data.labelColumn,
-        id_column: data.idColumn, created_at: data.createdAt });
+      const item = await importFile(file, () => request === datasetRequestRef.current);
+      if (!item) return;
       const refresh = fetchDatasetList();
-      if (request !== datasetRequestRef.current) return;
-      if (!await activateDataset({ ...parsed, name: data.name, rawRows: data.rawRows, featureColumns: data.features,
-        idColumn: data.idColumn, labelColumn: data.labelColumn }, data.id, request)) return;
+      if (request !== datasetRequestRef.current || !await activateDataset(item.dataset, item.summary.id, request)) return;
       await refresh;
       if (request !== datasetRequestRef.current) return;
-      setNotice({ type: 'success', message: 'Imported ' + data.name + ' (' + data.totalRows + ' rows).' });
+      setNotice(item.summary.is_local
+        ? { type: 'info', message: 'CSV opened for this session. The server is unavailable.' }
+        : { type: 'success', message: 'Imported ' + item.summary.name + ' (' + item.summary.total_rows + ' rows).' });
     } catch (error) {
       if (request === datasetRequestRef.current) setNotice({ type: 'error', message: 'Could not open CSV: ' + getErrorMessage(error) });
     } finally {
@@ -685,59 +552,27 @@ export function App({ active = true, persistent = false, importsHost = null }: {
     updatePointSet(filtered);
   };
 
-  // 6. Save Experiment to MongoDB
+  const { experiments, historyLoading, historyError, setHistoryError, isSavingExperiment, fetchExperiments, saveExperiment } =
+    useExperiments(page === 'experiments');
+
   const handleSaveExperiment = async () => {
     if (!dataset || !completedRun || resultsDirty || isComputing) return;
     try {
-      setIsSavingExperiment(true);
-      const res = await fetchWithTimeout('/api/experiments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          datasetId: completedRun.datasetId,
-          datasetName: dataset.name,
-          reductionMethod: completedRun.reduction.method,
-          clusteringMethod: completedRun.clustering.method,
-          k: completedRun.clustering.k,
-          silhouetteScore: metrics.silhouetteScore,
-          ari: metrics.adjustedRandIndex,
-          params: {
-            reduction: completedRun.reduction,
-            clustering: completedRun.clustering,
-            features: completedRun.features,
-          },
-        }),
+      await saveExperiment({
+        datasetId: completedRun.datasetId,
+        datasetName: dataset.name,
+        reductionMethod: completedRun.reduction.method,
+        clusteringMethod: completedRun.clustering.method,
+        k: completedRun.clustering.k,
+        silhouetteScore: metrics.silhouetteScore,
+        ari: metrics.adjustedRandIndex,
+        params: { reduction: completedRun.reduction, clustering: completedRun.clustering, features: completedRun.features },
       });
-      if (!res.ok) {
-        throw new Error(`The server could not save the experiment (HTTP ${res.status}).`);
-      }
       setNotice({ type: 'success', message: 'Experiment saved.' });
-      await fetchExperiments();
-    } catch (e: unknown) {
-      setNotice({ type: 'error', message: `Could not save experiment: ${getErrorMessage(e)}` });
-    } finally {
-      setIsSavingExperiment(false);
+    } catch (error) {
+      setNotice({ type: 'error', message: 'Could not save experiment: ' + getErrorMessage(error) });
     }
   };
-
-  const fetchExperiments = useCallback(async () => {
-    const request = ++historyRequestRef.current;
-    setHistoryLoading(true); setHistoryError(null);
-    try {
-      const res = await fetchWithTimeout('/api/experiments');
-      if (!res.ok) throw new Error('Could not load experiment history (HTTP ' + res.status + ').');
-      const response: unknown = await res.json();
-      const data = isRecord(response) && 'data' in response ? response.data : response;
-      if (!Array.isArray(data) || !data.every(isExperimentRecord)) throw new Error('The server returned invalid experiment history.');
-      if (request === historyRequestRef.current) setExperiments(data);
-    } catch (error) {
-      if (request === historyRequestRef.current) setHistoryError(getErrorMessage(error));
-    } finally { if (request === historyRequestRef.current) setHistoryLoading(false); }
-  }, []);
-
-  useEffect(() => {
-    if (page === 'experiments') void fetchExperiments();
-  }, [page, fetchExperiments]);
 
   const handleApplyExperiment = (record: ExperimentRecord) => {
     const config = experimentConfiguration(record);
@@ -829,7 +664,7 @@ export function App({ active = true, persistent = false, importsHost = null }: {
   };
 
   const renderDatasetManager = (importedOnly = false) => (
-    <DatasetsPage importedOnly={importedOnly} datasets={datasetList} activeDatasetId={dataset ? activeDatasetId : ''} busy={isComputing}
+    <DatasetsPage importedOnly={importedOnly} datasets={datasetList} activeDatasetId={dataset ? activeDatasetId : ''} busy={isComputing} usage={usage}
       {...(nextDatasetOffset !== null && { onLoadMore: () => fetchDatasetList(nextDatasetOffset) })}
       activity={tr(loadingMessage)} notice={notice && { ...notice, message: tr(notice.message) }} onDismissNotice={() => setNotice(null)} onUpload={handleFileUpload}
       onRename={handleRenameDataset} onDelete={handleDeleteDataset} onSelect={async id => {
@@ -1059,17 +894,7 @@ export function App({ active = true, persistent = false, importsHost = null }: {
             isOpen={isSecurityModalOpen}
             onClose={() => setIsSecurityModalOpen(false)}
             dbStatus={dbStatus}
-            onRefreshDb={async () => {
-              try {
-                const res = await fetchWithTimeout('/api/health');
-                if (res.ok) {
-                  const data: unknown = await res.json();
-                  setDbStatus(isRecord(data) && typeof data.database === 'string' && data.database ? data.database : 'Online');
-                }
-              } catch {
-                setDbStatus('In-Memory Mode');
-              }
-            }}
+            onRefreshDb={checkDbHealth}
           />
         </Suspense>
       )}

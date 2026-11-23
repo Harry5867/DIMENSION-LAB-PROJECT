@@ -1,16 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { readSavedAnalysisRuns, type SavedRun } from '@dimension-lab/algorithms/savedRuns';
-import { fetchWithTimeout } from '../../shared/api/network';
-import { isRecord } from '../../shared/api/typeGuards';
-
-const path = '/api/unsupervised/history';
-async function readResponse(response: Response) {
-  if (!response.ok) throw new Error(response.status === 413
-    ? 'This run is too large to save. Export JSON to keep it.' : 'Account history is unavailable. Please try again.');
-  const body: unknown = await response.json();
-  if (!isRecord(body) || !Array.isArray(body.data)) throw new Error('Invalid history response.');
-  return readSavedAnalysisRuns(body.data);
-}
+import type { SavedRun } from '@dimension-lab/algorithms/savedRuns';
+import { appendAnalysisHistory, listAnalysisHistory } from './analysisApi';
 
 export function useAnalysisHistory(persistent: boolean) {
   const [saved, setSaved] = useState<SavedRun[]>([]);
@@ -22,7 +12,7 @@ export function useAnalysisHistory(persistent: boolean) {
     const version = ++revision.current;
     setSaved([]); setHistoryError('');
     if (persistent) {
-      void fetchWithTimeout(path, { signal: controller.signal }).then(readResponse).then(runs => {
+      void listAnalysisHistory(controller.signal).then(runs => {
         if (version === revision.current) setSaved(runs);
       }).catch(() => {
         if (version === revision.current) setHistoryError('Could not load account history.');
@@ -39,9 +29,7 @@ export function useAnalysisHistory(persistent: boolean) {
     const version = ++revision.current;
     setSaving(true);
     try {
-      const runs = await readResponse(await fetchWithTimeout(path, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(run),
-      }));
+      const runs = await appendAnalysisHistory(run);
       if (version === revision.current) { setSaved(runs); setHistoryError(''); }
     } finally { if (version === revision.current) setSaving(false); }
   }

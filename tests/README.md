@@ -154,6 +154,8 @@ E2E đăng nhập bằng tài khoản demo, không xác minh Google OAuth produc
 
 ## 5. Kiểm thử hiệu năng với k6
 
+Xem [hướng dẫn staging và đo render 3D](../docs/operations.md#đo-hiệu-năng) để chạy k6 với MongoDB và tài khoản thử nghiệm, hoặc xuất JSON chỉ số khung hình từ Chromium.
+
 ### 5.1 Bài user journey cục bộ — khuyến nghị để bắt đầu
 
 Script [user-journey.js](performance/user-journey.js) thực hiện một chu trình API cho mỗi virtual user:

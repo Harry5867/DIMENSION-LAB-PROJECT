@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import type { AuthOptions } from '@dimension-lab/contracts';
-import { DEMO_EMAIL, DEMO_PASSWORD, validDemoCredentials } from '@dimension-lab/contracts/demo';
+import { DEMO_EMAIL, DEMO_PASSWORD } from '@dimension-lab/contracts/demo';
 import { useWelcomeLanguage } from '../../../shared/providers/WelcomeLanguage';
-import { fetchWithTimeout } from '../../../shared/api/network';
-import { getApiDataRecord } from '../../../shared/api/typeGuards';
+import { usePasswordSignIn } from '../usePasswordSignIn';
 import { TeamLogo } from '../../../shared/ui/TeamLogo';
 import { LoginBackdrop } from './LoginBackdrop';
 import './login.css';
@@ -16,85 +15,21 @@ export function LoginPanel({ onClose, onSignIn, authOptions, googleError }: { on
   const emailInput = useRef<HTMLInputElement>(null);
   const [emailEntered, setEmailEntered] = useState(false);
   const [invalidEmail, setInvalidEmail] = useState(false);
-  const [challenge, setChallenge] = useState('');
   const [code, setCode] = useState('');
   const codeInput = useRef<HTMLInputElement>(null);
-  const [feedback, setFeedback] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
-  const [error, setError] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const loginRequest = useRef<AbortController | null>(null);
-  useEffect(() => () => loginRequest.current?.abort(), []);
+  const { challenge, feedback, error, submitting, submit, setFeedback, setError, cancel } =
+    usePasswordSignIn(authOptions, onSignIn);
   useEffect(() => {
     const target = challenge ? codeInput.current : emailEntered ? passwordInput.current : emailInput.current;
     target?.focus({ preventScroll: true });
   }, [challenge, emailEntered, authOptions]);
-  const close = () => { loginRequest.current?.abort(); onClose(); };
-  async function signIn() {
-    if (loginRequest.current) return;
-    const atlas = authOptions?.mode === 'atlas';
-    setFeedback('');
-    const request = new AbortController();
-    loginRequest.current = request;
-    setSubmitting(true);
-    setError(false);
-    try {
-      const response = await fetchWithTimeout(challenge ? '/api/auth/verify-email' : '/api/auth/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(challenge ? { challenge, code } : { email, password, ...(atlas && { enroll: true }) }), signal: request.signal,
-      }, atlas ? 15000 : 5000);
-      if (atlas) {
-        if (response.ok) {
-          const data = getApiDataRecord(await response.json());
-          if (request.signal.aborted) return;
-          if (data?.verificationRequired === true && typeof data.challenge === 'string') {
-            setPassword(''); setVisible(false); setCode(''); setChallenge(data.challenge);
-            return;
-          }
-          if (data?.authenticated === true) {
-            onSignIn();
-            return;
-          }
-        }
-        if (response.status === 401 && challenge) setFeedback(t('Invalid or expired code. Try again, or restart sign-in for a new code.', 'Mã sai hoặc đã hết hạn. Hãy thử lại hoặc đăng nhập lại để nhận mã mới.'));
-        else if (response.status === 503) setFeedback(t('Sign-in is temporarily unavailable. Try again later.', 'Tạm thời chưa thể đăng nhập. Hãy thử lại sau.'));
-        else if (response.status === 401) setFeedback(authOptions?.google
-          ? t('Email or password is incorrect. If you joined with Google, choose Continue with Google on the email screen.', 'Email hoặc mật khẩu chưa đúng. Nếu bạn đã dùng Google, hãy chọn Tiếp tục với Google.')
-          : t('Email or password is incorrect.', 'Email hoặc mật khẩu chưa đúng.'));
-        else if (response.status === 409) setFeedback(t('Restart sign-in with your existing account.', 'Hãy đăng nhập lại bằng tài khoản hiện có.'));
-        else if (response.status === 429) setFeedback(t('Too many attempts. Try again in a minute.', 'Bạn đã thử quá nhiều lần. Hãy thử lại sau một phút.'));
-        else if (response.status === 400) setFeedback(t('Check the information you entered.', 'Hãy kiểm tra lại thông tin đã nhập.'));
-        else setFeedback(t('The request could not be completed. Try again.', 'Không thể hoàn tất yêu cầu. Hãy thử lại.'));
-        return;
-      }
-      if (response.ok) {
-        const data = getApiDataRecord(await response.json());
-        if (!request.signal.aborted && typeof data?.token === 'string') {
-          onSignIn(data.token);
-          return;
-        }
-      }
-      if (![502, 503, 504].includes(response.status) && (response.status !== 500 || response.headers.get('content-type')?.includes('application/json'))) {
-        if (!request.signal.aborted) {
-          if (response.status === 401) setError(true);
-          else setFeedback(t('The request could not be completed. Try again.', 'Không thể hoàn tất yêu cầu. Hãy thử lại.'));
-        }
-        return;
-      }
-    } catch {
-      if (atlas) {
-        if (!request.signal.aborted) setFeedback(t('Could not reach the server. Try again.', 'Không thể kết nối máy chủ. Hãy thử lại.'));
-        return;
-      }
-    }
-    finally { loginRequest.current = null; if (!request.signal.aborted) setSubmitting(false); }
-    if (!request.signal.aborted) {
-      if (validDemoCredentials(email, password)) onSignIn(null);
-      else setError(true);
-    }
-  }
+  const close = () => { cancel(); onClose(); };
+  const signIn = () => submit(email, password, code, () => {
+    setPassword(''); setVisible(false); setCode('');
+  });
   return <main className="login-page" aria-labelledby="login-title" onKeyDown={event => {
     if (event.key === 'Escape' && !event.defaultPrevented) close();
   }}>

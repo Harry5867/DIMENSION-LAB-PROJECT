@@ -1,7 +1,6 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { DEMO_EMAIL } from '@dimension-lab/contracts/demo';
-import { fetchWithTimeout } from '../../shared/api/network';
-import { getApiDataRecord } from '../../shared/api/typeGuards';
+import { getSession } from '../auth/authApi';
 import { getAccessToken, hasDemoSession } from '../../shared/api/demoSession';
 import { LogOut, X } from 'lucide-react';
 import type { AuthOptions } from '@dimension-lab/contracts';
@@ -53,10 +52,8 @@ export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOpt
     if (authOptions?.mode === 'demo' && !getAccessToken() && hasDemoSession()) {
       setAccountEmail(DEMO_EMAIL);
     } else {
-      void fetchWithTimeout('/api/auth/me', { signal }).then(async response => {
-        if (!response.ok) return;
-        const session = getApiDataRecord(await response.json());
-        if (!signal.aborted && session?.authenticated && typeof session.email === 'string') setAccountEmail(session.email);
+      void getSession(signal).then(session => {
+        if (!signal.aborted && session.authenticated && session.email) setAccountEmail(session.email);
       }).catch(() => { /* The user can still sign out if account details are unavailable. */ });
     }
     return () => controller.abort();
