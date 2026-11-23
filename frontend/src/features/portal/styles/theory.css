@@ -7,8 +7,6 @@
 .portal-content--theory:focus { outline:none; }
 .theory-scope { --theory-teal:#007a6e; color:#272b25; min-width:0; }
 .theory-scope a { -webkit-tap-highlight-color:transparent; }
-.theory-back-link { display:inline-flex; align-items:center; align-self:flex-start; gap:9px; min-height:28px; color:#315f52; font:11px var(--font-mono); }
-.theory-back-link:hover { text-decoration:underline; text-underline-offset:5px; }
 .theory-section-label { font:10px/1.5 var(--font-mono); letter-spacing:.12em; color:#596452; }
 .theory-catalog { flex:1; display:flex; flex-direction:column; }
 .theory-catalog-heading { position:relative; min-height:clamp(95px,13dvh,180px); isolation:isolate; }

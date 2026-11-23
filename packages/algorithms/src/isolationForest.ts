@@ -9,23 +9,23 @@ export function computeIsolationForest(data: number[][], options: IsolationOptio
   const random = randomSource(options.seed), size = Math.min(data.length, options.sampleSize), depthLimit = Math.ceil(Math.log2(size));
   const build = (rows: number[][], depth: number): Tree => {
     if (rows.length <= 1 || depth >= depthLimit) return { size: rows.length };
-    const ranges = rows[0].map((_, j) => { let min = Infinity, max = -Infinity; rows.forEach(row => { min = Math.min(min, row[j]); max = Math.max(max, row[j]); }); return { j, min, max }; }).filter(r => r.max > r.min);
+    const ranges = rows[0]!.map((_, j) => { let min = Infinity, max = -Infinity; rows.forEach(row => { min = Math.min(min, row[j]!); max = Math.max(max, row[j]!); }); return { j, min, max }; }).filter(r => r.max > r.min);
     if (!ranges.length) return { size: rows.length };
-    const r = ranges[Math.floor(random() * ranges.length)], split = r.min + random() * (r.max - r.min);
-    const left = rows.filter(row => row[r.j] < split), right = rows.filter(row => row[r.j] >= split);
+    const r = ranges[Math.floor(random() * ranges.length)]!, split = r.min + random() * (r.max - r.min);
+    const left = rows.filter(row => row[r.j]! < split), right = rows.filter(row => row[r.j]! >= split);
     if (!left.length || !right.length) return { size: rows.length };
     return { size: rows.length, feature: r.j, split, left: build(left, depth + 1), right: build(right, depth + 1) };
   };
-  const path = (row: number[], tree: Tree, depth = 0): number => tree.feature === undefined ? depth + adjustment(tree.size) : path(row, row[tree.feature] < tree.split! ? tree.left! : tree.right!, depth + 1);
+  const path = (row: number[], tree: Tree, depth = 0): number => tree.feature === undefined ? depth + adjustment(tree.size) : path(row, row[tree.feature]! < tree.split! ? tree.left! : tree.right!, depth + 1);
   const sums = data.map(() => 0);
   for (let t = 0; t < options.trees; t++) {
     const indices = data.map((_, i) => i);
-    for (let i = 0; i < size; i++) { const j = i + Math.floor(random() * (indices.length - i)); [indices[i], indices[j]] = [indices[j], indices[i]]; }
-    const tree = build(indices.slice(0, size).map(i => data[i]), 0);
-    data.forEach((row, i) => sums[i] += path(row, tree));
+    for (let i = 0; i < size; i++) { const j = i + Math.floor(random() * (indices.length - i)); [indices[i], indices[j]] = [indices[j]!, indices[i]!]; }
+    const tree = build(indices.slice(0, size).map(i => data[i]!), 0);
+    data.forEach((row, i) => sums[i]! += path(row, tree));
   }
   const scores = sums.map(s => 2 ** (-s / options.trees / adjustment(size)));
-  const sorted = [...scores].sort((a, b) => b - a), threshold = sorted[Math.max(0, Math.ceil(data.length * options.contamination) - 1)];
+  const sorted = [...scores].sort((a, b) => b - a), threshold = sorted[Math.max(0, Math.ceil(data.length * options.contamination) - 1)]!;
   // Ties at the threshold are included, so the observed proportion can exceed the requested proportion.
   return { scores, anomalies: scores.map(s => s >= threshold), threshold };
 }

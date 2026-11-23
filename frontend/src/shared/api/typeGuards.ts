@@ -18,7 +18,7 @@ function isDataValue(value: unknown): value is DataValue {
     || typeof value === 'boolean';
 }
 
-function isDatasetRow(value: unknown): boolean {
+export function isDatasetRow(value: unknown): value is Record<string, DataValue> {
   return isRecord(value) && Object.values(value).every(isDataValue);
 }
 

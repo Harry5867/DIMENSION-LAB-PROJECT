@@ -14,22 +14,32 @@ interface Surface {
 
 function writePose(buffer: Float32Array, sources: readonly Float32Array[], pose: MorphPose) {
   if (typeof pose === 'number') {
-    buffer.set(sources[pose]);
+    const source = sources[pose];
+    if (source) buffer.set(source);
+    else buffer.fill(0);
     return;
   }
   buffer.fill(0);
   pose.forEach((weight, scene) => {
     if (!weight) return;
     const source = sources[scene];
-    for (let i = 0; i < buffer.length; i++) buffer[i] += source[i] * weight;
+    if (!source) return;
+    for (let i = 0; i < buffer.length; i++) buffer[i]! += source[i]! * weight;
   });
 }
 
 function colorBuffers(shapes: MorphShape[], theme: 'light' | 'dark') {
-  const color = new THREE.Color();
+  const palette = new Map<string, THREE.Color>();
   return shapes.map(shape => {
     const buffer = new Float32Array(shape.positions.length);
-    shape.colors.forEach((hex, index) => color.set(morphDisplayColor(hex, theme)).toArray(buffer, index * 3));
+    shape.colors.forEach((hex, index) => {
+      let color = palette.get(hex);
+      if (!color) {
+        color = new THREE.Color(morphDisplayColor(hex, theme));
+        palette.set(hex, color);
+      }
+      color.toArray(buffer, index * 3);
+    });
     return buffer;
   });
 }
@@ -42,20 +52,38 @@ function associationOpacity({ from, to, blend }: MorphBlend) {
 // Fit all scene points across the full gentle rotation range, rather than
 // zooming a fixed camera until wide PCA or GMM previews get cropped.
 export function morphCameraDistance(shapes: MorphShape[], aspect: number) {
-  const matrix = new THREE.Matrix4(), point = new THREE.Vector3(), rotation = new THREE.Euler();
+  const matrix = new THREE.Matrix4(), rotation = new THREE.Euler();
   const tan = Math.tan(Math.PI / 10), ratio = Math.max(.1, aspect);
   const pitch = morphSettings.idlePitch + particleStyle.pointerPitch;
   const yaw = morphSettings.idleYaw + particleStyle.pointerYaw;
+  const breath = 1 + morphSettings.breathe;
+  const widthFactor = 1.075 / (tan * ratio), heightFactor = 1.1 / tan;
   let distance = 3.8;
   for (const x of [-.1 - pitch, -.1 + pitch]) for (const y of [-yaw, 0, yaw]) for (const z of [-.04, 0, .04]) {
-    matrix.makeRotationFromEuler(rotation.set(x, y, z));
-    for (const shape of shapes) for (let i = 0; i < shape.positions.length; i += 3) {
-      point.fromArray(shape.positions, i).applyMatrix4(matrix).multiplyScalar(1 + morphSettings.breathe);
-      const dx = Math.abs(point.x) + .035, dy = Math.abs(point.y + .1) + .035 + morphSettings.bob;
-      distance = Math.max(distance, point.z + Math.max(dx * 1.075 / (tan * ratio), dy * 1.1 / tan));
+    const m = matrix.makeRotationFromEuler(rotation.set(x, y, z)).elements;
+    // This matrix only rotates. Apply its affine terms directly to each point.
+    for (const { positions } of shapes) for (let i = 0; i < positions.length; i += 3) {
+      const a = positions[i]!, b = positions[i + 1]!, c = positions[i + 2]!;
+      const px = (m[0]! * a + m[4]! * b + m[8]! * c) * breath;
+      const py = (m[1]! * a + m[5]! * b + m[9]! * c) * breath;
+      const pz = (m[2]! * a + m[6]! * b + m[10]! * c) * breath;
+      const dx = Math.abs(px) + .035, dy = Math.abs(py + .1) + .035 + morphSettings.bob;
+      distance = Math.max(distance, pz + Math.max(dx * widthFactor, dy * heightFactor));
     }
   }
   return distance;
+}
+
+// The renderer uses a small set of fixed point budgets. Keep the prepared
+// shapes across visits without retaining a WebGL context while off screen.
+const preparedShapes = new Map<number, ReturnType<typeof prepareMorphShapes>>();
+function shapesForBudget(count: number) {
+  let prepared = preparedShapes.get(count);
+  if (!prepared) {
+    prepared = prepareMorphShapes(count);
+    preparedShapes.set(count, prepared);
+  }
+  return prepared;
 }
 
 const vertexShader = `
@@ -98,9 +126,10 @@ function createWebGLSurface(host: HTMLElement): Surface {
   const scene = new THREE.Scene(), group = new THREE.Group(); group.position.y = .1; scene.add(group);
   const camera = new THREE.PerspectiveCamera(36, 1, .1, 100);
   const geometry = new THREE.BufferGeometry();
+  const uniforms = { blend: { value: 0 }, time: { value: 0 }, pixelRatio: { value: 1 }, pointSize: { value: morphSettings.pointSize } };
   const material = new THREE.ShaderMaterial({ vertexShader, fragmentShader, vertexColors: true,
     transparent: true, depthWrite: false, toneMapped: false,
-    uniforms: { blend: { value: 0 }, time: { value: 0 }, pixelRatio: { value: 1 }, pointSize: { value: morphSettings.pointSize } },
+    uniforms,
   });
   const points = new THREE.Points(geometry, material); points.frustumCulled = false; group.add(points);
   const linePositions = new Float32Array(associationEdges.length * 6);
@@ -142,19 +171,19 @@ function createWebGLSurface(host: HTMLElement): Surface {
     resize(width, height, dpr, lowPower) {
       const budget = morphBudget(width, height, dpr, lowPower);
       renderer.setPixelRatio(budget.dpr); renderer.setSize(Math.max(1, width), Math.max(1, height), false);
-      material.uniforms.pixelRatio.value = budget.dpr;
+      uniforms.pixelRatio.value = budget.dpr;
       camera.aspect = width / Math.max(1, height);
       if (count !== budget.count) {
         // Release the previous buffers before a responsive particle-count change.
         geometry.dispose();
         count = budget.count;
-        const prepared = prepareMorphShapes(count); shapes = prepared.shapes;
+        const prepared = shapesForBudget(count); shapes = prepared.shapes;
         positionArrays = shapes.map(shape => shape.positions);
-        const associationScale = prepared.scales[prepared.scales.length - 1];
+        const associationScale = prepared.scales.at(-1) ?? 1;
         associationEdges.forEach(([from, to], i) => {
           for (let axis = 0; axis < 3; axis++) {
-            linePositions[i * 6 + axis] = associationCenters[from][axis] * associationScale;
-            linePositions[i * 6 + 3 + axis] = associationCenters[to][axis] * associationScale;
+            linePositions[i * 6 + axis] = associationCenters[from][axis]! * associationScale;
+            linePositions[i * 6 + 3 + axis] = associationCenters[to][axis]! * associationScale;
           }
         });
         lineGeometry.getAttribute('position').needsUpdate = true;
@@ -175,7 +204,7 @@ function createWebGLSurface(host: HTMLElement): Surface {
       group.rotation.set(-.1 + Math.sin(seconds * .17) * morphSettings.idlePitch + pitch,
         Math.sin(seconds * .14) * morphSettings.idleYaw + yaw, Math.sin(seconds * .1) * .035);
       group.position.y = .1 + Math.sin(seconds * .85) * morphSettings.bob;
-      material.uniforms.time.value = seconds; material.uniforms.blend.value = frame.blend;
+      uniforms.time.value = seconds; uniforms.blend.value = frame.blend;
       lineMaterial.opacity = associationOpacity(frame) * .34;
       lines.visible = lineMaterial.opacity > .005;
       lines.scale.setScalar(1 + Math.sin(seconds * 1.06) * morphSettings.breathe);
@@ -193,7 +222,7 @@ function createWebGLSurface(host: HTMLElement): Surface {
 function createCanvasSurface(host: HTMLElement): Surface {
   const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { alpha: true });
   host.appendChild(canvas);
-  const prepared = prepareMorphShapes(morphSettings.fallbackPoints);
+  const prepared = shapesForBudget(morphSettings.fallbackPoints);
   const shapes = prepared.shapes;
   const positions = shapes.map(shape => shape.positions);
   let width = 0, height = 0, lineColor = '#719087', yaw = 0, pitch = 0;
@@ -202,7 +231,7 @@ function createCanvasSurface(host: HTMLElement): Surface {
   const paintColor = new THREE.Color();
   let cached = new WeakMap<readonly number[], CanvasPose>();
   const lookup = (pose: MorphPose): CanvasPose => {
-    if (typeof pose === 'number') return { positions: positions[pose], colors: palette[pose], linearColors: colors[pose] };
+    if (typeof pose === 'number') return { positions: positions[pose]!, colors: palette[pose]!, linearColors: colors[pose]! };
     const existing = cached.get(pose);
     if (existing) return existing;
     const projected = new Float32Array(morphSettings.fallbackPoints * 3), blended = new Float32Array(projected.length);
@@ -242,7 +271,7 @@ function createCanvasSurface(host: HTMLElement): Surface {
         ctx.strokeStyle = lineColor; ctx.lineWidth = .8; ctx.globalAlpha = lineAlpha; ctx.beginPath();
         associationEdges.forEach(([a, b]) => {
           const from = associationCenters[a], to = associationCenters[b];
-          const factor = scale * breathe * prepared.scales[prepared.scales.length - 1];
+          const factor = scale * breathe * (prepared.scales.at(-1) ?? 1);
           ctx.moveTo(width/2 + (from[0] * cos + from[2] * sin) * factor, height/2 - (from[1] - from[2] * pitch) * factor - scale * (.1 + bob));
           ctx.lineTo(width/2 + (to[0] * cos + to[2] * sin) * factor, height/2 - (to[1] - to[2] * pitch) * factor - scale * (.1 + bob));
         });
@@ -251,16 +280,16 @@ function createCanvasSurface(host: HTMLElement): Surface {
       ctx.globalAlpha = .8;
       for (let i = 0; i < morphSettings.fallbackPoints; i++) {
         const k = i * 3;
-        const x = (source.positions[k] * (1-t) + target.positions[k] * t) * breathe;
-        const y = (source.positions[k+1] * (1-t) + target.positions[k+1] * t) * breathe + Math.cos(seconds * .8 + (i % 4) * 1.57) * .025;
-        const z = source.positions[k+2] * (1-t) + target.positions[k+2] * t;
+        const x = (source.positions[k]! * (1-t) + target.positions[k]! * t) * breathe;
+        const y = (source.positions[k+1]! * (1-t) + target.positions[k+1]! * t) * breathe + Math.cos(seconds * .8 + (i % 4) * 1.57) * .025;
+        const z = source.positions[k+2]! * (1-t) + target.positions[k+2]! * t;
         ctx.beginPath(); ctx.arc(width/2 + (x * cos + z * sin) * scale, height/2 - (y - z * pitch + .1 + bob) * scale, 1.7, 0, Math.PI * 2);
-        if (t === 0) ctx.fillStyle = source.colors[i];
-        else if (t === 1) ctx.fillStyle = target.colors[i];
+        if (t === 0) ctx.fillStyle = source.colors[i]!;
+        else if (t === 1) ctx.fillStyle = target.colors[i]!;
         else {
           const a = source.linearColors, b = target.linearColors;
-          ctx.fillStyle = paintColor.setRGB(a[k] + (b[k] - a[k]) * t,
-            a[k+1] + (b[k+1] - a[k+1]) * t, a[k+2] + (b[k+2] - a[k+2]) * t).getStyle();
+          ctx.fillStyle = paintColor.setRGB(a[k]! + (b[k]! - a[k]!) * t,
+            a[k+1]! + (b[k+1]! - a[k+1]!) * t, a[k+2]! + (b[k+2]! - a[k+2]!) * t).getStyle();
         }
         ctx.fill();
       }

@@ -1,0 +1,4 @@
+# The case studies record the SHA-256 of these CSV files as checked out.
+public/data.csv text eol=crlf
+public/wholesale.csv text eol=crlf
+public/samples/*.csv text eol=lf

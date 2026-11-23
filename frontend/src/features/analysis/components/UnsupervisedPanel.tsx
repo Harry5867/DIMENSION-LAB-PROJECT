@@ -7,26 +7,32 @@ import { Activity, GitBranch, ChevronDown, ChevronRight, Play } from 'lucide-rea
 import { RangeNumber } from '../../../shared/ui/RangeNumber';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { SetupAccordion } from './ControlSidebar';
-import { DataPoint, NormalizationMethod, ParsedDataset } from '@dimension-lab/contracts';
-import { AnalysisTask, AnalysisTaskResult, parseAnalysisTask } from '@dimension-lab/algorithms/analysisTasks';
+import { DataPoint, NormalizationMethod, ParsedDataset, getSampleDataset } from '@dimension-lab/contracts';
+import type { AnalysisTask } from '@dimension-lab/algorithms/analysisTasks';
+import { isRecord } from '../../../shared/api/typeGuards';
+import { isAnalysisResult, type SavedRun } from '@dimension-lab/algorithms/savedRuns';
+import type { useAnalysisHistory } from '../useAnalysisHistory';
 import { AssociationRule } from '@dimension-lab/algorithms/apriori';
 import { csvText, downloadText } from '../../experiments/exportData';
 import './unsupervised.css';
 
 export interface AnalysisOverlay { scores?: number[]; rows: number[]; title: string }
-interface SavedRun { dataset: string; createdAt: string; task: AnalysisTask; result: AnalysisTaskResult }
-interface Props { active?: boolean; accordion?: SetupAccordion; projection: string; onRestoreSettings: (features: string[], normalization: NormalizationMethod) => void; dataset: ParsedDataset; features: string[]; normalization: NormalizationMethod; points: DataPoint[]; onSelect: (point: DataPoint) => void; onOverlay: (overlay: AnalysisOverlay | null) => void }
+interface Props { history: ReturnType<typeof useAnalysisHistory>; active?: boolean; accordion?: SetupAccordion; projection: string; onRestoreSettings: (features: string[], normalization: NormalizationMethod) => void; dataset: ParsedDataset; features: string[]; normalization: NormalizationMethod; points: DataPoint[]; onSelect: (point: DataPoint) => void; onOverlay: (overlay: AnalysisOverlay | null) => void }
 
 
-export function UnsupervisedPanel({ active = true, accordion, dataset, features, normalization, points, onSelect, onOverlay, projection, onRestoreSettings }: Props) {
+export function UnsupervisedPanel({ history, active = true, accordion, dataset, features, normalization, points, onSelect, onOverlay, projection, onRestoreSettings }: Props) {
   const { language, tr, t } = useAppLanguage();
   const panelId = useId();
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [kind, setKind] = useState<'anomaly' | 'association'>(() => accordion?.open === 'association' ? 'association' : 'anomaly');
-  const [trees, setTrees] = useState(100), [sampleSize, setSampleSize] = useState(256), [contamination, setContamination] = useState(0.05), [seed, setSeed] = useState(42);
+  const [trees, setTrees] = useState(100), [sampleSize, setSampleSize] = useState(Math.min(256, dataset.totalRows)), [contamination, setContamination] = useState(0.05), [seed, setSeed] = useState(42);
   const [support, setSupport] = useState(0.15), [confidence, setConfidence] = useState(0.7), [lift, setLift] = useState(1), [bins, setBins] = useState(3), [maxSize, setMaxSize] = useState(3);
-  const [columns, setColumns] = useState<string[]>(() => dataset.headers.filter(f => f !== dataset.idColumn && f !== dataset.labelColumn).slice(0, 10));
+  const [columns, setColumns] = useState<string[]>(() => {
+    const suggested = dataset.id ? getSampleDataset(dataset.id)?.preset?.associationColumns : undefined;
+    return suggested ? suggested.filter(column => dataset.headers.includes(column))
+      : dataset.headers.filter(column => column !== dataset.idColumn && column !== dataset.labelColumn).slice(0, 10);
+  });
   const [runs, setRuns] = useState<Partial<Record<'anomaly' | 'association', SavedRun>>>({});
   const run = runs[kind] ?? null;
   const setRun = (r: SavedRun) => setRuns(previous => ({ ...previous, [r.task.kind]: r }));
@@ -38,15 +44,15 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
   useEffect(() => { if (dashboardOpen && selectedRule) detailRef.current?.scrollIntoView({ block: 'nearest' }); }, [selectedRule]);
   useEffect(() => { if (dashboardOpen && inspectedRow !== null) rowRef.current?.scrollIntoView({ block: 'nearest' }); }, [inspectedRow]);
   useEffect(() => { setQuery(''); setInspectedRow(null); setSelectedRule(null); setRuleSupport(0); setRuleConfidence(0); setRuleLift(0); }, [kind]);
-  const [saved, setSaved] = useState<SavedRun[]>([]);
+  const { saved, saving, historyError } = history;
   const generation = useRef(0);
-  const worker = useRef<Worker | null>(null), cache = useRef(new Map<string, AnalysisTaskResult>());
+  const worker = useRef<Worker | null>(null), cache = useRef(new Map<string, SavedRun['result']>());
   useEffect(() => {
     if (active) return;
     generation.current++; worker.current?.terminate(); worker.current = null;
     setBusy(false); setDashboardOpen(false);
   }, [active]);
-  useEffect(() => { try { const value = JSON.parse(localStorage.getItem('unsupervised-runs-v1') ?? '[]'); if (Array.isArray(value)) setSaved(value.filter(r => { try { parseAnalysisTask(r.task); return r.result?.kind === r.task.kind && (r.result.kind !== 'anomaly' || (r.result.scores?.length === r.task.rows.length && r.result.scores.every((score: unknown) => typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 1) && r.result.anomalies?.length === r.task.rows.length && r.result.anomalies.every((flag: unknown) => typeof flag === 'boolean') && Number.isFinite(r.result.threshold))) && typeof r.dataset === 'string' && typeof r.createdAt === 'string' && r.result && ((r.result.kind === 'anomaly' && Array.isArray(r.result.scores) && Array.isArray(r.result.anomalies)) || (r.result.kind === 'association' && Array.isArray(r.result.rules) && Array.isArray(r.result.transactions) && Array.isArray(r.result.binning))); } catch { return false; } }).slice(0, 5)); } catch { /* Storage unavailable. */ } return () => worker.current?.terminate(); }, []);
+  useEffect(() => () => worker.current?.terminate(), []);
   const task: AnalysisTask = kind === 'anomaly' ? { kind, rows: dataset.rawRows, features, normalization, options: { trees, sampleSize, contamination, seed } }
     : { kind, rows: dataset.rawRows, features: columns, options: { support, confidence, lift, bins, maxSize } };
   const dirty = run !== null && JSON.stringify(task) !== JSON.stringify(run.task);
@@ -55,7 +61,7 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
     worker.current?.terminate(); setDashboardOpen(false); onOverlay(null); setBusy(true); setInspectedRow(null); setQuery(''); setError(''); setSelectedRule(null); setStatus('');
     const snapshot = structuredClone(task), key = JSON.stringify(snapshot);
     setRuleSupport(0); setRuleConfidence(0); setRuleLift(0); setMinimumScore(0); setOnlyAnomalies(true); setMemberScope('both');
-    const finish = (result: AnalysisTaskResult, fromCache = false) => {
+    const finish = (result: SavedRun['result'], fromCache = false) => {
       setKind(snapshot.kind); setRun({ dataset: dataset.name, createdAt: new Date().toISOString(), task: snapshot, result }); setBusy(false); setDashboardOpen(true);
       if (result.kind === 'anomaly') onOverlay({ scores: result.scores, rows: result.anomalies.flatMap((flag, i) => flag ? [i] : []), title: 'Isolation Forest · anomaly score' });
       setStatus(fromCache ? 'Loaded identical input from session cache.' : 'Analysis complete.');
@@ -64,8 +70,19 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
     const cached = cache.current.get(key); if (cached) { finish(cached, true); return; }
     try {
       const w = new Worker(new URL('../workers/analysis.worker.ts', import.meta.url), { type: 'module' }); worker.current = w;
-      w.onmessage = event => { if (operation !== generation.current) return; w.terminate(); worker.current = null; if (event.data.error) { setError(event.data.error); setBusy(false); } else finish(event.data.result); };
-      w.onerror = () => { if (operation !== generation.current) return; w.terminate(); worker.current = null; setBusy(false); setError('Analysis worker failed. Reduce data size and retry.'); };
+      w.onmessage = (event: MessageEvent<unknown>) => {
+        if (operation !== generation.current) return;
+        w.terminate();
+        worker.current = null;
+        const reply = event.data;
+        if (isRecord(reply) && isAnalysisResult(reply.result, snapshot)) {
+          finish(reply.result);
+        } else {
+          setError(isRecord(reply) && typeof reply.error === 'string' ? reply.error : 'Analysis worker returned an invalid result.');
+          setBusy(false);
+        }
+      };
+      w.onerror = w.onmessageerror = () => { if (operation !== generation.current) return; w.terminate(); worker.current = null; setBusy(false); setError('Analysis worker failed. Reduce data size and retry.'); };
       w.postMessage(snapshot);
     } catch (e) { setBusy(false); setError(e instanceof Error ? e.message : 'Unable to start worker.'); }
   };
@@ -79,7 +96,14 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
     if (highlight) onOverlay({ rows, title: both ? 'Rows matching both rule sides' : 'Rows matching antecedent' });
   };
   const exportRun = () => { if (run) downloadText(JSON.stringify(run, null, 2), 'unsupervised-result.json', 'application/json'); };
-  const save = () => { if (!run) return; try { const next = [run, ...saved].slice(0, 5); localStorage.setItem('unsupervised-runs-v1', JSON.stringify(next)); setSaved(next); setStatus('Saved in this browser.'); } catch { setError('Browser storage is full or unavailable. Export JSON to retain this result.'); } };
+  const save = async () => {
+    if (!run) return;
+    setError(''); setStatus('');
+    try {
+      await history.save(run);
+      setStatus(history.persistent ? 'Saved to your account.' : 'Saved for this demo session.');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save analysis.'); }
+  };
   const restore = (r: SavedRun) => {
     if (JSON.stringify(r.task.rows) !== JSON.stringify(dataset.rawRows)) { setError('Select the original dataset before restoring this run.'); return; }
     setKind(r.task.kind); setExpanded(true); setRun(r); setDashboardOpen(true); setInspectedRow(null); setQuery(''); onOverlay(r.result.kind === 'anomaly' ? { scores: r.result.scores, rows: r.result.anomalies.flatMap((v, i) => v ? [i] : []), title: 'Isolation Forest · anomaly score' } : null); setSelectedRule(null); setError('');
@@ -94,7 +118,11 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
   const rowId = (i: number) => String(run?.task.rows[i]?.[dataset.idColumn ?? ''] ?? i + 1);
   const matchesQuery = (i: number) => !query.trim() || `${i + 1} ${rowId(i)}`.toLowerCase().includes(query.trim().toLowerCase());
   const histogram = Array<number>(20).fill(0);
-  if (result?.kind === 'anomaly') result.scores.forEach(score => histogram[Math.min(19, Math.max(0, Math.floor(score * 20)))]++);
+  if (result?.kind === 'anomaly') result.scores.forEach(score => {
+    if (!Number.isFinite(score)) return;
+    const bin = Math.min(19, Math.max(0, Math.floor(score * 20)));
+    histogram[bin] = (histogram[bin] ?? 0) + 1;
+  });
   const histogramPeak = Math.max(1, ...histogram);
   const anomalyPercent = result?.kind === 'anomaly' ? 100 * result.anomalies.filter(Boolean).length / result.scores.length : 0;
   const anomalyRows = result?.kind === 'anomaly' ? result.scores.map((score, row) => ({ score, row, anomaly: result.anomalies[row] })).filter(r => r.score >= minimumScore && (!onlyAnomalies || r.anomaly) && matchesQuery(r.row)).sort((a, b) => b.score - a.score) : [];
@@ -129,7 +157,8 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
       {busy && <button onClick={() => { generation.current++; worker.current?.terminate(); worker.current = null; setBusy(false); setStatus('Cancelled.'); }}>{tr("Cancel")}</button>}
       {error && <p role="alert">{tr(error)}</p>}{status && <p role="status">{tr(status)}</p>}
       {run && run.task.kind === kind && <button type="button" className="unsupervised-run" onClick={() => setDashboardOpen(true)}>{tr("Open results dashboard")}</button>}
-      {!!saved.length && <details><summary>{tr("Local analysis history (")}{saved.length}/5)</summary>{saved.map((r, i) => <p key={i}><button disabled={busy} onClick={() => restore(r)}>{r.dataset} · {tr(r.task.kind)} · {new Date(r.createdAt).toLocaleString(language)}</button></p>)}</details>}
+      {historyError && <p role="alert">{historyError}</p>}
+      {!!saved.length && <details><summary>{tr("Analysis history (")}{saved.length}/5)</summary>{saved.map((r, i) => <p key={i}><button disabled={busy} onClick={() => restore(r)}>{r.dataset} · {tr(r.task.kind)} · {new Date(r.createdAt).toLocaleString(language)}</button></p>)}</details>}
     </div>;
   const stats = result?.kind === 'anomaly' ? [
     { label: 'Rows analyzed', value: result.scores.length.toLocaleString(), hint: 'Source rows in the completed run' },
@@ -145,17 +174,17 @@ export function UnsupervisedPanel({ active = true, accordion, dataset, features,
   const dashboard = active && dashboardOpen && run && <AnalysisDashboard title={run.result.kind === 'anomaly' ? tr("Anomaly Detection · Isolation Forest") : tr("Association Rules · Apriori")} dataset={dataset.id === 'cancer_wdbc' || dataset.id === 'wholesale_customers' ? tr(run.dataset) : run.dataset} createdAt={run.createdAt} kind={run.result.kind} stats={stats} onClose={() => setDashboardOpen(false)}>
       {run && <section><p className="analysis-projection-note">{tr("3D view:")} {tr(projection)}{tr(". Anomaly scores use the selected input features; rule membership uses original rows. Removed points are excluded from the 3D view.")}</p><p><strong>{tr("Viewing")} {run.result.kind === 'anomaly' ? 'Isolation Forest' : 'Apriori'}</strong> · {new Date(run.createdAt).toLocaleString(language)}{dirty ? tr(" · Settings changed; rerun to update") : ''}</p>
         <details><summary>{tr("Completed run configuration")}</summary><pre>{JSON.stringify({ ...run.task, rows: `${run.task.rows.length} source rows` }, null, 2)}</pre></details>
-        <p>{tr("CSV buttons distinguish the complete result from the currently filtered rows. JSON includes the completed configuration and result.")}</p><div className="unsupervised-tabs"><button onClick={save}>{tr("Save locally")}</button><button onClick={exportRun}>{tr("Export JSON")}</button><button onClick={() => onOverlay(null)}>{tr("Clear 3D overlay")}</button></div>
+        <p>{tr("CSV buttons distinguish the complete result from the currently filtered rows. JSON includes the completed configuration and result.")}</p><div className="unsupervised-tabs"><button disabled={saving} onClick={() => void save()}>{tr(history.persistent ? "Save to account" : "Save for this session")}</button><button onClick={exportRun}>{tr("Export JSON")}</button><button onClick={() => onOverlay(null)}>{tr("Clear 3D overlay")}</button></div>
         {result?.kind === 'anomaly' && <>
           <details><summary>{tr("Missing-value handling")}</summary><p>{tr("Invalid or missing numeric values are replaced with the mean of the valid values in the same column before normalization.")}</p>{result.preprocessing ? <ResultTable rows={result.preprocessing} label={tr("Numeric preprocessing")} headers={['Feature', 'Values replaced', 'Replacement mean']} render={p => <tr key={p.feature}><td>{p.feature}</td><td>{p.missing}</td><td>{p.mean.toPrecision(6)}</td></tr>} /> : <p>{tr("Detailed preprocessing counts are unavailable for this older saved run. Rerun to refresh.")}</p>}</details>
           <p>{result.anomalies.filter(Boolean).length} / {result.scores.length} {tr("anomalies (")}{(100 * result.anomalies.filter(Boolean).length / result.scores.length).toFixed(1)}{tr("%). Threshold:")} {result.threshold.toFixed(4)}{tr(". Ties at the threshold are included.")}</p>
-          <div className="analysis-chart-card"><h3>{tr("Anomaly score distribution")}</h3><svg viewBox="0 0 360 120" role="img" aria-label={tr("Anomaly score histogram, low scores left and high scores right")}>{Array.from({ length: 20 }, (_, bin) => { const count = histogram[bin]; return <rect key={bin} x={bin * 18} y={95 - 85 * count / histogramPeak} width="16" height={85 * count / histogramPeak} fill={(bin + 1) / 20 > result.threshold ? '#f87171' : '#818cf8'}><title>{(bin / 20).toFixed(2)}–{((bin + 1) / 20).toFixed(2)}: {count} {tr("rows")}</title></rect>; })}<line x1={result.threshold * 360} y1="5" x2={result.threshold * 360} y2="95" stroke="currentColor" strokeDasharray="3 3"><title>{tr("Threshold:")} {result.threshold.toFixed(4)}</title></line><text x="0" y="112" fontSize="10" fill="currentColor">0</text><text x="350" y="112" fontSize="10" fill="currentColor">1</text></svg>
+          <div className="analysis-chart-card"><h3>{tr("Anomaly score distribution")}</h3><svg viewBox="0 0 360 120" role="img" aria-label={tr("Anomaly score histogram, low scores left and high scores right")}>{histogram.map((count, bin) => { return <rect key={bin} x={bin * 18} y={95 - 85 * count / histogramPeak} width="16" height={85 * count / histogramPeak} fill={(bin + 1) / 20 > result.threshold ? '#f87171' : '#818cf8'}><title>{(bin / 20).toFixed(2)}–{((bin + 1) / 20).toFixed(2)}: {count} {tr("rows")}</title></rect>; })}<line x1={result.threshold * 360} y1="5" x2={result.threshold * 360} y2="95" stroke="currentColor" strokeDasharray="3 3"><title>{tr("Threshold:")} {result.threshold.toFixed(4)}</title></line><text x="0" y="112" fontSize="10" fill="currentColor">0</text><text x="350" y="112" fontSize="10" fill="currentColor">1</text></svg>
           <p>{tr("Score: 0 (left) → 1 (right). Bar height shows the number of rows in each interval.")}</p></div><div className="analysis-chart-card"><h3>{tr("Normal vs anomalous rows")}</h3><svg viewBox="0 0 360 170" role="img" aria-label={t(`${anomalyPercent.toFixed(1)} percent anomalous rows`, `${anomalyPercent.toFixed(1)} phần trăm dòng bất thường`)}><circle cx="100" cy="85" r="58" fill="none" stroke="#818cf8" strokeWidth="18" /><circle cx="100" cy="85" r="58" fill="none" stroke="#f87171" strokeWidth="18" pathLength="100" strokeDasharray={`${anomalyPercent} ${100 - anomalyPercent}`} transform="rotate(-90 100 85)" /><text x="100" y="90" textAnchor="middle" fill="currentColor" fontSize="20">{anomalyPercent.toFixed(1)}%</text><circle cx="190" cy="66" r="5" fill="#f87171" /><text x="202" y="70" fontSize="12" fill="currentColor">{tr("Anomalies")}</text><circle cx="190" cy="96" r="5" fill="#818cf8" /><text x="202" y="100" fontSize="12" fill="currentColor">{tr("Normal rows")}</text></svg><p>{tr("Scores are calculated from the selected numeric features, independently of the 3D projection.")}</p><p>{tr("Use the table to inspect source rows, or return to the workspace to color points by anomaly score.")}</p><p>{tr("Threshold ties can make the observed anomaly rate higher than the requested fraction.")}</p></div>
           <button disabled={!points.length} onClick={() => { onOverlay({ scores: result.scores, rows: result.anomalies.flatMap((v, i) => v ? [i] : []), title: 'Isolation Forest score (low → high)' }); setDashboardOpen(false); }}>{tr("Color 3D by anomaly score")}</button>
-          <button onClick={() => downloadText(csvText(result.scores.map((score, i) => ({ source_row: i + 1, anomaly_score: score, is_anomaly: result.anomalies[i] }))), 'anomalies-all.csv', 'text/csv')}>{tr("Export all scores CSV")}</button>
+          <button onClick={() => downloadText(csvText(result.scores.map((score, i) => ({ source_row: i + 1, anomaly_score: score, is_anomaly: result.anomalies[i] ?? null }))), 'anomalies-all.csv', 'text/csv')}>{tr("Export all scores CSV")}</button>
           {number('Minimum displayed score', minimumScore, setMinimumScore, 0, 1, 0.01)}<label><input type="checkbox" checked={onlyAnomalies} onChange={e => setOnlyAnomalies(e.target.checked)} />{tr("Anomalies only")}</label>
           <label>{tr("Search source row or ID")}<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={tr("Row number or ID…")} /></label>
-          <div className="unsupervised-tabs"><button onClick={() => downloadText(csvText(anomalyRows.map(r => ({ source_row: r.row + 1, id: rowId(r.row), anomaly_score: r.score, is_anomaly: r.anomaly }))), 'anomalies-filtered.csv', 'text/csv')}>{tr("Export filtered scores (")}{anomalyRows.length})</button><button onClick={() => { setQuery(''); setMinimumScore(0); setOnlyAnomalies(false); }}>{tr("Clear filters")}</button></div>
+          <div className="unsupervised-tabs"><button onClick={() => downloadText(csvText(anomalyRows.map(r => ({ source_row: r.row + 1, id: rowId(r.row), anomaly_score: r.score, is_anomaly: r.anomaly ?? null }))), 'anomalies-filtered.csv', 'text/csv')}>{tr("Export filtered scores (")}{anomalyRows.length})</button><button onClick={() => { setQuery(''); setMinimumScore(0); setOnlyAnomalies(false); }}>{tr("Clear filters")}</button></div>
           <ResultTable key={query + minimumScore + onlyAnomalies} rows={anomalyRows} label={tr("Anomaly results")} headers={['Source row', 'ID', 'Score', 'Flag', 'Inspect']} render={r => <tr key={r.row}><td>{r.row + 1}</td><td>{rowId(r.row)}</td><td>{r.score.toFixed(4)}</td><td>{r.anomaly ? tr("Anomaly") : tr("Normal")}</td><td><button onClick={() => selectRow(r.row)}>{tr("Inspect row")}</button></td></tr>} />
 
         </>}

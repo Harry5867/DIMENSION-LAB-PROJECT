@@ -1,6 +1,6 @@
 # Stories photography
 
-The active Stories collection uses 21 real location photographs from Wikimedia Commons, resized and converted to local WebP files. Each photograph has its original author, file page, license link and modification notice in `photo-credits.json`, the adjacent `demo-XX-credit.json` and the story details. The old original SVG illustrations are retained as historical assets and are not displayed.
+The Stories collection uses 21 location photographs from Wikimedia Commons, resized and converted to local WebP files. Each photograph has its original author, file page, license link and modification notice in `photo-credits.json`, the adjacent `demo-XX-credit.json` and the story details.
 
 The photographs document locations, not the proposed statistical findings. The 21 data questions remain clearly disclosed concept stories with no measured results. Geographic anchors reuse the existing Natural Earth capital records.
 

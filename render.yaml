@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: dimension-lab-staging
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: node --import tsx backend/src/index.ts
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LAB_STORAGE_MODE
+        value: atlas
+      - key: LAB_BIND_HOST
+        value: 0.0.0.0
+      - key: MONGODB_DB
+        value: dimension_lab_staging
+      - key: MONGODB_URI
+        sync: false

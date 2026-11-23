@@ -2,6 +2,8 @@
 
 Backend là một ứng dụng Express chạy từ root. `npm run server` mở API ở `127.0.0.1:5000` mặc định. `npm run dev:all` mở cả Vite và API.
 
+Tài liệu tương tác của các endpoint hiện có: `http://127.0.0.1:5000/docs/`; OpenAPI JSON: `http://127.0.0.1:5000/openapi.json`. Các endpoint cốt lõi được mô tả theo hợp đồng `/api` hiện tại; chưa bật các API `/api/v1` hoặc `/api/v2` trong nhánh `son`.
+
 | Phần | Trách nhiệm |
 |---|---|
 | [Entry](src/index.ts), [App](src/app.ts) | Khởi tạo lưu trữ và mở cổng. App lắp middleware, routes và error handler theo thứ tự. |

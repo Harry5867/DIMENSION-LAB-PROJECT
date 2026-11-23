@@ -12,6 +12,7 @@ export function handleError(err: unknown, _req: express.Request, res: express.Re
 
   // Bắt lỗi Custom AppError (400, 401, 403, 404, ...)
   if (err instanceof AppError) {
+    if (err.code === 'WORKLOAD_BUSY' && !res.hasHeader('Retry-After')) res.setHeader('Retry-After', '2');
     return sendError(res, err.statusCode, err.code, err.message, err.details);
   }
   if (err instanceof multer.MulterError) {
@@ -24,6 +25,6 @@ export function handleError(err: unknown, _req: express.Request, res: express.Re
   }
 
   // Bắt lỗi không xác định (Unhandled 500)
-  console.error('Server request failed.');
+  console.error(JSON.stringify({ event: 'api.error', requestId: res.getHeader('X-Request-Id') }));
   sendError(res, 500, 'INTERNAL_SERVER_ERROR', 'Internal server error.');
 }

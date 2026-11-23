@@ -1,12 +1,13 @@
-import type { ReductionConfig } from '@dimension-lab/contracts';
+import type { ComputeResult, ReductionConfig } from '@dimension-lab/contracts';
 import { computePCA } from './pca';
 import { computeTSNE } from './tsne';
 import { computeUMAP } from './umap';
 
-export function reduceMatrix(matrix: number[][], config: ReductionConfig) {
+export type ProjectionResult = Pick<ComputeResult, 'coordinates' | 'components' | 'explainedVariance' | 'totalExplainedVariance'>;
+
+export function reduceMatrix(matrix: number[][], config: ReductionConfig): ProjectionResult {
   if (config.method === 'PCA') return computePCA(matrix);
-  return { coordinates: config.method === 't-SNE' ? computeTSNE(matrix, config) : computeUMAP(matrix, config),
-    components: undefined, explainedVariance: undefined, totalExplainedVariance: undefined };
+  return { coordinates: config.method === 't-SNE' ? computeTSNE(matrix, config) : computeUMAP(matrix, config) };
 }
 
 export function projectionSettingsError(config: ReductionConfig, rows: number): string | null {

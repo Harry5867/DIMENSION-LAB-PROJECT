@@ -14,7 +14,7 @@ export function registerHealthRoutes(app: Express) {
   });
 
   // 4. Enterprise System Health & RAM Monitoring
-  app.get('/api/system-health', async (_req, res, next) => {
+  app.get('/api/system-health', requireRole(['admin']), async (_req, res, next) => {
     try {
       const health = await getSystemHealth();
       sendSuccess(res, health);

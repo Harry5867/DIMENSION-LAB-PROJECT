@@ -30,10 +30,13 @@ export function captureSectionSource(link: HTMLAnchorElement): SectionSource {
   const style = getComputedStyle(link);
   const title = link.querySelector<HTMLElement>('[data-transition-title]');
   const number = link.querySelector<HTMLElement>('[data-transition-number]');
+  const numberText = number?.textContent;
   const theme = getComputedStyle(link.closest('.portal-page') ?? link);
   return {
-    rect: rect(link), title: title ? label(title) : undefined,
-    number: number ? label(number) : undefined, numberText: number?.textContent ?? undefined,
+    rect: rect(link),
+    ...(title && { title: label(title) }),
+    ...(number && { number: label(number) }),
+    ...(numberText != null && { numberText }),
     radius: parseFloat(style.borderTopLeftRadius) || 0,
     background: theme.getPropertyValue('--portal-paper').trim(),
     border: theme.getPropertyValue('--portal-line').trim(), accent: theme.getPropertyValue('--portal-accent').trim(),

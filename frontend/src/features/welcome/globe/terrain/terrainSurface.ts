@@ -31,16 +31,16 @@ export function createTerrainSurface(data: TerrainData, columns = 360, rows = 18
     const result = new Float32Array(count * 3);
     const a = new Vector3(), b = new Vector3(), c = new Vector3(), normal = new Vector3();
     for (let t = 0; t < indices.length; t += 3) {
-      const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
-      a.fromArray(positions, ia * 3).multiplyScalar(1 + heights[ia] * maxTerrainElevation);
-      b.fromArray(positions, ib * 3).multiplyScalar(1 + heights[ib] * maxTerrainElevation);
-      c.fromArray(positions, ic * 3).multiplyScalar(1 + heights[ic] * maxTerrainElevation);
+      const ia = indices[t]!, ib = indices[t + 1]!, ic = indices[t + 2]!;
+      a.fromArray(positions, ia * 3).multiplyScalar(1 + heights[ia]! * maxTerrainElevation);
+      b.fromArray(positions, ib * 3).multiplyScalar(1 + heights[ib]! * maxTerrainElevation);
+      c.fromArray(positions, ic * 3).multiplyScalar(1 + heights[ic]! * maxTerrainElevation);
       normal.crossVectors(b.sub(a), c.sub(a));
-      for (const i of [ia, ib, ic]) { result[i * 3] += normal.x; result[i * 3 + 1] += normal.y; result[i * 3 + 2] += normal.z; }
+      for (const i of [ia, ib, ic]) { result[i * 3]! += normal.x; result[i * 3 + 1]! += normal.y; result[i * 3 + 2]! += normal.z; }
     }
     for (let row = 0; row <= rows; row++) {
       const a = row * (columns + 1) * 3, b = (row * (columns + 1) + columns) * 3;
-      for (let axis = 0; axis < 3; axis++) result[a + axis] = result[b + axis] = result[a + axis] + result[b + axis];
+      for (let axis = 0; axis < 3; axis++) result[a + axis] = result[b + axis] = result[a + axis]! + result[b + axis]!;
     }
     for (let i = 0; i < count; i++) {
       if (i <= columns || i >= rows * (columns + 1)) normal.set(0, i <= columns ? 1 : -1, 0);
@@ -52,7 +52,7 @@ export function createTerrainSurface(data: TerrainData, columns = 360, rows = 18
   return { columns, rows, positions, raw, smooth, valid, indices, lines, rawNormals: normals(raw), smoothNormals: normals(smooth) };
 }
 export function surfaceVertex(surface: TerrainSurface, index: number, view: TerrainView, blend: number, target: Vector3) {
-  const height = surface.raw[index] + (surface.smooth[index] - surface.raw[index]) * view.smoothing;
+  const height = surface.raw[index]! + (surface.smooth[index]! - surface.raw[index]!) * view.smoothing;
   return target.fromArray(surface.positions, index * 3).multiplyScalar(1 + height * maxTerrainElevation * view.intensity * blend);
 }
 // Traverse the small portion of the spherical grid crossed by the ray through its elevation shell.

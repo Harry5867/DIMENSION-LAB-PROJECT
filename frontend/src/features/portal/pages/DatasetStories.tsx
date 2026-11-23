@@ -1,22 +1,38 @@
 import { useAppLanguage } from "../../../shared/providers/WelcomeLanguage";
-import { useState } from 'react';
+import { useCallback, useRef, useState, type RefCallback } from 'react';
 import { ArrowUpRight, Download } from 'lucide-react';
+import { getSampleDataset } from '@dimension-lab/contracts';
 import stories from '../data/case-studies.json';
-const colors = ['var(--dataset-cluster-0,#1b6157)', 'var(--dataset-cluster-1,#a36336)', 'var(--dataset-cluster-2,#6775a7)'];
+const colors = ['var(--dataset-cluster-0,#1b6157)', 'var(--dataset-cluster-1,#a36336)', 'var(--dataset-cluster-2,#6775a7)',
+  '#bb5894', '#688d36', '#387eac', '#c45646', '#8f69bc', '#288e93', '#a98122'];
 
-export default function DatasetStories() {
-  const { tr } = useAppLanguage();
+export default function DatasetStories({ onImportsHost }: { onImportsHost?: RefCallback<HTMLDivElement> }) {
+  const { tr, t } = useAppLanguage();
+  const importsHost = useRef<HTMLDivElement>(null);
+  const attachImports = useCallback((host: HTMLDivElement | null) => {
+    importsHost.current = host;
+    onImportsHost?.(host);
+  }, [onImportsHost]);
   const [selected, setSelected] = useState(0);
-  const story = stories[selected];
+  const story = stories[selected] ?? stories[0];
+  if (!story) return null;
+  const source = getSampleDataset(story.id)?.preset;
   const xs = story.points.map(p => p.x), ys = story.points.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const x = (value: number) => 52 + (value - minX) / (maxX - minX || 1) * 402;
   const y = (value: number) => 244 - (value - minY) / (maxY - minY || 1) * 212;
   return <div className="dataset-stories">
-    <div className="portal-prose"><h2>{tr("Two datasets. A closer look.")}</h2><p>{tr("These charts are precomputed from the bundled CSV files using Z-score → 3D PCA → GMM. The scatter plot shows PC1 and PC2. Opening this page does not run an analysis or create a WebGL scene.")}</p></div>
+    <div className="portal-prose"><h2>{t('Sample datasets', 'Dữ liệu mẫu')} <small>({stories.length})</small></h2>
+      <p>{t('The previews show PC1 and PC2, colored by GMM clusters fitted after Z-score normalization and 3D PCA.', 'Biểu đồ xem trước hiển thị PC1 và PC2, tô màu theo cụm GMM sau khi chuẩn hóa Z-score và chạy PCA 3D.')}</p>
+      <button type="button" className="portal-reference" onClick={() => {
+        importsHost.current?.focus({ preventScroll: true });
+        importsHost.current?.scrollIntoView({ block: 'start' });
+      }}>{t('Go to imported datasets', 'Đến dữ liệu đã tải lên')}</button>
+    </div>
     <div className="portal-story-picker" role="group" aria-label={tr("Choose a prepared dataset")}>{stories.map((item, index) => <button key={item.id} aria-pressed={selected === index} onClick={() => setSelected(index)}>{tr(item.name)}</button>)}</div>
     <article className="portal-case" aria-labelledby="case-title">
       <h2 id="case-title">{tr(story.name)}</h2><p>{tr(story.description)}</p>
+      {source && <p><a className="portal-reference" href={source.source} target="_blank" rel="noreferrer">{source.credit} · {source.license}</a></p>}
       <div className="portal-case-stats"><span>{story.rowCount} {tr('ROWS')}</span><span>{story.features.length} {tr('FEATURES')}</span><span>{story.configuration.k} {tr('COMPONENTS')}</span><span>{(story.variance.reduce((a, b) => a + b, 0) * 100).toFixed(1)}{tr("% VARIANCE / 3 PCs")}</span></div>
       <div className="portal-case-chart">
         <figure><svg viewBox="0 0 500 290" role="img" aria-labelledby="scatter-title scatter-description"><title id="scatter-title">{tr("PCA projection —")} {tr(story.name)}</title><desc id="scatter-description">{story.rowCount} {tr("rows, colored by GMM cluster. Horizontal axis PC1; vertical axis PC2. The table below lists every cluster count.")}</desc>
@@ -33,7 +49,8 @@ export default function DatasetStories() {
       <table className="portal-case-table"><caption>{tr("GMM cluster distribution")}</caption><thead><tr><th scope="col">{tr("Cluster")}</th><th scope="col">{tr("Rows")}</th><th scope="col">{tr("Share")}</th></tr></thead><tbody>{story.clusterCounts.map((count, i) => <tr key={i}><th scope="row"><span className="portal-legend-dot" style={{ background: colors[i] }} />{tr("Cluster")} {i}</th><td>{count}</td><td>{(count / story.rowCount * 100).toFixed(1)}%</td></tr>)}</tbody></table>
       <details className="portal-article"><summary>{tr("Analysis configuration")}</summary><dl><dt>{tr("Preprocessing / Reduction")}</dt><dd>{tr("Z-score; PCA with 3 components.")}</dd><dt>GMM</dt><dd>{tr("Diagonal covariance; k =")} {story.configuration.k}{tr("; seed = 42; max iterations = 100; tolerance = 0.00001.")} {story.converged ? tr("Converged") : tr("Reached the iteration limit")} {tr('after')} {story.iterations} {tr("iterations.")}</dd><dt>{tr("Selected features")}</dt><dd>{story.features.join(', ')}</dd><dt>{tr("Source")}</dt><dd>{tr("Bundled CSV:")} {story.file}{tr(". These examples use the same PCA and GMM implementations as Model.")}</dd></dl></details>
       {story.id === 'cancer_wdbc' && <p className="portal-note">{tr("This example supports data exploration for learning. Discovered clusters must not be interpreted as a clinical diagnosis.")}</p>}
-      <div className="portal-case-actions"><a className="portal-action" href="#/datasets">{tr("Open dataset manager in Model")} <ArrowUpRight size={16} /></a><a className="portal-download" href={`/${story.file}`} download><Download size={15} /> {tr("Download source CSV")}</a></div>
+      <div className="portal-case-actions"><a className="portal-action" href={`#/explore?dataset=${encodeURIComponent(story.id)}`}>{t('Open in Model', 'Mở trong Model')} <ArrowUpRight size={16} /></a><a className="portal-download" href={import.meta.env.BASE_URL + story.file} download><Download size={15} /> {tr("Download source CSV")}</a></div>
     </article>
+    <div className="portal-library-imports" tabIndex={-1} ref={attachImports} />
   </div>;
 }

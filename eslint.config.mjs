@@ -15,8 +15,27 @@ export default defineConfig([
     },
   },
   {
+    files: ['backend/**/*.ts', 'frontend/src/**/*.{ts,tsx}', 'packages/**/*.ts'],
+    languageOptions: { parserOptions: { project: './tsconfig.json', tsconfigRootDir: import.meta.dirname } },
+    rules: {
+      '@typescript-eslint/await-thenable': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/no-unsafe-argument': 'error',
+      '@typescript-eslint/no-unsafe-assignment': 'error',
+      '@typescript-eslint/no-unsafe-call': 'error',
+      '@typescript-eslint/no-unsafe-member-access': 'error',
+      '@typescript-eslint/no-unsafe-return': 'error',
+      '@typescript-eslint/switch-exhaustiveness-check': 'error',
+    },
+  },
+  {
     files: ['tests/unit/storage-regression.test.ts'],
     rules: { '@typescript-eslint/no-explicit-any': 'warn' },
+  },
+  {
+    files: ['tests/performance/**/*.js'],
+    languageOptions: { globals: { __ENV: 'readonly' } },
   },
   {
     files: ['*.{js,mjs,ts}', '{backend,tests,scripts}/**/*.{js,mjs,ts}'],

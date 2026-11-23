@@ -10,8 +10,18 @@ export function clusterCountError(method: string, k: number, pointCount: number)
   return Number.isInteger(k) && k >= 1 && k <= max ? null : `${method}: k must be an integer from 1 to ${max}.`;
 }
 
-export function validateMatrix(data: number[][]) {
-  if (!data.length || !data[0].length || data.some(r => r.length !== data[0].length || r.some(v => !Number.isFinite(v)))) throw new Error('Expected a nonempty rectangular finite matrix.');
+export function validateMatrix(data: number[][], allowEmptyColumns = false): number {
+  const width = data[0]?.length;
+  if (width === undefined || (width === 0 && !allowEmptyColumns)) {
+    throw new Error('Expected a nonempty rectangular finite matrix.');
+  }
+  for (const row of data) {
+    if (row?.length !== width) throw new Error('Expected a nonempty rectangular finite matrix.');
+    for (const value of row) {
+      if (!Number.isFinite(value)) throw new Error('Expected a nonempty rectangular finite matrix.');
+    }
+  }
+  return width;
 }
 export function integer(value: number, min: number, max: number, name: string) {
   if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${name} must be an integer from ${min} to ${max}.`);

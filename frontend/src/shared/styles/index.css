@@ -39,15 +39,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 /* Keep existing absolute and fixed control positioning from component styles. */
 @layer base {
-  #root :where(button:not(.workspace-scrim, .globe-capital-marker, .portal-signout), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a) {
+  #root :where(.control-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a) {
     position: relative;
     border-radius: 6px;
   }
 }
-#root :where(button:not(.workspace-scrim, .globe-capital-marker, .portal-signout), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a) {
+#root :where(.control-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a) {
   isolation: isolate;
 }
-#root :where(button:not(.workspace-scrim, .globe-capital-marker, .portal-signout), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a)::after {
+#root :where(.control-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a)::after {
   content: '';
   position: absolute;
   z-index: -1;
@@ -61,19 +61,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     var(--glass-highlight), transparent);
   box-shadow: var(--glass-rim);
 }
-#root :where(button:not(.workspace-scrim, .globe-capital-marker, .portal-signout), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a):not(:disabled, [aria-disabled="true"]):is(:hover, :focus-visible, :active)::after {
+#root :where(.control-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a):not(:disabled, [aria-disabled="true"]):is(:hover, :focus-visible, :active)::after {
   opacity: .72;
 }
 @media (prefers-reduced-motion: no-preference) {
-  #root :where(button:not(.workspace-scrim, .globe-capital-marker, .portal-signout), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a) {
+  #root :where(.control-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a) {
     transition: color 180ms ease, background-color 180ms ease, box-shadow 200ms ease,
       scale 220ms cubic-bezier(.22, .75, .28, 1);
   }
-  #root :where(button:not(.workspace-scrim, .globe-capital-marker, .portal-signout), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a):not(:disabled, [aria-disabled="true"]):active {
+  #root :where(.control-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a):not(:disabled, [aria-disabled="true"]):active {
     scale: .96;
     transition-duration: 180ms, 180ms, 200ms, 100ms;
   }
-  #root :where(button:not(.workspace-scrim, .globe-capital-marker, .portal-signout), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a)::after {
+  #root :where(.control-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a)::after {
     transition: --glass-x 110ms ease-out, --glass-y 110ms ease-out, opacity 180ms ease;
   }
 }

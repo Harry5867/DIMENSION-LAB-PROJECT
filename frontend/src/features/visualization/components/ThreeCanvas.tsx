@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DataPoint, ColorMode } from '@dimension-lab/contracts';
-import { getErrorMessage } from '../../../shared/api/typeGuards';
+import { getErrorMessage, isRecord } from '../../../shared/api/typeGuards';
 import { Orbit, ScanEye, Crosshair, CircleDot, Palette, Maximize, Minimize } from 'lucide-react';
 import { createPlotGrid } from '../scene/plotGrid';
 import { createPlotCloud, makePlotColors, normalizePlotPoints, type PlotTransition } from '../scene/plotCloud';
@@ -394,12 +394,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
   useLayoutEffect(() => {
     if (sceneRef.current) sceneRef.current.background = new THREE.Color(theme === 'light' ? '#f7f8f6' : '#101815');
-    gridRef.current?.material.uniforms.gridColor.value.set(theme === 'light' ? '#8296ad' : '#678575');
+    const gridColor: unknown = gridRef.current?.material.uniforms.gridColor?.value;
+    if (gridColor instanceof THREE.Color) gridColor.set(theme === 'light' ? '#8296ad' : '#678575');
     for (const group of [axesGroupRef.current, biplotGroupRef.current]) group?.traverse(object => {
-      if (!(object instanceof THREE.Sprite) || typeof object.userData.label !== 'string') return;
-      const texture = (object.material as THREE.SpriteMaterial).map;
-      if (!texture || !(texture.image instanceof HTMLCanvasElement)) return;
-      paintTextLabel(texture.image, object.userData.label, object.userData.stroke, theme);
+      if (!(object instanceof THREE.Sprite)) return;
+      const data: unknown = object.userData;
+      if (!isRecord(data) || typeof data.label !== 'string' || typeof data.stroke !== 'string') return;
+      const texture = object.material.map;
+      const image: unknown = texture?.image;
+      if (!texture || !(image instanceof HTMLCanvasElement)) return;
+      paintTextLabel(image, data.label, data.stroke, theme);
       texture.needsUpdate = true;
     });
   }, [theme, sceneReady]);
@@ -480,11 +484,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     if (!scene || !sceneReady || !gmm || !center) return;
     const group = new THREE.Group();
     gmm.means.forEach((mean, c) => {
+      const variance = gmm.variances[c];
+      if (!variance || mean.length !== 3 || variance.length !== 3) return;
       const geometry = new THREE.SphereGeometry(1, 24, 16);
       const material = new THREE.MeshBasicMaterial({ color: plotColors.clusters[c % plotColors.clusters.length], wireframe: true, transparent: true, opacity: 0.22, depthWrite: false });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(...mean.map((v, j) => (v - center[j]) * scale) as [number, number, number]);
-      mesh.scale.set(...gmm.variances[c].map(v => 2 * Math.sqrt(v) * scale) as [number, number, number]); group.add(mesh);
+      mesh.position.set((mean[0]! - center[0]) * scale, (mean[1]! - center[1]) * scale, (mean[2]! - center[2]) * scale);
+      mesh.scale.set(2 * Math.sqrt(variance[0]!) * scale, 2 * Math.sqrt(variance[1]!) * scale, 2 * Math.sqrt(variance[2]!) * scale);
+      group.add(mesh);
     });
     scene.add(group);
     gmmGroupRef.current = group;
@@ -505,19 +512,18 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       return;
     }
 
-    const d = featureNames.length;
     const v1 = pcaComponents[0];
     const v2 = pcaComponents[1];
     const v3 = pcaComponents[2];
     if (!v1 || !v2 || !v3) return;
 
     const featureMagnitudes: { name: string; x: number; y: number; z: number; mag: number }[] = [];
-    for (let j = 0; j < d; j++) {
+    for (const [j, name] of featureNames.entries()) {
       const x = v1[j] || 0;
       const y = v2[j] || 0;
       const z = v3[j] || 0;
       const mag = Math.hypot(x, y, z);
-      featureMagnitudes.push({ name: featureNames[j], x, y, z, mag });
+      featureMagnitudes.push({ name, x, y, z, mag });
     }
 
     featureMagnitudes.sort((a, b) => b.mag - a.mag);
@@ -736,7 +742,8 @@ function disposePlotMarkers(group: THREE.Group) {
   for (const child of [...group.children]) {
     group.remove(child);
     if (child instanceof THREE.Mesh) {
-      child.geometry.dispose();
+      const geometry: unknown = child.geometry;
+      if (geometry instanceof THREE.BufferGeometry) geometry.dispose();
       (child.material as THREE.Material).dispose();
     } else if (child instanceof THREE.ArrowHelper) {
       for (const material of [child.line.material, child.cone.material].flat()) material.dispose();

@@ -21,7 +21,12 @@ export function clusterPoints(points: DataPoint[], config: ClusteringConfig, has
     labels = computeDBSCAN(coordinates, config.epsilon, config.minPts).clusters;
     outliers = labels.map(label => label === -1);
   } else outliers = detectOutliers3D(points);
-  const updated = points.map((p, i) => ({ ...p, cluster: labels[i] ?? 0, isOutlier: outliers[i], clusterConfidence: gmm ? Math.max(...gmm.probabilities[i]) : undefined }));
+  const updated = points.map(({ clusterConfidence: _previousConfidence, ...point }, i) => ({
+    ...point,
+    cluster: labels[i] ?? 0,
+    isOutlier: outliers[i] ?? false,
+    ...(gmm && { clusterConfidence: Math.max(...gmm.probabilities[i]!) }),
+  }));
   const groundTruth = hasLabels && labels.length > 0 ? points.map(p => p.label ?? null) : undefined;
   const metrics: EvaluationMetrics = {
     ...summarizeClustering(coordinates, labels, groundTruth),

@@ -1,19 +1,12 @@
 import type { DataPoint, ParsedDataset } from '@dimension-lab/contracts';
 import { extractFeatureMatrix } from '@dimension-lab/algorithms/dataParser';
-import { projectionSettingsError } from '@dimension-lab/algorithms/projection';
-import { fetchWithTimeout } from '../../shared/api/network';
-import { isComputeResult, isRecord } from '../../shared/api/typeGuards';
+import { projectionSettingsError, type ProjectionResult } from '@dimension-lab/algorithms/projection';
+import { ApiError, NetworkError } from '../../shared/api/network';
+import { requestProjection } from './analysisApi';
 import { makePoints, type AnalysisSnapshot } from './exploration';
 import { clusterInBrowser, projectInBrowser } from './workers/projectionWorker';
 
-type ReductionOutput = {
-  coordinates: [number, number, number][];
-  components?: number[][];
-  explainedVariance?: [number, number, number];
-  totalExplainedVariance?: number;
-};
-
-interface AnalysisInput extends Omit<ReductionOutput, 'coordinates'> {
+interface AnalysisInput extends Omit<ProjectionResult, 'coordinates'> {
   dataset: ParsedDataset;
   points: DataPoint[];
   run: AnalysisSnapshot;
@@ -35,21 +28,16 @@ export async function runAnalysis(input: AnalysisInput) {
     if (settingsError) throw new Error(settingsError);
     setLoadingMessage('Running ' + run.reduction.method + '…');
     matrix = extractFeatureMatrix(dataset.rawRows, run.features, run.reduction.normalization);
-    let output: ReductionOutput | undefined;
-    const response = await fetchWithTimeout('/api/compute', { method: 'POST', signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matrix,
-          groundTruth: dataset.labelColumn ? dataset.rawRows.map(row => row[dataset.labelColumn!] ?? null) : [],
-          reductionConfig: run.reduction, clusteringConfig: { ...run.clustering, method: 'None' } }) }, 45_000)
-      .catch(error => { if (signal.aborted) throw error; return undefined; });
-    if (response?.ok) {
-      const body: unknown = await response.json().catch(() => undefined);
-      const payload = isRecord(body) && 'data' in body ? body.data : body;
-      if (isComputeResult(payload) && payload.coordinates.length === matrix.length) output = payload;
-    } else if (response && response.status < 500 && response.status !== 401) {
-      const body: unknown = await response.json().catch(() => undefined);
-      const error = isRecord(body) ? body.error : undefined;
-      throw new Error(isRecord(error) && typeof error.message === 'string'
-        ? error.message : `The server rejected the analysis (HTTP ${response.status}).`);
+    let output: ProjectionResult | undefined;
+    try {
+      output = await requestProjection({ matrix,
+        groundTruth: dataset.labelColumn ? dataset.rawRows.map(row => row[dataset.labelColumn!] ?? null) : [],
+        reductionConfig: run.reduction, clusteringConfig: { ...run.clustering, method: 'None' },
+      }, signal);
+    } catch (error) {
+      const canUseWorker = error instanceof NetworkError || (error instanceof ApiError
+        && (error.status < 400 || error.status === 401 || error.status >= 500));
+      if (signal.aborted || !canUseWorker) throw error;
     }
     if (!isCurrent()) return;
     if (!output) {

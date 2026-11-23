@@ -31,7 +31,7 @@ export function useDialogFocus<T extends HTMLElement = HTMLDivElement>(open: boo
         const current = document.activeElement;
         if (!nodes.length) { event.preventDefault(); dialog.focus(); }
         else if (event.shiftKey && (current === nodes[0] || !dialog.contains(current))) { event.preventDefault(); nodes.at(-1)!.focus(); }
-        else if (!event.shiftKey && (current === nodes.at(-1) || !dialog.contains(current))) { event.preventDefault(); nodes[0].focus(); }
+        else if (!event.shiftKey && (current === nodes.at(-1) || !dialog.contains(current))) { event.preventDefault(); (nodes[0] ?? dialog).focus(); }
       }
     };
     const focusin = (event: FocusEvent) => {

@@ -14,39 +14,47 @@
   touch-action: none;
 }
 
+.welcome-page[data-genesis] { overflow: hidden; }
 .welcome-page[data-genesis] .globe-loading { opacity: 0; }
 .welcome-page[data-genesis-visited] > .data-atmosphere--welcome { animation: none; }
 .welcome-page[data-genesis] > .data-atmosphere--welcome { opacity: var(--genesis-atmosphere, 0); }
 .welcome-page[data-genesis] .globe-renderer { opacity: var(--genesis-silhouette, 0); }
 .welcome-page[data-genesis] .globe-renderer::before { opacity: var(--genesis-disk, .34); }
-.welcome-page[data-genesis] .welcome-header { opacity: var(--genesis-navigation, 0); }
-.welcome-page[data-genesis] :is(.welcome-footer, .globe-controls) { opacity: var(--genesis-controls, 0); }
-.welcome-page[data-genesis] .atlas-coordinate { opacity: var(--genesis-grid, 0); transition: none; }
-.welcome-page[data-genesis] .globe-capital-marker { opacity: var(--genesis-marker, 0); transition: none; }
+.welcome-page[data-genesis] :is(.welcome-copy, .welcome-header-actions, .globe-controls, .atlas-coordinate, .globe-capital-marker) {
+  visibility: hidden;
+}
+.welcome-page[data-genesis] .welcome-brand .team-logo { position: relative; }
+.welcome-page[data-genesis] .welcome-brand .team-logo > img { opacity: var(--genesis-logo, 0); }
+.welcome-page[data-genesis] .team-logo-formation { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.welcome-page[data-genesis] .team-logo-ribbon {
+  position: absolute;
+  inset: 0;
+  display: block;
+  opacity: var(--genesis-logo-ribbon-opacity, 0);
+  transform: scale(var(--genesis-logo-ribbon-scale, .72));
+  transform-origin: center;
+  -webkit-mask-image: conic-gradient(from var(--genesis-logo-ribbon-angle, -30deg), #000 0deg 58deg, transparent 58deg 360deg);
+  mask-image: conic-gradient(from var(--genesis-logo-ribbon-angle, -30deg), #000 0deg 58deg, transparent 58deg 360deg);
+}
+.welcome-page[data-genesis] .team-logo-ribbon img { width: 100%; height: 100%; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="0"] { --genesis-logo-ribbon-angle: -30deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-0, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-0, .72); z-index: 1; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="1"] { --genesis-logo-ribbon-angle: 30deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-1, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-1, .72); z-index: 3; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="2"] { --genesis-logo-ribbon-angle: 90deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-2, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-2, .72); z-index: 5; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="3"] { --genesis-logo-ribbon-angle: 150deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-3, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-3, .72); z-index: 2; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="4"] { --genesis-logo-ribbon-angle: 210deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-4, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-4, .72); z-index: 4; }
+.welcome-page[data-genesis] .team-logo-ribbon[data-ribbon="5"] { --genesis-logo-ribbon-angle: 270deg; --genesis-logo-ribbon-opacity: var(--genesis-logo-ribbon-opacity-5, 0); --genesis-logo-ribbon-scale: var(--genesis-logo-ribbon-scale-5, .72); z-index: 6; }
 .welcome-page[data-genesis-visited] .atlas-origin-marker::after { animation-delay: 1.25s; opacity: 0; }
-.welcome-page[data-genesis] .atlas-origin-marker::after {
-  animation: none;
-  opacity: var(--genesis-pulse-alpha, 0);
-  transform: scale(calc(1 + 2.4 * var(--genesis-pulse, 0)));
-}
-.welcome-page[data-genesis] .welcome-copy .welcome-eyebrow { --reveal: var(--genesis-eyebrow, 0); }
-.welcome-page[data-genesis] .welcome-copy h1 { --reveal: var(--genesis-headline, 0); }
-.welcome-page[data-genesis] .welcome-description { --reveal: var(--genesis-description, 0); }
-.welcome-page[data-genesis] .welcome-actions { --reveal: var(--genesis-action, 0); }
-.welcome-page[data-genesis] .welcome-copy :is(.welcome-eyebrow, h1, .welcome-description, .welcome-actions) {
-  opacity: var(--reveal);
-  transform: translateY(calc(14px * (1 - var(--reveal))));
-}
 
 .welcome-page[data-genesis-visited][data-globe-mode=atlas] .welcome-title-line > span { animation: none !important; }
 .welcome-page[data-genesis-visited] .globe-viewport { animation: none; }
+.welcome-page[data-genesis] .globe-viewport { translate: 0 var(--genesis-globe-shift, 0px); }
 
-@media (max-width: 599px) {
-  .welcome-page[data-genesis] .welcome-copy :is(.welcome-eyebrow, h1, .welcome-description, .welcome-actions) {
-    transform: translateY(calc(8px * (1 - var(--reveal))));
+@media (prefers-reduced-motion: no-preference) {
+  .welcome-page[data-genesis-visited]:not([data-genesis]) :is(.welcome-header-actions, .globe-controls, .atlas-coordinate, .globe-capital-marker) {
+    animation: welcome-information-reveal 280ms ease-out backwards;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .welcome-page[data-genesis] .welcome-copy :is(.welcome-eyebrow, h1, .welcome-description, .welcome-actions) { transform: none; }
+@keyframes welcome-information-reveal {
+  from { opacity: 0; }
 }

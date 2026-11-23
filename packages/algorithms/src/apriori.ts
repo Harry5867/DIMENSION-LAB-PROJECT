@@ -15,7 +15,7 @@ export function transactionsFromRows(rows: DatasetRow[], features: string[], bin
     const r = ranges[j];
     return [JSON.stringify([f, r ? `bin ${r.max === r.min ? 1 : Math.min(bins, 1 + Math.floor((Number(v) - r.min) / (r.max - r.min) * bins))}/${bins}` : String(v)])];
   }));
-  return { transactions, binning: features.map((feature, j) => ({ feature, range: ranges[j], bins })) };
+  return { transactions, binning: features.map((feature, j) => ({ feature, range: ranges[j] ?? null, bins })) };
 }
 export function computeApriori(transactions: string[][], options: AprioriOptions) {
   if (!transactions.length) throw new Error('Transactions are empty.');
@@ -40,9 +40,10 @@ export function computeApriori(transactions: string[][], options: AprioriOptions
     }
     const next: string[][] = [];
     if (size < options.maxSize) for (let i = 0; i < frequent.length; i++) for (let j = i + 1; j < frequent.length; j++) {
-      const a = frequent[i], b = frequent[j];
+      const a = frequent[i]!, b = frequent[j]!;
       if (!a.slice(0, -1).every((v, x) => v === b[x])) continue;
-      const candidate = [...a, b[b.length - 1]];
+      // Every frequent itemset in this pass contains exactly `size` items.
+      const candidate = [...a, b[size - 1]!];
       if (candidate.every((_, x) => counts.has(key(candidate.filter((_, y) => y !== x))))) next.push(candidate);
       if (next.length > 20000) throw new Error('Candidate limit exceeded. Increase support.');
     }

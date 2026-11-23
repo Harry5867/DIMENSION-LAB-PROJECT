@@ -1,8 +1,9 @@
 import { useAppLanguage } from "../../../shared/providers/WelcomeLanguage";
+import { clearComputeCache, getSystemHealth, testDatabase } from '../../health/healthApi';
 import { useDialogFocus } from '../../../shared/hooks/useDialogFocus';
 import React, { useState, useEffect } from 'react';
 import { SystemHealth } from '@dimension-lab/contracts';
-import { getErrorMessage, isRecord, isSystemHealth } from '../../../shared/api/typeGuards';
+import { getErrorMessage, isRecord } from '../../../shared/api/typeGuards';
 import {
   X,
   Shield,
@@ -44,11 +45,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
   const fetchHealth = async () => {
     try {
-      const res = await fetchWithTimeout('/api/system-health');
-      if (res.ok) {
-        const data: unknown = await res.json();
-        if (isSystemHealth(data)) setSystemHealth(data);
-      }
+      setSystemHealth(await getSystemHealth());
     } catch (e: unknown) {
       // Backend may be offline
       console.warn('Could not load system status:', e);
@@ -57,7 +54,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      fetchHealth();
+      void fetchHealth();
     }
   }, [isOpen]);
 
@@ -70,8 +67,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     setIsPinging(true);
     setPingResult(null);
     try {
-      const res = await fetchWithTimeout('/api/test-db', { method: 'POST' });
-      const data: unknown = await res.json();
+      const data = await testDatabase();
       if (isRecord(data) && data.connected === true) {
         setPingResult('Connected to MongoDB Atlas.');
       } else {
@@ -93,9 +89,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     setIsClearingCache(true);
     setCacheMsg(null);
     try {
-      const res = await fetchWithTimeout('/api/cache', { method: 'DELETE' });
-      if (!res.ok) throw new Error('Could not clear cache (HTTP ' + res.status + ').');
-      const data: unknown = await res.json();
+      const data = await clearComputeCache();
       const message = isRecord(data) && typeof data.message === 'string'
         ? data.message
         : 'Cache cleared.';
@@ -159,7 +153,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               </div>
 
               <button
-                onClick={handlePingTest}
+                onClick={() => void handlePingTest()}
                 disabled={isPinging}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-[var(--text-main)] transition-all shadow-md shadow-indigo-600/30 disabled:opacity-50"
               >
@@ -230,7 +224,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   {tr("Cache and compression are enabled.")}
                 </span>
                 <button
-                  onClick={handleClearCache}
+                  onClick={() => void handleClearCache()}
                   disabled={isClearingCache}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-interactive)] hover:bg-slate-700 text-rose-300 text-[11px] border border-rose-900/40 transition-colors"
                 >
@@ -342,4 +336,3 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     </div>
   );
 };
-import { fetchWithTimeout } from '../../../shared/api/network';

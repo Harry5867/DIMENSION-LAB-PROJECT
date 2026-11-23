@@ -12,9 +12,9 @@ Mở thư mục gốc chứa `package.json`. Đây là bản làm việc cục b
 
 ## Tệp chính
 
-- `frontend/src/features/portal/WorkspaceMap.tsx` và `frontend/src/features/portal/styles/workspace-map.css` điều khiển bố cục, điểm điều hướng và vệt sáng.
+- `frontend/src/features/portal/WorkspaceOverview.tsx` và `frontend/src/features/portal/styles/workspace-overview.css` điều khiển bố cục và điều hướng Workspace.
 - `frontend/src/features/portal/animations/SectionTransition.tsx` và `frontend/src/features/portal/navigation/sectionTransition.ts` xử lý chuyển cảnh và đo vị trí nhãn nguồn.
-- `frontend/src/features/welcome/Welcome.tsx`, `frontend/src/features/welcome/WelcomeSettings.tsx` và `frontend/src/shared/providers/WelcomeLanguage.tsx` xử lý intro và lựa chọn ngôn ngữ.
+- `frontend/src/features/welcome/Welcome.tsx` và `frontend/src/shared/ui/ThemeToggle.tsx` xử lý intro và nút chuyển giao diện.
 
 ## Chạy và kiểm tra
 

@@ -3,19 +3,27 @@ import { advanceAtmosphereParticle, atmosphereBudget, atmosphereEase, atmosphere
 
 interface Clock { request: (callback: FrameRequestCallback) => number; cancel: (id: number) => void }
 const browserClock: Clock = { request: callback => requestAnimationFrame(callback), cancel: id => cancelAnimationFrame(id) };
+const welcomePalettes = {
+  dark: [atmosphereSettings.welcome.color, '135,210,251', '229,251,247', '175,206,255', '119,216,192', '255,219,168'],
+  light: ['48,120,97', '47,112,133', '70,103,90', '83,108,164', '79,137,118', '136,109,69'],
+};
 
 export function createAtmosphereRuntime(canvas: HTMLCanvasElement, variant: AtmosphereVariant,
-  signal: { current: AtmosphereSignal }, clock: Clock = browserClock) {
+  signal: { current: AtmosphereSignal }, clock: Clock = browserClock, theme: 'light' | 'dark' = 'light') {
   const ctx = canvas.getContext('2d', { alpha: true });
   const preset = atmosphereSettings[variant];
+  const palette = welcomePalettes[theme].map(color => `rgb(${color})`);
+  const glowScale = theme === 'dark' ? 1.25 : .93;
   let width = 0, height = 0, frame: number | null = null, lastPaint: number | null = null, destroyed = false;
   let particles: AtmosphereParticle[] = [], budget = { count: 0, dpr: 1, fps: preset.fps };
   let speed = 1, focusX = signal.current.focusX, focusY = signal.current.focusY;
+  let starTime = 0;
   let motion: AtmosphereMotion = { active: true, visible: false, hidden: false, reduced: false };
   // Seeded positions avoid a distracting reshuffle on unrelated React renders.
   let seed = variant === 'workspace' ? 7331 : 1559;
   const random = () => { seed = Math.imul(seed, 1664525) + 1013904223 | 0; return (seed >>> 0) / 4294967296; };
   const particleCount = () => Math.round(particles.length * (motion.reduced ? preset.reducedCount : 1));
+  const canAnimate = () => shouldAnimateAtmosphere(motion) && !(variant === 'welcome' && motion.reduced);
 
   function draw() {
     if (!ctx || !width || !height || destroyed) return;
@@ -24,12 +32,26 @@ export function createAtmosphereRuntime(canvas: HTMLCanvasElement, variant: Atmo
     ctx.globalCompositeOperation = 'source-over'; ctx.lineCap = 'round';
     const count = particleCount();
     for (let index = 0; index < count; index++) {
-      const particle = particles[index];
+      const particle = particles[index]!;
       if (variant === 'welcome') {
-        const opacity = atmosphereMask(variant, particle.x, particle.y, width, height) * preset.opacity;
+        const depth = particle.z / 1080;
+        const x = particle.x + (focusX - .5) * 21 * depth;
+        const y = particle.y + (focusY - .5) * 21 * depth;
+        const twinkle = motion.reduced ? .87 : .78 + .22 * Math.sin(particle.phase + starTime * (.37 + depth));
+        const opacity = atmosphereMask(variant, x, y, width, height) * preset.opacity * glowScale * (.48 + .52 * depth) * twinkle;
         if (opacity < .01) continue;
-        ctx.fillStyle = 'rgba(' + preset.color + ',' + opacity + ')';
-        ctx.beginPath(); ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = palette[index % palette.length] ?? palette[0]!;
+        const radius = particle.size * (.28 + .7 * depth);
+        if (depth > .74 && index % 5 < 2) {
+          ctx.globalAlpha = opacity * .10;
+          ctx.beginPath(); ctx.arc(x, y, radius * 4.5, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = opacity * .16;
+          ctx.beginPath(); ctx.arc(x, y, radius * 2.8, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = opacity * .24;
+          ctx.beginPath(); ctx.arc(x, y, radius * 1.7, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = opacity;
+        ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
       } else {
         const point = projectAtmosphereParticle(particle, width, height, focusX * width, focusY * height, speed);
         if (point.x < -10 || point.x > width + 10 || point.y < -10 || point.y > height + 10 || point.opacity < .01) continue;
@@ -40,6 +62,7 @@ export function createAtmosphereRuntime(canvas: HTMLCanvasElement, variant: Atmo
         ctx.beginPath(); ctx.arc(point.x, point.y, .65 + particle.size * .18, 0, Math.PI * 2); ctx.fill();
       }
     }
+    ctx.globalAlpha = 1;
   }
   function stop() {
     if (frame !== null) clock.cancel(frame);
@@ -47,20 +70,22 @@ export function createAtmosphereRuntime(canvas: HTMLCanvasElement, variant: Atmo
   }
   function tick(time: number) {
     frame = null;
-    if (destroyed || !shouldAnimateAtmosphere(motion) || !ctx || !width || !height) return;
+    if (destroyed || !canAnimate() || !ctx || !width || !height) return;
     const elapsed = lastPaint === null ? 0 : time - lastPaint;
     const fps = motion.reduced ? Math.min(24, budget.fps) : budget.fps;
     if (lastPaint === null || elapsed >= 1000 / fps - .5) {
       const dt = Math.min(.08, elapsed / 1000);
       lastPaint = time;
+      starTime += dt;
       const motionScale = motion.reduced ? preset.reducedSpeed : 1;
       speed = atmosphereEase(speed, (signal.current.slow ? preset.slowedSpeed : 1) * motionScale, dt);
       focusX = atmosphereEase(focusX, signal.current.focusX, dt);
       focusY = atmosphereEase(focusY, signal.current.focusY, dt);
       const count = particleCount();
       for (let i = 0; i < count; i++) {
-        advanceAtmosphereParticle(particles[i], variant, dt, speed, width, height);
-        if (variant === 'workspace' && atmosphereParticleExpired(particles[i], width, height, focusX, focusY)) {
+        const particle = particles[i]!;
+        advanceAtmosphereParticle(particle, variant, dt, speed, width, height);
+        if (variant === 'workspace' && atmosphereParticleExpired(particle, width, height, focusX, focusY)) {
           particles[i] = createAtmosphereParticle(variant, width, height, random, false, { focusX, focusY });
         }
       }
@@ -70,7 +95,7 @@ export function createAtmosphereRuntime(canvas: HTMLCanvasElement, variant: Atmo
   }
   function sync() {
     if (destroyed) return;
-    if (ctx && width && height && shouldAnimateAtmosphere(motion)) {
+    if (ctx && width && height && canAnimate()) {
       if (frame === null) frame = clock.request(tick);
     } else {
       stop();
@@ -89,7 +114,11 @@ export function createAtmosphereRuntime(canvas: HTMLCanvasElement, variant: Atmo
       particles = Array.from({ length: budget.count }, () => createAtmosphereParticle(variant, width, height, random, true, { focusX, focusY }));
       draw(); sync();
     },
-    setMotion(next: AtmosphereMotion) { motion = next; sync(); },
+    setMotion(next: AtmosphereMotion) {
+      motion = next;
+      if (variant === 'welcome' && motion.reduced) { focusX = .5; focusY = .5; }
+      sync();
+    },
     destroy() { if (destroyed) return; stop(); destroyed = true; particles = []; canvas.width = canvas.height = 1; },
   };
 }

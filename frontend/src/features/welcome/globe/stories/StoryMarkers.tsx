@@ -11,7 +11,9 @@ export function StoryMarkers({ groups, nodes, hovered, selected, onHover, onOpen
 }) {
   const { language, t } = useWelcomeLanguage();
   return <>{groups.map(group => {
-    const first = localizeStory(group.members[0], language), clustered = group.members.length > 1;
+    const [member] = group.members;
+    if (!member) return null;
+    const first = localizeStory(member, language), clustered = group.members.length > 1;
     const previewId = `story-preview-${group.key.replaceAll(':', '-')}`;
     const active = group.members.some(story => story.id === selected);
     return <button key={group.key} hidden type="button" className={`story-marker${clustered ? ' story-cluster' : ''}`}

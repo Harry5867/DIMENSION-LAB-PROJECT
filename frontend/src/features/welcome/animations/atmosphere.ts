@@ -10,9 +10,9 @@ export interface AtmosphereSettings {
 
 /** All visual tuning lives here; neither screen needs an animation library. */
 export const atmosphereSettings: Record<AtmosphereVariant, AtmosphereSettings> = {
-  welcome: { color: '88,115,99', density: 28, minCount: 16, maxCount: 44, minSpeed: 2, maxSpeed: 5,
-    opacity: .5, trailSeconds: 0, maxTrail: 0, fps: 24, maxDpr: 1.25, pixelBudget: 1200000, slowedSpeed: .65,
-    reducedSpeed: .6, reducedCount: .7 },
+  welcome: { color: '157,244,211', density: 840, minCount: 290, maxCount: 1100, minSpeed: .4, maxSpeed: 1.1,
+    opacity: .79, trailSeconds: 0, maxTrail: 0, fps: 24, maxDpr: 1.25, pixelBudget: 1200000, slowedSpeed: .65,
+    reducedSpeed: 0, reducedCount: 1 },
   workspace: { color: '79,106,89', density: 180, minCount: 65, maxCount: 220, minSpeed: 90, maxSpeed: 160,
     opacity: .68, trailSeconds: .2, maxTrail: 14, fps: 30, maxDpr: 1.5, pixelBudget: 2000000, slowedSpeed: .55,
     reducedSpeed: .55, reducedCount: .7 },
@@ -41,7 +41,7 @@ export function createAtmosphereParticle(variant: AtmosphereVariant, width: numb
   const z = initial ? 180 + random() * 900 : 1200;
   let x = random() * width, y = random() * height;
   if (variant === 'welcome') {
-    // Spend the small particle budget on visible edges instead of the masked globe/title.
+    // Keep most stars in the visible sky surrounding the globe and title.
     for (let attempt = 0; attempt < 32 && atmosphereMask(variant, x, y, width, height) < .2; attempt++) {
       x = random() * width; y = random() * height;
     }
@@ -81,9 +81,13 @@ export function atmosphereMask(variant: AtmosphereVariant, x: number, y: number,
   if (variant === 'workspace') return rim * (width < 900
     ? smoothstep(.25, .44, ny) * smoothstep(.01, .2, nx)
     : smoothstep(.34, .6, nx));
-  const cx = width < 600 ? .5 : .79, cy = width < 600 ? .73 : .52;
-  const distance = Math.hypot((nx - cx) / .42, (ny - cy) / .62);
-  return rim * smoothstep(.35, .63, nx) * smoothstep(.5, .86, distance);
+  const compact = width < 900;
+  const cx = compact ? .5 : .68, cy = compact ? .72 : .52;
+  const distance = Math.hypot((nx - cx) / (compact ? .57 : .34), (ny - cy) / (compact ? .28 : .56));
+  const nearText = compact ? smoothstep(.1, .19, ny) * (1 - smoothstep(.4, .52, ny))
+    : (1 - smoothstep(.28, .49, nx)) * smoothstep(.19, .32, ny) * (1 - smoothstep(.72, .86, ny));
+  const aroundGlobe = smoothstep(.38, .98, distance);
+  return (.64 + .36 * rim) * (1 - .67 * nearText) * aroundGlobe;
 }
 
 export function projectAtmosphereParticle(particle: AtmosphereParticle, width: number, height: number, originX: number, originY: number, speed: number) {

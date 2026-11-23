@@ -43,7 +43,7 @@ export type MorphPose = number | readonly number[];
 export interface MorphBlend { from: MorphPose; to: MorphPose; blend: number }
 
 export function poseWeight(pose: MorphPose, scene: number) {
-  return typeof pose === 'number' ? Number(pose === scene) : pose[scene];
+  return typeof pose === 'number' ? Number(pose === scene) : pose[scene] ?? 0;
 }
 
 function snapshot({ from, to, blend }: MorphBlend): MorphPose {
@@ -102,9 +102,9 @@ export interface MorphShape { positions: Float32Array; colors: string[] }
 export const associationCenters = [
   [-1.42, .3, .12], [-.88, .98, -.25], [-.3, .15, .32], [.05, -.88, .08],
   [.65, .83, .18], [1.4, .17, -.26], [.98, -.82, .2], [-1.05, -.65, -.2],
-];
-export const associationEdges = [[0, 1], [0, 2], [0, 7], [1, 2], [1, 4], [2, 3], [2, 4], [2, 7], [3, 6], [3, 7], [4, 5], [5, 6], [2, 5]];
-const clusterCenters = [[-1, .55, .3], [.83, .72, -.15], [.55, -.72, .35], [-.85, -.65, -.5]];
+] as const;
+export const associationEdges = [[0, 1], [0, 2], [0, 7], [1, 2], [1, 4], [2, 3], [2, 4], [2, 7], [3, 6], [3, 7], [4, 5], [5, 6], [2, 5]] as const;
+const clusterCenters = [[-1, .55, .3], [.83, .72, -.15], [.55, -.72, .35], [-.85, -.65, -.5]] as const;
 const palette = ['#22836e', '#377fab', '#ca8748', '#ac6593'];
 
 /** Stable identities and seeds keep resize and unrelated renders from reshuffling. */
@@ -120,13 +120,13 @@ export function createMorphShapes(count: number): MorphShape[] {
     const positions = new Float32Array(count * 3), colors: string[] = [];
     samples.forEach((s, i) => {
       let x: number, y: number, z: number, color: string;
-      const center = clusterCenters[s.group];
+      const center = clusterCenters[s.group]!;
       if (scene.id === 'pca') {
         x = s.a * 1.3; y = s.b * .62 + x * .24; z = s.c * .075;
         color = s.group < 2 ? '#367eae' : '#64a5b0';
       } else if (scene.id === 'tsne') {
         x = center[0] + s.a * .28; y = center[1] + s.b * .27; z = center[2] + s.c * .3;
-        color = ['#ac548a', '#ca7399', '#7275b2', '#b78caa'][s.group];
+        color = ['#ac548a', '#ca7399', '#7275b2', '#b78caa'][s.group]!;
       } else if (scene.id === 'umap') {
         const t = s.u * Math.PI * 1.65;
         const lane = i % 2 === 0 ? -1 : 1;
@@ -136,14 +136,14 @@ export function createMorphShapes(count: number): MorphShape[] {
         color = lane < 0 ? '#587fb8' : '#a369a5';
       } else if (scene.id === 'kmeans') {
         x = center[0] + s.a * .36; y = center[1] + s.b * .34; z = center[2] + s.c * .3;
-        color = palette[s.group];
+        color = palette[s.group]!;
       } else if (scene.id === 'gmm') {
-        const g = i % 3, angle = [-.55, .65, -.28][g];
+        const g = i % 3, angle = [-.55, .65, -.28][g]!;
         const a = s.a * .85, b = s.b * .24;
-        x = [-.85, .58, .3][g] + a * Math.cos(angle) - b * Math.sin(angle);
-        y = [.48, .35, -.65][g] + a * Math.sin(angle) + b * Math.cos(angle);
+        x = [-.85, .58, .3][g]! + a * Math.cos(angle) - b * Math.sin(angle);
+        y = [.48, .35, -.65][g]! + a * Math.sin(angle) + b * Math.cos(angle);
         z = s.c * .28 + (g - 1) * .15;
-        color = ['#2a8a88', '#b76c96', '#6c8bb7'][g];
+        color = ['#2a8a88', '#b76c96', '#6c8bb7'][g]!;
       } else if (scene.id === 'dbscan') {
         const t = s.u * Math.PI, lane = i % 2;
         x = Math.cos(t) * 1.14 + (lane ? .48 : -.4) + s.a * .12;
@@ -165,14 +165,14 @@ export function createMorphShapes(count: number): MorphShape[] {
         const radius = .44 + ring * .48 + s.a * .048;
         x = Math.cos(angle) * radius; y = Math.sin(angle) * radius * .82;
         z = s.c * .11 + (ring - 1) * .12;
-        color = ['#398a79', '#437aab', '#ba8050'][ring];
+        color = ['#398a79', '#437aab', '#ba8050'][ring]!;
       } else if (scene.id === 'hierarchical') {
         const branch = s.node % 4;
         const side = branch < 2 ? -1 : 1;
         x = side * (1.05 + s.a * .26) + (branch % 2 ? .25 : -.25);
         y = (branch % 2 ? .5 : -.52) + s.b * .22;
         z = side * s.v * .64 + s.c * .18;
-        color = palette[branch];
+        color = palette[branch]!;
       } else if (scene.id === 'optics') {
         const band = i % 3;
         const angle = .1 + s.u * Math.PI * (1.1 + band * .24);
@@ -180,7 +180,7 @@ export function createMorphShapes(count: number): MorphShape[] {
         x = Math.cos(angle + band * 1.6) * (.58 + band * .37) + s.a * spread;
         y = Math.sin(angle + band * 1.6) * (.48 + band * .26) + s.b * spread;
         z = s.c * .32 + (band - 1) * .22;
-        color = ['#3a8874', '#569a93', '#a68c65'][band];
+        color = ['#3a8874', '#569a93', '#a68c65'][band]!;
       } else if (scene.id === 'lof') {
         const sparse = i % 4 === 0;
         x = (sparse ? .75 : -.64) + s.a * (sparse ? .57 : .24);
@@ -188,11 +188,15 @@ export function createMorphShapes(count: number): MorphShape[] {
         z = s.c * (sparse ? .48 : .26);
         color = sparse && i % 19 === 0 ? '#bf6658' : sparse ? '#b48d63' : '#438b80';
       } else {
-        const node = associationCenters[s.node];
+        const node = associationCenters[s.node]!;
         x = node[0] + s.a * .13; y = node[1] + s.b * .13; z = node[2] + s.c * .14;
         color = s.node % 3 ? '#b78546' : '#38867d';
       }
-      positions.set([x, y, z], i * 3); colors.push(color);
+      const offset = i * 3;
+      positions[offset] = x;
+      positions[offset + 1] = y;
+      positions[offset + 2] = z;
+      colors.push(color);
     });
     return { positions, colors };
   });
@@ -204,11 +208,11 @@ export function prepareMorphShapes(count: number) {
   for (const shape of shapes) {
     let x = .1, y = .1;
     for (let i = 0; i < shape.positions.length; i += 3) {
-      x = Math.max(x, Math.abs(shape.positions[i])); y = Math.max(y, Math.abs(shape.positions[i + 1]));
+      x = Math.max(x, Math.abs(shape.positions[i]!)); y = Math.max(y, Math.abs(shape.positions[i + 1]!));
     }
     const scale = Math.min(1.5, 2 / x, 1.35 / y);
     scales.push(scale);
-    for (let i = 0; i < shape.positions.length; i++) shape.positions[i] *= scale;
+    for (let i = 0; i < shape.positions.length; i++) shape.positions[i]! *= scale;
   }
   return { shapes, scales };
 }

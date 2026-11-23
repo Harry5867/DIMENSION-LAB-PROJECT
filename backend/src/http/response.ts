@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import type { ApiResponse } from '@dimension-lab/contracts';
 
 /**
  * Gửi phản hồi thành công chuẩn RESTful
@@ -7,13 +8,8 @@ export function sendSuccess<T>(
   res: Response,
   data: T,
   statusCode: number = 200,
-  extra: Record<string, unknown> = {}
 ): void {
-  const isPlainObj = typeof data === 'object' && data !== null && !Array.isArray(data);
-  const body = isPlainObj
-    ? { success: true, data, ...data, ...extra, timestamp: new Date().toISOString() }
-    : { success: true, data, ...extra, timestamp: new Date().toISOString() };
-
+  const body: ApiResponse<T> = { success: true, data, timestamp: new Date().toISOString() };
   res.status(statusCode).json(body);
 }
 
@@ -27,15 +23,15 @@ export function sendError(
   message: string,
   details?: unknown
 ): void {
-  res.status(statusCode).json({
+  const body: ApiResponse = {
     success: false,
     error: {
       code,
       message,
       ...(details !== undefined ? { details } : {}),
     },
-    message, // Cho client legacy tương thích
     timestamp: new Date().toISOString(),
-  });
+  };
+  res.status(statusCode).json(body);
 }
 
