@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Layers, Search, X } from 'lucide-react';
 import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
 import {
@@ -7,11 +6,9 @@ import {
   hanoiIndex, type AtlasLayers, type Capital,
 } from './globeScene';
 import { borderSource, earthPosition } from './atlas/atlasLines';
-import { loadTerrainData, sourceIndex, terrainDefaults, type TerrainData } from './terrain/terrainData';
-import { TerrainControls } from './terrain/TerrainControls';
-import { StoryControls } from './stories/StoryControls';
+import { loadTerrainData, terrainDefaults, type TerrainData } from './terrain/terrainData';
 import { StoryMarkers } from './stories/StoryMarkers';
-import { filterStories, groupStories, loadStories, projectStoryGroups, type StoryFilter, type StoryGroup, type StoryRecord } from './stories/storyData';
+import { groupStories, loadStories, projectStoryGroups, type StoryGroup, type StoryRecord } from './stories/storyData';
 import './data-globe.css';
 import { localizedCountry, useWelcomeLanguage } from '../../../shared/providers/WelcomeLanguage';
 import { genesisBrandPath, genesisFrame, genesisProjection, type WelcomeGenesisRequest } from '../animations/welcomeGenesis';
@@ -20,12 +17,7 @@ import { createAtlasIgnition } from '../animations/atlasIgnition';
 const home = { yaw: MathUtils.degToRad(-102), pitch: MathUtils.degToRad(20) };
 const minZoom = .76;
 const maxZoom = 1.85;
-const globeModes = [
-  { id: 'atlas', label: 'Atlas' },
-  { id: 'terrain', label: 'Terrain' },
-  { id: 'stories', label: 'Stories' },
-] as const;
-export type GlobeMode = typeof globeModes[number]['id'];
+export type GlobeMode = 'atlas' | 'terrain' | 'stories';
 const atlasDefaults: AtlasLayers = { particles: true, grid: true, borders: true, labels: true, flags: false };
 const exhibitionBase: AtlasLayers = { ...atlasDefaults, borders: false, labels: false };
 const ease = (current: number, target: number, speed: number, dt: number) => current + (target - current) * (1 - Math.exp(-speed * dt));
@@ -65,15 +57,10 @@ function coordinates(city: Capital) {
   return lat + ' · ' + lon;
 }
 
-export function DataGlobe({ suspended = false, showDetails = true, motionEnabled, theme = 'light', modeControlsTarget, explorationControlsTarget, onModeChange, onExplore, genesis }: {
+export function DataGlobe({ suspended = false, motionEnabled, theme = 'light', genesis }: {
   theme?: 'light' | 'dark';
-  modeControlsTarget?: HTMLElement | null;
-  explorationControlsTarget: HTMLElement | null;
-  onModeChange: (mode: GlobeMode) => void;
   motionEnabled?: boolean;
   suspended?: boolean;
-  showDetails?: boolean;
-  onExplore: () => void;
   genesis?: WelcomeGenesisRequest;
 }) {
   const { language, t } = useWelcomeLanguage();
@@ -89,11 +76,8 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   const closeButton = useRef<HTMLButtonElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const [mode, setMode] = useState<GlobeMode>('atlas');
-  const [terrainData, setTerrainData] = useState<TerrainData | null>(null);
-  const [terrainError, setTerrainError] = useState(false);
-  const [terrainSettings, setTerrainSettings] = useState(terrainDefaults);
+  const [terrainData, setTerrainData] = useState<TerrainData | null>();
   const [terrainHovered, setTerrainHovered] = useState<number | null>(null);
-  const [terrainSelected, setTerrainSelected] = useState<number | null>(null);
   const terrainPointer = useRef<{ x: number; y: number } | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -101,9 +85,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const [regionalAnchor, setRegionalAnchor] = useState<number | null>(null);
   const [stories, setStories] = useState<StoryRecord[] | null>(null);
-  const [storyError, setStoryError] = useState(false);
-  const [storyAttempt, setStoryAttempt] = useState(0);
-  const [storyCategory, setStoryCategory] = useState<StoryFilter>('All');
   const [storySelected, setStorySelected] = useState<string | null>(null);
   const [storyHovered, setStoryHovered] = useState<string | null>(null);
   const [storyClusterFocused, setStoryClusterFocused] = useState(false);
@@ -112,9 +93,8 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   const storyNodes = useRef(new Map<string, HTMLButtonElement>());
   const storyCategoryControl = useRef<HTMLSelectElement>(null);
   const isStories = mode === 'stories';
-  const filteredStories = useMemo(() => stories ? filterStories(stories, storyCategory) : [], [stories, storyCategory]);
-  const selectedStory = isStories && showDetails ? filteredStories.find(story => story.id === storySelected) ?? null : null;
-  const storyGroups = useMemo(() => groupStories(filteredStories, storiesDetailed, storiesCompact, selectedStory?.id ?? null), [filteredStories, storiesDetailed, storiesCompact, selectedStory?.id]);
+  const selectedStory = isStories ? stories?.find(story => story.id === storySelected) ?? null : null;
+  const storyGroups = useMemo(() => groupStories(stories ?? [], storiesDetailed, storiesCompact, selectedStory?.id ?? null), [stories, storiesDetailed, storiesCompact, selectedStory?.id]);
   const storyInspecting = isStories && (storyHovered !== null || selectedStory !== null || storyClusterFocused);
   const [layers, setLayers] = useState(atlasDefaults);
   const isAtlas = mode === 'atlas';
@@ -126,12 +106,10 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   }, [isAtlas]);
   const terrain = useMemo(() => {
     if (mode !== 'terrain' || !terrainData) return null;
-    const point = terrainSelected === null ? undefined : terrainData.points[terrainSelected];
-    const highlight = terrainHovered ?? (point ? sourceIndex(terrainData.grid, point.latitude, point.longitude) : null);
-    return { data: terrainData, ...terrainSettings, highlight };
-  }, [mode, terrainData, terrainSettings, terrainHovered, terrainSelected]);
-  const terrainInspecting = mode === 'terrain' && (terrainHovered !== null || terrainSelected !== null);
-  const active = isAtlas && showDetails ? selected : null;
+    return { data: terrainData, ...terrainDefaults, highlight: terrainHovered };
+  }, [mode, terrainData, terrainHovered]);
+  const terrainInspecting = mode === 'terrain' && terrainHovered !== null;
+  const active = isAtlas ? selected : null;
   const markerIndices = useMemo(() => {
     const indices = new Set(featuredCapitalIndices);
     if (regionalAnchor !== null) regionalCapitals[regionalAnchor]?.forEach(index => indices.add(index));
@@ -153,7 +131,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   function selectMode(nextMode: GlobeMode) {
     if (nextMode === mode) return;
     setMode(nextMode);
-    onModeChange(nextMode);
     setSelected(null);
     setHovered(null);
     setDirectoryOpen(false);
@@ -180,13 +157,12 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
 
   function selectStory(id: string | null, trigger: HTMLElement) {
     if (!id) { closeStory(); return; }
-    const story = filteredStories.find(item => item.id === id);
+    const story = stories?.find(item => item.id === id);
     if (!story) return;
     opener.current = trigger;
     setStorySelected(id);
     setStoryClusterFocused(false);
     setStoryHovered(null);
-    onExplore();
     focusAt(MathUtils.degToRad(-story.longitude), MathUtils.degToRad(story.latitude), Math.max(1.12, goal.current.zoom));
   }
 
@@ -205,29 +181,11 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
     const [first] = group.members;
     if (!first) return;
     if (group.members.length === 1) { selectStory(first.id, trigger); return; }
-    onExplore();
     setStoryHovered(null);
     setStoriesDetailed(true);
     setStoryClusterFocused(true);
     focusAt(-Math.atan2(group.position.x, group.position.z), Math.asin(group.position.y), Math.max(1.45, goal.current.zoom));
     viewport.current?.focus({ preventScroll: true });
-  }
-
-  function changeStoryCategory(category: StoryFilter) {
-    setStoryCategory(category);
-    setStoryClusterFocused(false);
-    setStoryHovered(null);
-    if (storySelected && !filterStories(stories ?? [], category).some(story => story.id === storySelected)) setStorySelected(null);
-  }
-
-  function inspectTerrain(index: number | null) {
-    setTerrainSelected(index);
-    setTerrainHovered(null);
-    terrainPointer.current = null;
-    if (index === null || !terrainData) return;
-    const point = terrainData.points[index];
-    if (!point) return;
-    focusAt(MathUtils.degToRad(-point.longitude), MathUtils.degToRad(point.latitude), goal.current.zoom);
   }
 
   function focusAt(yaw: number, pitch: number, zoom: number) {
@@ -248,7 +206,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
       ? directory.current.querySelector('summary')
       : trigger;
     if (directory.current) directory.current.open = false;
-    onExplore();
     setHovered(null);
     setSelected(index);
     const zoom = index === hanoiIndex ? 1.25 : 1.12;
@@ -269,35 +226,25 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
   }, [active]);
 
   useEffect(() => {
-    if (showDetails) return;
-    setSelected(null);
-    setHovered(null);
-    setStorySelected(null);
-    setStoryHovered(null);
-  }, [showDetails]);
-
-  useEffect(() => {
     if (!isStories || stories) return;
     const controller = new AbortController();
-    setStoryError(false);
     loadStories(controller.signal).then(records => {
       if (!controller.signal.aborted) setStories(records);
-    }).catch(() => { if (!controller.signal.aborted) setStoryError(true); });
+    }).catch(() => { if (!controller.signal.aborted) setStories([]); });
     return () => controller.abort();
-  }, [isStories, stories, storyAttempt]);
+  }, [isStories, stories]);
 
   useEffect(() => {
     if (storyHovered && !storyGroups.some(group => group.key === storyHovered)) setStoryHovered(null);
   }, [storyGroups, storyHovered]);
 
   useEffect(() => {
-    if (mode !== 'terrain' || terrainData) return;
+    if (mode !== 'terrain' || terrainData !== undefined) return;
     let current = true;
-    setTerrainError(false);
     loadTerrainData().then(data => {
       if (current) setTerrainData(data);
     }).catch(() => {
-      if (current) setTerrainError(true);
+      if (current) setTerrainData(null);
     });
     return () => { current = false; };
   }, [mode, terrainData]);
@@ -493,12 +440,17 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         // live canvas, home orientation and projection throughout the intro.
         if (time - lastIntroDraw < renderer.frameInterval - 1) return;
         lastIntroDraw = time;
-        reveal = genesisFrame(introElapsed);
+        const introFrame: ReturnType<typeof genesisFrame> & { centerX?: number; centerY?: number } = genesisFrame(introElapsed);
+        reveal = introFrame;
         const page = host.parentElement?.style;
-        if (host.dataset.phase !== reveal.phase) host.dataset.phase = reveal.phase;
+        if (host.dataset.phase !== introFrame.phase) host.dataset.phase = introFrame.phase;
         for (const key of ['silhouette', 'atmosphere', 'disk', 'logo'] as const) {
-          page?.setProperty('--genesis-' + key, reveal[key].toFixed(4));
+          page?.setProperty('--genesis-' + key, introFrame[key].toFixed(4));
         }
+        introFrame.logoSegments.forEach((progress, index) => {
+          page?.setProperty(`--genesis-logo-ribbon-opacity-${index}`, (progress * (1 - introFrame.logo)).toFixed(4));
+          page?.setProperty(`--genesis-logo-ribbon-scale-${index}`, (.72 + .28 * progress).toFixed(4));
+        });
         if (!introGlobe) {
           const box = host.getBoundingClientRect();
           if (box.width > 0 && box.height > 0) {
@@ -518,16 +470,16 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
           }
         }
         if (introGlobe) {
-          const shift = introGlobe.shift * (1 - reveal.growth);
+          const shift = introGlobe.shift * (1 - introFrame.growth);
           if (shift !== globeShift) {
             globeShift = shift;
             frame!.style.setProperty('--genesis-globe-shift', `${shift}px`);
           }
-          reveal.centerX = MathUtils.lerp(introGlobe.centerX, centerX, reveal.growth);
-          reveal.centerY = MathUtils.lerp(introGlobe.centerY, centerY, reveal.growth);
-          surfaceStyle.setProperty('--globe-disk-x', `${reveal.centerX}px`);
-          surfaceStyle.setProperty('--globe-disk-y', `${reveal.centerY}px`);
-          ignition?.draw(reveal, introGlobe.projection, theme === 'dark', introGlobe.path);
+          introFrame.centerX = MathUtils.lerp(introGlobe.centerX, centerX, introFrame.growth);
+          introFrame.centerY = MathUtils.lerp(introGlobe.centerY, centerY, introFrame.growth);
+          surfaceStyle.setProperty('--globe-disk-x', `${introFrame.centerX}px`);
+          surfaceStyle.setProperty('--globe-disk-y', `${introFrame.centerY}px`);
+          ignition?.draw(introFrame, introGlobe.projection, theme === 'dark', introGlobe.path);
         }
       } else if (request) {
         request.onComplete(request.id);
@@ -757,12 +709,6 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         .some(value => value?.toLowerCase().includes(search)));
   }, [query, language]);
 
-  const modeControls = <div className="globe-mode-switcher" role="group" aria-label={t('Visualization mode', 'Chế độ trực quan hóa')}>
-    {globeModes.map(item => <button className="globe-mode-option" type="button" key={item.id} aria-pressed={mode === item.id} onClick={() => selectMode(item.id)}>
-      {t(item.label, { atlas: 'Bản đồ', terrain: 'Địa hình', stories: 'Câu chuyện' }[item.id])}
-    </button>)}
-  </div>;
-
   return <div className={`data-globe${suspended ? ' atlas-suspended' : ''}`} data-mode={mode} onKeyDown={event => {
     if (event.key === 'Escape' && city) { event.preventDefault(); closeCity(); }
     else if (event.key === 'Escape' && selectedStory) { event.preventDefault(); closeStory(); }
@@ -914,17 +860,5 @@ export function DataGlobe({ suspended = false, showDetails = true, motionEnabled
         </div>
       </details>
     </div>}
-    {explorationControlsTarget && mode === 'terrain' && createPortal(<TerrainControls data={terrainData} error={terrainError} settings={terrainSettings}
-      selected={terrainSelected} onSettingsChange={setTerrainSettings} onInspect={inspectTerrain}
-      onReset={() => { setTerrainSettings({ ...terrainDefaults }); setTerrainSelected(null); setTerrainHovered(null); terrainPointer.current = null; }} />, explorationControlsTarget)}
-    {explorationControlsTarget && isStories && createPortal(<StoryControls stories={stories} filtered={filteredStories} category={storyCategory} selected={selectedStory} error={storyError}
-      onCategory={changeStoryCategory} onSelect={selectStory} onClose={closeStory} onRetry={() => setStoryAttempt(attempt => attempt + 1)}
-      categoryRef={storyCategoryControl} onAtlas={story => {
-        selectMode('atlas');
-        const index = capitals.findIndex(city => city.id === story.placeId);
-        if (index >= 0) openCity(index, storyCategoryControl.current ?? viewport.current!);
-        else focusAt(MathUtils.degToRad(-story.longitude), MathUtils.degToRad(story.latitude), goal.current.zoom);
-      }} />, explorationControlsTarget)}
-    {modeControlsTarget ? createPortal(modeControls, modeControlsTarget) : modeControls}
   </div>;
 }

@@ -21,6 +21,8 @@ Connect to the dev cluster and select the value of `MONGODB_DB`.
 
 `GET /api/datasets?offset=0&limit=50` returns metadata, with `X-Next-Offset` when more records exist. The preview endpoint returns up to 20 rows. Explore uses the detail endpoint to load the full dataset for analysis. The download endpoint streams the original file.
 
+`GET /api/datasets/usage` returns the signed-in account’s private CSV usage. The default is 20 active CSV files and 30 MiB of original file bytes per account. Sample datasets do not count. An upload exceeding either limit returns `409 DATASET_QUOTA_EXCEEDED`. The app derives the starting usage of existing accounts from their published GridFS files. See the [operations guide](operations.md) for rollout, retention and maintenance.
+
 ## Legacy inventory and migration
 
 The app opens the configured dev database and only exposes published records with an ObjectId owner and version reference. Existing data in `cancer_explorer` stays in place. Use a separately approved read-only connection via `LEGACY_MONGODB_URI`, then run `node scripts/inventory-legacy-mongo.mjs` to count legacy datasets and experiments without printing record content. An ObjectId on a legacy record is only a candidate until it has been matched to an approved account.
@@ -31,7 +33,7 @@ For a dev migration, copy a small verified subset. Match owners using a reviewed
 
 An upload is visible only after GridFS and its version are stored and the dataset document has been published. A publication timeout may mean the write committed. Files are retained for reconciliation in that case. Dataset deletion sets `deletedAt` and revokes access immediately.
 
-For dev cleanup, stop writes and take a backup. Compare `datasets.currentVersionId`, `dataset_versions._id`, and `dataset_files.files._id`. For an old unreferenced file or a tombstoned dataset whose retention period has ended, verify that no live dataset version uses the file ID before removing it with the MongoDB driver's `GridFSBucket.delete(fileId)`. Remove the orphan version only after file cleanup succeeds. For incomplete uploads with chunks but no file document, verify the same absence of references and remove only chunks with the confirmed orphan `files_id`. Keep a record of the IDs processed.
+The `npm run maintenance:datasets` command previews reclaimable files and incomplete uploads identified by the quota ledger. The [operations guide](operations.md#dọn-gridfs) covers retention, backups and applying the cleanup.
 
 ## References
 

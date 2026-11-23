@@ -4,6 +4,7 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { once } from 'node:events';
 import { Readable, Writable } from 'node:stream';
 import { GridFSBucket, MongoClient, MongoServerError, ObjectId } from 'mongodb';
+import type { QuotaLedger, Reservation } from '../../backend/src/repositories/datasetQuota';
 
 test('Atlas storage isolates owners, retains original bytes, and never acknowledges a failed publication', async t => {
   process.env.LAB_STORAGE_MODE = 'atlas';
@@ -12,9 +13,12 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   process.env.GOOGLE_CLIENT_ID = 'test-client';
   process.env.GOOGLE_CLIENT_SECRET = 'test-secret';
   process.env.GOOGLE_REDIRECT_URI = 'http://localhost:3000/api/auth/google/callback';
+  process.env.LAB_ALLOWED_EMAILS = '';
+  process.env.LAB_DATASET_MAX_FILES = '2';
   const collections = new Map<string, any[]>();
   const blobs = new Map<string, Buffer>();
   const indexes: Array<[string, object, unknown]> = [];
+  const quotas = new Map<string, QuotaLedger>();
   let failCollection = '';
   const documents = (name: string) => {
     if (!collections.has(name)) collections.set(name, []);
@@ -24,28 +28,71 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
     if (expected?.$exists !== undefined) return (doc[key] !== undefined) === expected.$exists;
     if (expected?.$type) return doc[key] instanceof ObjectId;
     if (expected?.$gt) return doc[key] > expected.$gt;
+    if (expected?.$lt !== undefined) return doc[key] < expected.$lt;
+    if (expected?.$ne !== undefined) return doc[key] !== expected.$ne;
     return String(doc[key]) === String(expected);
   });
   const database = { command: async () => ({ ok: 1 }), collection: (name: string) => ({
     createIndex: async (fields: object, options: unknown) => { indexes.push([name, fields, options]); },
+    aggregate: ([{ $match }]: [{ $match: object }]) => ({
+      toArray: async () => documents(name).filter(doc => matches(doc, $match)).map(doc => {
+        const version = documents('dataset_versions').find(item => String(item._id) === String(doc.currentVersionId));
+        return { id: doc.id, bytes: blobs.get(String(version?.fileId))?.length };
+      }),
+    }),
     find: (filter: object) => {
       let rows = documents(name).filter(doc => matches(doc, filter));
-      const cursor = { sort: () => cursor, skip: (offset: number) => { rows = rows.slice(offset); return cursor; },
+      const cursor = { sort: () => cursor, collation: () => cursor, skip: (offset: number) => { rows = rows.slice(offset); return cursor; },
         limit: (limit: number) => { rows = rows.slice(0, limit); return cursor; }, toArray: async () => rows };
       return cursor;
     },
-    findOne: async (filter: object) => documents(name).find(doc => matches(doc, filter)) ?? null,
+    findOne: async (filter: { _id?: ObjectId }) => name === 'dataset_quotas'
+      ? quotas.get(String(filter._id)) ?? null
+      : documents(name).find(doc => matches(doc, filter)) ?? null,
     findOneAndUpdate: async (filter: object, update: any, options?: { upsert?: boolean }) => {
       let doc = documents(name).find(doc => matches(doc, filter));
       if (!doc && options?.upsert) {
         doc = { _id: new ObjectId(), ...filter, ...update.$setOnInsert };
         documents(name).push(doc);
       }
+      if (doc && name === 'unsupervised_history') {
+        const { $each, $position, $slice } = update.$push.runs as { $each: string[]; $position: number; $slice: number };
+        const runs: string[] = doc.runs ?? [];
+        runs.splice($position, 0, ...$each);
+        doc.runs = runs.slice(0, $slice);
+      }
       return doc ? Object.assign(doc, update.$set) : null;
     },
     findOneAndDelete: async (filter: object) => {
       const index = documents(name).findIndex(doc => matches(doc, filter));
       return index < 0 ? null : documents(name).splice(index, 1)[0];
+    },
+    updateOne: async (filter: { _id: ObjectId; 'items.id'?: string; $expr?: { $and: [{ $lt: [unknown, number] }, { $lte: [unknown, number] }] } }, update: {
+      $inc?: { attempts: number }; $setOnInsert?: { items: Reservation[] }; $push?: { items: Reservation };
+      $pull?: { items: { id: string } }; $unset?: object;
+    }) => {
+      if (name === 'dataset_quotas') {
+        const key = String(filter._id);
+        const doc = quotas.get(key);
+        if (!doc && update.$setOnInsert) quotas.set(key, { _id: filter._id, items: update.$setOnInsert.items });
+        if (!doc) return { modifiedCount: 0 };
+        if (update.$push && filter.$expr) {
+          const [files, bytes] = filter.$expr.$and;
+          if (doc.items.length >= files.$lt[1] || doc.items.reduce((sum, item) => sum + item.bytes, 0) > bytes.$lte[1]) {
+            return { modifiedCount: 0 };
+          }
+          doc.items.push(update.$push.items);
+        }
+        if (update.$pull) doc.items = doc.items.filter(item => item.id !== update.$pull?.items.id);
+        const item = doc.items.find(entry => entry.id === filter['items.id']);
+        if (item && update.$unset) {
+          delete item.fileId;
+          delete item.reservedAt;
+        }
+        return { modifiedCount: 1 };
+      }
+      const doc = documents(name).find(item => matches(item, filter));
+      if (doc && update.$inc) doc.attempts += update.$inc.attempts;
     },
     insertOne: async (doc: any) => {
       if (failCollection === name) throw new MongoServerError({ message: 'simulated storage failure' });
@@ -82,7 +129,7 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   assert.ok(indexes.some(([name, fields, options]) => name === 'password_users' && 'email' in fields && (options as { unique?: boolean }).unique));
   assert.ok(indexes.some(([name, fields, options]) => name === 'sessions' && 'expiresAt' in fields && (options as any).expireAfterSeconds === 0));
 
-  await t.test('password accounts use Atlas sessions and can only access their own datasets', async () => {
+  await t.test('password accounts use Atlas sessions and can only access their own datasets', async accountTest => {
     const { createApp } = await import('../../backend/src/app');
     const server = createApp().listen(0, '127.0.0.1');
     try {
@@ -120,6 +167,41 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
       const me = async (cookie: string) => (await fetch(api + '/auth/me', { headers: { Cookie: cookie } })).json();
       assert.equal((await me(firstCookie)).data.user.name, first.displayName);
       assert.equal((await me(secondCookie)).data.user.name, second.displayName);
+      await accountTest.test('email codes provision new accounts and preserve the owner of Google workspaces', async sub => {
+        process.env.RESEND_API_KEY = 'test-mail-key';
+        process.env.LAB_EMAIL_FROM = 'lab@example.test';
+        const originalFetch = globalThis.fetch;
+        let code = '';
+        sub.mock.method(globalThis, 'fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          if (input !== 'https://api.resend.com/emails') return originalFetch(input, init);
+          const mail = JSON.parse(String(init?.body)) as { text: string };
+          code = /code is (\d{6})/.exec(mail.text)![1]!;
+          return Promise.resolve(new Response('{}', { status: 200 }));
+        });
+        for (const google of [false, true]) {
+          const email = google ? 'oauth@example.test' : 'manual@example.test';
+          const owner = google ? await auth.upsertGoogleUser({ sub: 'enrollment-test', email, displayName: 'Google user' }) : null;
+          const start = await post('/auth/login', { email, password, enroll: true });
+          assert.equal(start.status, 202);
+          assert.equal(start.headers.get('set-cookie'), null);
+          const { challenge } = (await start.json()).data;
+          const verify = (digits: string) => post('/auth/verify-email', { challenge, code: digits });
+          assert.equal((await verify(code === '000000' ? '111111' : '000000')).status, 401);
+          const verified = await verify(code);
+          assert.equal(verified.status, 200);
+          const verifiedCookie = verified.headers.getSetCookie()[0]!.split(';')[0]!;
+          const account = (await me(verifiedCookie)).data.user;
+          if (owner) assert.equal(account.id, String(owner._id));
+          assert.equal((await verify(code)).status, 401);
+          const subsequent = await login({ email, password, displayName: '' });
+          assert.equal((await me(subsequent)).data.user.id, account.id);
+          await post('/auth/logout', {}, verifiedCookie);
+          await post('/auth/logout', {}, subsequent);
+        }
+        collections.set('users', documents('users').filter(user => user.googleSub !== 'enrollment-test'));
+        delete process.env.RESEND_API_KEY;
+        delete process.env.LAB_EMAIL_FROM;
+      });
       const csv = 'a,b,c\r\n1,2,3\r\n4,5,6\r\n';
       const form = new FormData();
       form.append('file', new Blob([csv], { type: 'text/csv' }), 'password-auth-test.csv');
@@ -130,6 +212,30 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
       assert.equal((await get(dataset + '/download', firstCookie)).status, 200);
       assert.equal((await get(dataset, secondCookie)).status, 404);
       assert.equal((await get(dataset + '/download', secondCookie)).status, 404);
+      await accountTest.test('saved analysis history is private, bounded, and round-trips CSV keys', async () => {
+        const path = '/unsupervised/history';
+        const column = 'feature.with.dot';
+        const rows = [{ [column]: 1 }, { [column]: 2 }];
+        const run = {
+          dataset: 'history-test',
+          createdAt: new Date().toISOString(),
+          task: { kind: 'anomaly', rows, features: [column], normalization: 'none',
+            options: { trees: 100, sampleSize: 2, contamination: 0.05, seed: 42 } },
+          result: { kind: 'anomaly', threshold: 0.5, scores: [0.4, 0.5], anomalies: [false, false] },
+        };
+        assert.equal((await post(path, {}, firstCookie)).status, 400);
+        for (let i = 0; i < 6; i++) {
+          assert.equal((await post(path, { ...run, dataset: run.dataset + '-' + i }, firstCookie)).status, 201);
+        }
+        const firstHistory = await get(path, firstCookie);
+        assert.equal(firstHistory.status, 200);
+        const saved = (await firstHistory.json()).data as typeof run[];
+        assert.deepEqual(saved.map(item => item.dataset), [5, 4, 3, 2, 1].map(i => run.dataset + '-' + i));
+        assert.deepEqual(saved[0]?.task.rows, rows);
+        const secondHistory = await get(path, secondCookie);
+        assert.equal(secondHistory.status, 200);
+        assert.deepEqual((await secondHistory.json()).data, []);
+      });
       assert.equal((await post('/auth/logout', {}, firstCookie)).status, 200);
       assert.equal((await me(firstCookie)).data.authenticated, false);
       assert.equal((await post('/auth/logout', {}, secondCookie)).status, 200);
@@ -225,8 +331,18 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   assert.deepEqual(await datasets.listOwnedDatasets(a, 0, 50), []);
   failCollection = '';
   await publish(data.id);
+  const { datasetUsage, reserveDataset } = await import('../../backend/src/repositories/datasetQuota');
+  quotas.delete(a);
+  assert.deepEqual(await datasetUsage(a), { fileCount: 1, usedBytes: csv.length, maxFiles: 2, maxBytes: 30 * 1024 * 1024 });
+  await assert.rejects(reserveDataset(a, 'too-many-bytes', 30 * 1024 * 1024, new ObjectId()), { code: 'DATASET_QUOTA_EXCEEDED' });
+  const concurrent = await Promise.allSettled([publish('quota-one'), publish('quota-two')]);
+  assert.equal(concurrent.filter(result => result.status === 'fulfilled').length, 1);
+  const denied = concurrent.find(result => result.status === 'rejected');
+  assert.equal(denied?.reason?.code, 'DATASET_QUOTA_EXCEEDED');
+  assert.equal((await datasetUsage(a)).fileCount, 2);
+  assert.equal((await datasetUsage(b)).fileCount, 0);
   await connectAtlas();
-  assert.equal((await datasets.listOwnedDatasets(a, 0, 50))[0].id, data.id);
+  assert.ok((await datasets.listOwnedDatasets(a, 0, 50)).some(item => item.id === data.id));
   assert.deepEqual(await datasets.listOwnedDatasets(b, 0, 50), []);
   assert.equal(await datasets.loadOwnedDataset(data.id, b), null);
   assert.equal(await datasets.openOwnedFile(data.id, b), null);
@@ -243,5 +359,6 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   assert.deepEqual(await getAllExperiments(b), []);
   assert.equal((await datasets.renameOwnedDataset(data.id, a, 'Renamed'))?.name, 'Renamed');
   assert.equal(await datasets.deleteOwnedDataset(data.id, a), true);
+  assert.equal((await datasetUsage(a)).fileCount, 1);
   assert.equal(await datasets.openOwnedFile(data.id, a), null);
 });

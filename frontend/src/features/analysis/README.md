@@ -16,7 +16,7 @@ Chuẩn bị dữ liệu, giảm chiều, phân cụm và đánh giá kết qu�
 
 ## Luồng dữ liệu và trạng thái
 
-Dataset → chuẩn hóa → giảm chiều qua API hoặc Worker dự phòng → phân cụm trong Worker khi áp dụng → công bố tọa độ và metrics. Unsupervised có lịch sử riêng trong localStorage.
+Dataset → chuẩn hóa → giảm chiều qua API hoặc Worker dự phòng → phân cụm trong Worker khi áp dụng → công bố tọa độ và metrics. Unsupervised lưu tối đa 5 kết quả theo tài khoản trên Atlas. Chế độ demo giữ lịch sử trong bộ nhớ của phiên Workspace.
 
 ## Kiểm thử và phạm vi thay đổi
 

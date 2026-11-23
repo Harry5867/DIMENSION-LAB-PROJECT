@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { getApiDataRecord } from '../../frontend/src/shared/api/typeGuards';
+import { isRecord } from '../../frontend/src/shared/api/typeGuards';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '../../packages/contracts/src/demo';
 
 export async function openDemoPage(page: Page, route: string) {
@@ -8,7 +8,8 @@ export async function openDemoPage(page: Page, route: string) {
     data: { email: DEMO_EMAIL, password: DEMO_PASSWORD },
   });
   expect(response.ok()).toBe(true);
-  const token = getApiDataRecord(await response.json())?.token;
+  const body: unknown = await response.json();
+  const token = isRecord(body) && body.success === true && isRecord(body.data) ? body.data.token : undefined;
   if (typeof token !== 'string') throw new Error('Demo login did not return a token');
   // The app restores demo sessions from sessionStorage on navigation.
   await page.goto('/api/health');
@@ -19,6 +20,7 @@ export async function openDemoPage(page: Page, route: string) {
 export async function uploadCsv(page: Page, name: string): Promise<Locator> {
   const datasets = page.getByRole('main', { name: 'Datasets' });
   await expect(datasets).toBeVisible();
+  await expect(datasets.getByRole('button', { name: 'Import CSV', exact: true })).toBeEnabled();
   const buffer = await readFile(new URL('../fixtures/round2-demo.csv', import.meta.url));
   const [response] = await Promise.all([
     page.waitForResponse(response => new URL(response.url()).pathname === '/api/datasets/upload'

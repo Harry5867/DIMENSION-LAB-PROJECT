@@ -1,6 +1,6 @@
 import { numericValue } from '@dimension-lab/algorithms/numericValue';
 import { compareRow, describeItem, ruleRows } from '../../frontend/src/features/analysis/analysisPresentation';
-import { readSavedAnalysisRuns } from '../../frontend/src/features/analysis/savedRuns';
+import { readSavedAnalysisRuns } from '@dimension-lab/algorithms/savedRuns';
 import { runAnalysisTask } from '@dimension-lab/algorithms/analysisTasks';
 import test from 'node:test';
 import assert from 'node:assert/strict';

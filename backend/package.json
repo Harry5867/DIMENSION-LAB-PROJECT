@@ -12,6 +12,11 @@
     "express": "^4.21.1",
     "mongodb": "^7.7.0",
     "multer": "^1.4.5-lts.1",
-    "openid-client": "^6.8.9"
+    "openid-client": "^6.8.9",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/swagger-ui-express": "^4.1.8",
+    "openapi-types": "^12.1.3"
   }
 }

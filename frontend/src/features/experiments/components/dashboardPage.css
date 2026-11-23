@@ -1,0 +1,28 @@
+.dashboard-page { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; background: var(--bg-main); }
+.dashboard-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 16px;
+  min-height: 54px; padding: 7px clamp(12px, 2vw, 30px); background: var(--bg-panel); border-bottom: 1px solid var(--border-subtle); }
+.dashboard-toolbar-context, .dashboard-toolbar-actions { display: flex; align-items: center; gap: 12px; }
+.dashboard-toolbar-actions { margin-inline-start: auto; gap: 8px; }
+.dashboard-back { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; color: var(--text-main); font-size: 13px; }
+.dashboard-back:is(:hover, :focus-visible) { color: var(--accent-primary); }
+.dashboard-toolbar h1 { border-inline-start: 1px solid var(--border-subtle); padding-inline-start: 12px; color: var(--text-muted); font-size: 13px; font-weight: 500; }
+.dashboard-toolbar .lab-action { min-height: 36px; padding-block: 6px; }
+html[data-theme=dark] .dashboard-toolbar .lab-action-primary { background: #8de7c3; border-color: #8de7c3; color: #0c2219; }
+html[data-theme=dark] .dashboard-toolbar .lab-action-primary:hover { background: #a8f0d4; border-color: #a8f0d4; }
+.dashboard-options { position: relative; }
+.dashboard-options > summary { list-style: none; }
+.dashboard-options > summary::-webkit-details-marker { display: none; }
+.dashboard-options-panel { position: absolute; z-index: 5; inset: calc(100% + 7px) 0 auto auto; width: min(280px, 86vw);
+  padding: 12px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-panel); box-shadow: 0 12px 24px #0003; }
+.dashboard-options-panel label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.dashboard-options-panel input { accent-color: var(--accent-primary); }
+.dashboard-options-panel p { margin: 6px 0 0; font-size: 12px; color: var(--text-muted); }
+.dashboard-report-view { display: block; flex: 1 1 auto; width: 100%; min-height: 0; border: 0; }
+.dashboard-empty { margin: auto; padding: 28px; text-align: center; }
+.dashboard-empty h2 { font-size: 22px; }
+.dashboard-empty p { margin: 8px 0 16px; color: var(--text-muted); }
+.dashboard-download-error { padding: 8px clamp(12px, 2vw, 30px); background: var(--danger-bg); color: var(--danger-text); }
+@media (max-width: 575px) {
+  .dashboard-toolbar-context { width: 100%; }
+  .dashboard-options-panel { inset-inline-end: -106px; }
+}

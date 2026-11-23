@@ -13,8 +13,8 @@ build/
 
 # Environment variables & secrets (Không bao giờ đẩy mật khẩu lên GitHub)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Local SQLite databases
 cancer.db

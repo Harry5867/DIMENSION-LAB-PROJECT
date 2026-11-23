@@ -13,6 +13,7 @@
     "test": "node --import tsx --test tests/unit/*.test.ts",
     "test:api": "node --import tsx --test tests/integration/system-api.integration.ts",
     "test:e2e": "playwright test",
+    "maintenance:datasets": "node --import tsx backend/src/maintenance/purgeDatasets.ts",
     "lint": "eslint ."
   },
   "devDependencies": {
@@ -43,5 +44,8 @@
     "frontend",
     "backend",
     "packages/*"
-  ]
+  ],
+  "scarfSettings": {
+    "enabled": false
+  }
 }

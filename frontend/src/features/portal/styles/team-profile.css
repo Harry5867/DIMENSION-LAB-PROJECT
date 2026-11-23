@@ -262,7 +262,10 @@ html[data-theme=dark] .portal-page--team {
   overflow:clip;
 }
 .member-profile-portrait { min-width:0; }
-.member-profile-portrait .portal-team-avatar { aspect-ratio:4 / 5; }
+.member-profile-navigation { display:flex; gap:12px; margin-top:10px; }
+.member-profile-navigation .back-control { min-height:44px; font-size:12px; }
+.member-profile-navigation [aria-keyshortcuts="ArrowRight"] { margin-inline-start:auto; }
+.member-profile-portrait .portal-team-avatar { aspect-ratio:1; }
 .member-profile-copy { container-type:inline-size; min-width:0; }
 .member-profile h1 {
   margin:0 0 8px;
@@ -283,6 +286,15 @@ html[data-theme=dark] .portal-page--team {
 .member-profile-copy ul { padding-inline-start:20px; list-style:disc; }
 .member-profile-copy li + li { margin-top:4px; }
 .member-profile-copy li::marker { color:var(--portal-accent); }
+.member-profile-details, .member-profile-contact { display:grid; gap:6px 14px; margin:0; }
+.member-profile-details { grid-template-columns:auto minmax(0, 1fr); }
+.member-profile-contact { grid-template-columns:max-content minmax(0, 1fr); }
+.member-profile-contact > :last-child { text-align:end; }
+.member-profile-contact a { display:inline-flex; align-items:baseline; gap:7px; }
+.member-profile-contact a svg { flex:none; align-self:center; }
+.member-profile-contact a span { min-width:0; }
+.member-profile-copy dl dt { font-weight:600; }
+.member-profile-copy dl dd { margin:0; color:var(--portal-muted); overflow-wrap:anywhere; }
 
 @media(max-width:760px) {
   .portal-page--team { --team-toolbar-height:52px; }

@@ -136,11 +136,11 @@ export function createAtlasIgnition(canvas: HTMLCanvasElement) {
           }
         }
       }
-      if (brand && t >= genesisSatelliteEnd && frame.logoOrbit < 1) {
+      if (brand && t >= genesisSatelliteEnd && frame.logo < 1) {
         const head = brand.point(frame.returning);
         const tail = Math.max(0, frame.returning - .54);
         const start = brand.point(tail);
-        const energy = 1 - frame.logoOrbit;
+        const energy = 1 - frame.logo;
         const gradient = ctx.createLinearGradient(start.x, start.y, head.x, head.y);
         gradient.addColorStop(0, color(mint, 0));
         gradient.addColorStop(1, color(mint, energy * .74));
@@ -165,14 +165,6 @@ export function createAtlasIgnition(canvas: HTMLCanvasElement) {
         }
         halo(head.x, head.y, 14, mint, energy * .52);
         dot(head.x, head.y, 2.15, glint, energy);
-      }
-      if (brand && frame.logoOrbit > 0 && frame.logo < 1) {
-        const { x: cx, y: cy, rx, ry, rotation } = brand.orbit;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, rx, ry, rotation, Math.PI, Math.PI + tau * frame.logoOrbit);
-        ctx.strokeStyle = color(dark ? '213,255,240' : '8,124,112', .85 * (1 - frame.logo));
-        ctx.lineWidth = 1.22;
-        ctx.stroke();
       }
       if (frame.scanGlow <= 0 || Math.abs(frame.scan) >= 1) return;
       const ringRadius = Math.sqrt(1 - frame.scan ** 2);

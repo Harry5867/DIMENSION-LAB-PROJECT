@@ -1,4 +1,28 @@
 .entry-screen { display:contents; }
+.welcome-signout-veil {
+  position:fixed; inset:0; z-index:200; display:grid; place-items:center;
+  background:var(--welcome-background); opacity:0; visibility:hidden; pointer-events:none;
+}
+.welcome-signout-veil[data-active="true"] { visibility:visible; opacity:1; pointer-events:auto; }
+.welcome-signout-mark { position:relative; --team-logo-width:clamp(68px,8vw,96px); }
+.welcome-signout-mark .team-logo { opacity:.38; }
+.welcome-signout-mark > span:last-child {
+  position:absolute; inset:0;
+  mask:url('../../../shared/visuals/dimension-interwoven-logo.png') center / contain no-repeat;
+  background:linear-gradient(110deg, transparent 40%, #b5ffdd 50%, transparent 60%) 100% center / 300% 100% no-repeat;
+}
+@keyframes signout-logo-sweep {
+  from { background-position:100% center; }
+  to { background-position:0% center; }
+}
+@media (prefers-reduced-motion:no-preference) {
+  .welcome-signout-veil[data-active="true"] .welcome-signout-mark > span:last-child {
+    animation:signout-logo-sweep 1.2s ease-in-out infinite;
+  }
+}
+@media (prefers-reduced-motion:reduce) {
+  .welcome-signout-mark > span:last-child { display:none; }
+}
 /* Full motion was explicitly chosen for this entrance. Duration overrides are
    restricted to these temporary layers; other reduced-motion rules stay intact. */
 .entry-curtain {
@@ -28,6 +52,24 @@
 .entry-curtain--revealing .entry-gateway-brand { animation:entry-brand-depart 500ms 160ms ease-in both; animation-duration:500ms !important; }
 .entry-transition-status { position:fixed; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 
+/* Entering Workspace uses a short theme-matched veil, without the old title card. */
+.entry-curtain:not(.entry-curtain--out) { background:#f4f7f4; color:#202720; }
+.entry-curtain--dark:not(.entry-curtain--out) { background:#091713; color:#edf6ef; }
+.entry-curtain:not(.entry-curtain--out).entry-curtain--covering {
+  animation:workspace-enter-cover 260ms cubic-bezier(.22,.75,.28,1) both;
+  animation-duration:260ms !important;
+}
+.entry-curtain:not(.entry-curtain--out).entry-curtain--revealing {
+  animation:workspace-enter-reveal 620ms cubic-bezier(.22,.75,.28,1) both;
+  animation-duration:620ms !important;
+}
+@keyframes workspace-enter-cover { from { opacity:0; } to { opacity:1; } }
+@keyframes workspace-enter-reveal { from { opacity:1; } to { opacity:0; } }
+@media (prefers-reduced-motion:reduce) {
+  .entry-curtain:not(.entry-curtain--out).entry-curtain--covering { animation-duration:80ms !important; }
+  .entry-curtain:not(.entry-curtain--out).entry-curtain--revealing { animation-duration:100ms !important; }
+}
+
 @keyframes entry-gateway-arrive { from { opacity:0; } 75%, to { opacity:1; } }
 @keyframes entry-gateway-handoff { from { opacity:1; } to { opacity:1; } }
 @keyframes entry-gateway-open { from { r:0; } to { r:var(--gateway-radius,100vmax); } }
@@ -37,11 +79,11 @@
 @keyframes entry-brand-arrive { from { opacity:0; transform:translateY(16px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
 @keyframes entry-brand-depart { from { opacity:1; transform:scale(1); } to { opacity:0; transform:scale(1.1); } }
 
-.portal-page--entering .portal-header { animation:portal-header-enter 360ms 520ms ease-out both; animation-duration:360ms !important; }
-.portal-page--entering .portal-intro { animation:portal-title-enter 640ms 360ms cubic-bezier(.16,1,.3,1) both; animation-duration:640ms !important; }
 @media (prefers-reduced-motion:no-preference) {
-  .portal-page--entering .workspace-map-link { animation:portal-station-enter 420ms var(--station-delay) cubic-bezier(.16,1,.3,1) both; }
-  .portal-page--entering .workspace-map-geometry { animation:portal-header-enter 480ms 360ms ease-out both; }
+  .portal-page--entering .portal-header { animation:portal-header-enter 300ms 40ms ease-out both; }
+  .portal-page--entering .portal-intro { animation:portal-title-enter 500ms 60ms cubic-bezier(.16,1,.3,1) both; }
+  .portal-page--entering .workspace-map-link { animation:portal-station-enter 340ms calc(160ms + var(--station-delay)) cubic-bezier(.16,1,.3,1) both; }
+  .portal-page--entering .workspace-map-geometry { animation:portal-header-enter 420ms 100ms ease-out both; }
 }
 @keyframes portal-header-enter { from { opacity:0; } to { opacity:1; } }
 @keyframes portal-title-enter { from { opacity:0; transform:translateY(34px); } to { opacity:1; transform:translateY(0); } }
@@ -53,7 +95,7 @@
   .entry-gateway-caption { width:86%; margin-top:24px; font-size:8px; gap:12px; }
 }
 
-/* Sign out closes the gateway around the map before revealing home. */
+/* Returning to Welcome closes the gateway around the map before revealing home. */
 .entry-curtain--out.entry-curtain--covering { animation:entry-exit-clock 700ms linear both; animation-duration:700ms !important; }
 .entry-curtain--out.entry-curtain--covering .entry-gateway-hole {
   animation:entry-gateway-close 450ms 250ms cubic-bezier(.65,0,.35,1) both;

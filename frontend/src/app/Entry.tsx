@@ -1,10 +1,11 @@
-import type { AuthOptions } from '@dimension-lab/contracts';
 import { useAppLanguage } from "../shared/providers/WelcomeLanguage";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Welcome } from '../features/welcome/Welcome';
-import { clearDemoSession, getAccessToken, hasDemoSession, saveDemoSession } from '../shared/api/demoSession';
-import { fetchWithTimeout, SESSION_EXPIRED_EVENT } from '../shared/api/network';
-import { getApiDataRecord } from '../shared/api/typeGuards';
+import { TeamLogo } from '../shared/ui/TeamLogo';
+import { clearDemoSession, getAccessToken, saveDemoSession } from '../shared/api/demoSession';
+import { SESSION_EXPIRED_EVENT } from '../shared/api/network';
+import { logout } from '../features/auth/authApi';
+import { useAuthSession } from '../features/auth/useAuthSession';
 import { Portal } from '../features/portal/Portal';
 import { isModelRoute, isWelcomeRoute, portalRoute, signInDestination, type PortalRoute, type PortalSection } from '../shared/navigation/portalNavigation';
 import { captureSectionSource, shouldAnimateLink, type SectionNavigation } from '../features/portal/navigation/sectionTransition';
@@ -15,14 +16,14 @@ const Workspace = lazy(() => import('./App'));
 type EntrancePhase = 'idle' | 'covering' | 'revealing';
 type EntranceDirection = 'in' | 'out';
 
-const glassControlSelector = 'button:not(.workspace-scrim, .globe-capital-marker, .portal-signout, .theme-toggle, .welcome-primary, .login-page button, .globe-mode-option), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
+const glassControlSelector = '.control-glass, .liquid-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home, .theme-toggle, .welcome-primary, .login-page button, .globe-mode-option), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
 
 export function Entry() {
   const { tr, t } = useAppLanguage();
-  const [signedIn, setSignedIn] = useState(false);
-  const [authOptions, setAuthOptions] = useState<AuthOptions | null>(null);
+  const { signedIn, setSignedIn, authOptions } = useAuthSession();
   const [signOutError, setSignOutError] = useState(false);
   const signingOut = useRef(false);
+  const [logoutPending, setLogoutPending] = useState(false);
   const [hash, setHash] = useState(() => window.location.hash);
   const atWelcome = isWelcomeRoute(hash);
   const route = portalRoute(hash);
@@ -41,6 +42,8 @@ export function Entry() {
   const showPortal = signedIn && !atWelcome;
   const openingId = sectionNavigation?.phase === 'covering' ? sectionNavigation.section?.id : undefined;
   const modelActive = showPortal && isModelRoute(route);
+  const libraryActive = showPortal && route === 'library';
+  const [importsHost, setImportsHost] = useState<HTMLDivElement | null>(null);
   const [modelVisited, setModelVisited] = useState(modelActive);
   useEffect(() => {
     const navigate = () => {
@@ -54,7 +57,7 @@ export function Entry() {
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
-  useEffect(() => { if (modelActive) setModelVisited(true); }, [modelActive]);
+  useEffect(() => { if (modelActive || libraryActive) setModelVisited(true); }, [modelActive, libraryActive]);
   useEffect(() => {
     const expire = () => {
       entrancePhaseRef.current = 'idle'; setEntrancePhase('idle');
@@ -65,40 +68,7 @@ export function Entry() {
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, expire);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
-  }, []);
-  useEffect(() => {
-    const controller = new AbortController();
-    const signal = controller.signal;
-    void (async () => {
-      const response = await fetchWithTimeout('/api/auth/options', { signal }, 5000);
-      if (!response.ok) throw new Error('Could not read sign-in options.');
-      const data = getApiDataRecord(await response.json());
-      if (signal.aborted) return;
-      if (data?.mode === 'atlas') {
-        clearDemoSession();
-        setSignedIn(false);
-      }
-      setAuthOptions({
-        mode: data?.mode === 'atlas' ? 'atlas' : 'demo',
-        google: data?.google === true,
-        registration: data?.registration === true,
-      });
-      if (data?.mode !== 'atlas' && !getAccessToken()) {
-        setSignedIn(hasDemoSession());
-        return;
-      }
-      const session = await fetchWithTimeout('/api/auth/me', { signal });
-      if (!session.ok) return;
-      const current = getApiDataRecord(await session.json());
-      if (!signal.aborted) setSignedIn(current?.authenticated === true);
-    })().catch(() => {
-      if (!signal.aborted) {
-        setAuthOptions(options => options ?? { mode: 'demo', google: false, registration: false });
-        setSignedIn(hasDemoSession());
-      }
-    });
-    return () => controller.abort();
-  }, []);
+  }, [setSignedIn]);
   const coverSection = useCallback((id: number) => {
     const pending = navigationRef.current;
     if (!pending || pending.id !== id || pending.phase !== 'covering') return;
@@ -154,34 +124,25 @@ export function Entry() {
       if (entranceDirectionRef.current === 'in') {
         const destination = signInDestination(window.location.hash);
         window.location.hash = destination;
-        setHash(destination); setWorkspaceEntering(destination === '#/overview'); setSignedIn(true); setHomeArrival(null);
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        setHash(destination); setWorkspaceEntering(destination === '#/overview' && !reducedMotion); setSignedIn(true); setHomeArrival(null);
       } else {
-        setSignedIn(false); setModelVisited(false); window.location.hash = ''; setHash('');
+        // Leaving the workspace returns to the welcome page without ending the session.
+        window.location.hash = ''; setHash('');
       }
       setEntrancePhase('revealing');
     } else if (entrancePhaseRef.current === 'revealing') {
       entrancePhaseRef.current = 'idle'; setEntrancePhase('idle');
     }
-  }, []);
+  }, [setSignedIn]);
   const signIn = (token?: string | null) => {
     if (entrancePhaseRef.current !== 'idle') return;
     if (token !== undefined) saveDemoSession(token);
     entranceDirectionRef.current = 'in'; setEntranceDirection('in');
     entrancePhaseRef.current = 'covering'; setEntrancePhase('covering');
   };
-  const signOut = async () => {
-    if (!signedIn || signingOut.current || entrancePhaseRef.current !== 'idle') return;
-    setSignOutError(false);
-    if (authOptions?.mode === 'atlas' || getAccessToken()) {
-      signingOut.current = true;
-      try {
-        const response = await fetchWithTimeout('/api/auth/logout', { method: 'POST' });
-        if (!response.ok && response.status !== 401) throw new Error('Sign-out failed.');
-      } catch {
-        setSignOutError(true);
-        return;
-      } finally { signingOut.current = false; }
-    }
+  const returnToWelcome = () => {
+    if (!signedIn || atWelcome || entrancePhaseRef.current !== 'idle') return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const bounds = document.querySelector('.workspace-directory')?.getBoundingClientRect();
     if (bounds?.width && bounds.height) setExitCenter({
@@ -193,12 +154,29 @@ export function Entry() {
     entranceDirectionRef.current = 'out'; setEntranceDirection('out');
     entrancePhaseRef.current = 'covering'; setEntrancePhase('covering'); setWorkspaceEntering(false);
     navigationRef.current = null; setSectionNavigation(null); setArrivingRoute(null);
-    // End the persisted session immediately; the old UI only remains for its exit.
-    clearDemoSession();
     void import('../features/welcome/globe/DataGlobe').catch(() => undefined);
   };
+  const signOut = async () => {
+    if (!signedIn || !atWelcome || signingOut.current || entrancePhaseRef.current !== 'idle') return;
+    signingOut.current = true;
+    setLogoutPending(true);
+    setSignOutError(false);
+    const revealWelcomeAt = performance.now() + 3500;
+    try {
+      if (authOptions?.mode === 'atlas' || getAccessToken()) await logout();
+      clearDemoSession();
+      setSignedIn(false); setModelVisited(false);
+      const remaining = revealWelcomeAt - performance.now();
+      if (remaining > 0) await new Promise<void>(resolve => window.setTimeout(resolve, remaining));
+    } catch {
+      setSignOutError(true);
+    } finally {
+      signingOut.current = false;
+      setLogoutPending(false);
+    }
+  };
   useEffect(() => {
-    if (signedIn || entranceDirection !== 'out' || entrancePhase !== 'idle') return;
+    if (entranceDirection !== 'out' || entrancePhase !== 'idle') return;
     document.querySelector<HTMLButtonElement>('.welcome-actions .welcome-primary')?.focus({ preventScroll: true });
   }, [signedIn, entranceDirection, entrancePhase]);
   useEffect(() => {
@@ -227,7 +205,7 @@ export function Entry() {
     const moveGlassHighlight = (event: PointerEvent) => {
       if (event.pointerType === 'touch' || reduceMotion.matches || !(event.target instanceof Element)) return;
       const control = event.target.closest<HTMLElement>(glassControlSelector);
-      if (!control || control.closest('.welcome-exploration-controls') || control.matches(':disabled, [aria-disabled="true"]')) return;
+      if (!control || control.matches(':disabled, [aria-disabled="true"]')) return;
       const bounds = control.getBoundingClientRect();
       control.style.setProperty('--glass-x', `${event.clientX - bounds.left}px`);
       control.style.setProperty('--glass-y', `${event.clientY - bounds.top}px`);
@@ -238,25 +216,29 @@ export function Entry() {
   }, []);
 
   return <>
-    <div className="entry-screen" inert={transitioning} onClickCapture={captureReturn}
+    <div className="entry-screen" inert={transitioning || logoutPending} onClickCapture={captureReturn}
       data-transition={entrancePhase !== 'idle' ? entranceDirection : undefined}
       data-transition-phase={entrancePhase !== 'idle' ? entrancePhase : undefined}
       data-transition-motion={exitReducedMotion ? 'gentle' : 'full'}>
       {showPortal ? <>
-        {!modelActive && <Portal key={route} route={route} hash={hash} onSignOut={() => void signOut()} entering={workspaceEntering} interactive={!transitioning}
+        {!modelActive && <Portal key={route} route={route} hash={hash} onReturnToWelcome={returnToWelcome} entering={workspaceEntering} interactive={!transitioning}
           onOpenSection={openSection} {...(openingId !== undefined && { openingId })}
           sectionEntering={arrivingRoute === route && route !== 'overview'} returning={arrivingRoute === 'overview'}
-          titleInTransit={Boolean(sectionNavigation?.source?.title && sectionNavigation.phase === 'revealing')} />}
-      </> : <Welcome onSignIn={signIn} signedIn={signedIn} arrival={homeArrival} authOptions={authOptions} />}
-      {signedIn && (modelVisited || modelActive) && <div className={'model-session' + (modelActive && arrivingRoute === route ? ' model-session--arriving' : '')} hidden={!modelActive}>
-        <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} persistent={authOptions?.mode === 'atlas'} /></Suspense>
+          titleInTransit={Boolean(sectionNavigation?.source?.title && sectionNavigation.phase === 'revealing')} onImportsHost={setImportsHost} />}
+      </> : <Welcome onSignIn={signIn} onSignOut={() => void signOut()} signedIn={signedIn} arrival={homeArrival} authOptions={authOptions} />}
+      {signedIn && (modelVisited || modelActive || libraryActive) && <div className={'model-session' + (modelActive && arrivingRoute === route ? ' model-session--arriving' : '')} hidden={!modelActive}>
+        <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} persistent={authOptions?.mode === 'atlas'} importsHost={libraryActive ? importsHost : null} /></Suspense>
       </div>}
     </div>
+    <div className="welcome-signout-veil" data-active={logoutPending} aria-hidden="true">
+      <div className="welcome-signout-mark"><TeamLogo /><span /></div>
+    </div>
+    {logoutPending && <p className="entry-transition-status" role="status">{t('Signing out…', 'Đang đăng xuất…')}</p>}
     {signOutError && <div className="workspace-notice fixed bottom-4 right-4 z-[70] rounded border bg-[var(--bg-panel)] p-3" role="alert">{t('Could not sign out. Please try again.', 'Chưa thể đăng xuất. Hãy thử lại.')}</div>}
     {entrancePhase !== 'idle' && <>
       <WorkspaceEntrance phase={entrancePhase} onComplete={advanceEntrance} direction={entranceDirection}
         {...(entranceDirection === 'out' && { center: exitCenter })} reducedMotion={entranceDirection === 'out' && exitReducedMotion} />
-      <p className="entry-transition-status" role="status">{entranceDirection === 'out' ? tr("Signing out. Returning to Dimension Lab…") : tr("Entering Workspace…")}</p>
+      <p className="entry-transition-status" role="status">{entranceDirection === 'out' ? tr("Returning to the welcome page…") : tr("Entering Workspace…")}</p>
     </>}
     {sectionNavigation && <>
       <SectionTransition navigation={sectionNavigation} onCovered={coverSection} onComplete={completeSection} />

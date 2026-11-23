@@ -9,6 +9,8 @@ import {
   ExperimentRecord,
   JsonValue,
   SystemHealth,
+  getSampleDataset,
+  sampleDatasets,
 } from '@dimension-lab/contracts';
 import { parseCSVString } from '@dimension-lab/algorithms/dataParser';
 
@@ -42,7 +44,7 @@ export async function initDatabase() {
 }
 
 export function isSampleDataset(id: string) {
-  return id === 'cancer_wdbc' || id === 'wholesale_customers';
+  return getSampleDataset(id) !== undefined;
 }
 
 export function listDemoDatasets() {
@@ -58,8 +60,8 @@ export function getDemoDataset(id: string) {
 }
 
 export function getDemoFile(id: string) {
-  const sample = isSampleDataset(id) && getDemoDataset(id);
-  return sample ? fs.createReadStream(findDatasetFilePath(sample.filename)) : memoryStore.files.get(id);
+  const sample = getSampleDataset(id);
+  return sample ? fs.createReadStream(findDatasetFilePath(sample.assetPath)) : memoryStore.files.get(id);
 }
 
 export function saveDemoDataset(dataset: DatasetDocument, content: Buffer) {
@@ -158,39 +160,20 @@ function findDatasetFilePath(filename: string): string {
 }
 
 async function seedInitialDatasetMemory() {
-  const cancerCsvPath = findDatasetFilePath('data.csv');
-  if (fs.existsSync(cancerCsvPath)) {
-    const csvContent = fs.readFileSync(cancerCsvPath, 'utf-8');
-    const parsed = parseCSVString(csvContent, 'Wisconsin Breast Cancer');
-
-    memoryStore.datasets.set('cancer_wdbc', {
-      id: 'cancer_wdbc',
-      name: 'Wisconsin Breast Cancer',
-      filename: 'data.csv',
+  for (const sample of sampleDatasets) {
+    const file = findDatasetFilePath(sample.assetPath);
+    if (!fs.existsSync(file)) continue;
+    const parsed = parseCSVString(fs.readFileSync(file, 'utf-8'), sample.name);
+    memoryStore.datasets.set(sample.id, {
+      id: sample.id,
+      name: sample.name,
+      filename: sample.filename,
       totalRows: parsed.totalRows,
       features: parsed.featureColumns,
       labelColumn: parsed.labelColumn,
       idColumn: parsed.idColumn,
       rawRows: parsed.rawRows,
-      createdAt: new Date('2024-01-01T00:00:00.000Z').toISOString(),
-    });
-  }
-
-  const wholesaleCsvPath = findDatasetFilePath('wholesale.csv');
-  if (fs.existsSync(wholesaleCsvPath)) {
-    const csvContent = fs.readFileSync(wholesaleCsvPath, 'utf-8');
-    const parsed = parseCSVString(csvContent, 'Wholesale Customers');
-
-    memoryStore.datasets.set('wholesale_customers', {
-      id: 'wholesale_customers',
-      name: 'Wholesale Customers',
-      filename: 'wholesale.csv',
-      totalRows: parsed.totalRows,
-      features: parsed.featureColumns,
-      labelColumn: parsed.labelColumn,
-      idColumn: parsed.idColumn,
-      rawRows: parsed.rawRows,
-      createdAt: new Date('2024-01-02T00:00:00.000Z').toISOString(),
+      createdAt: new Date(sample.created_at).toISOString(),
     });
   }
 }

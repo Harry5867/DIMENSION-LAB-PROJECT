@@ -18,7 +18,7 @@ import { associationExample, exampleTransactions, theoryChapters, theoryHref, th
 import { computeApriori } from '@dimension-lab/algorithms/apriori';
 import { parseWelcomePreferences, resolveWelcomeTheme } from '../../frontend/src/shared/preferences/welcomePreferences';
 import { readThemeMode, resolveTheme, themePreferenceKey } from '../../frontend/src/shared/preferences/themePreferences';
-import { shouldPlayGenesis, genesisBrandPath, genesisDuration, genesisFrame, genesisGrowthStart, genesisImpact, genesisImpactPoint, genesisLogoOrbitEnd, genesisReturnEnd, genesisSatelliteEnd, genesisScanEnd, genesisSignalStart, genesisProjection } from '../../frontend/src/features/welcome/animations/welcomeGenesis';
+import { shouldPlayGenesis, genesisBrandPath, genesisDuration, genesisFrame, genesisGrowthStart, genesisImpact, genesisImpactPoint, genesisLogoFormationEnd, genesisReturnEnd, genesisSatelliteEnd, genesisScanEnd, genesisSignalStart, genesisProjection } from '../../frontend/src/features/welcome/animations/welcomeGenesis';
 import { createEarthRenderer } from '../../frontend/src/features/welcome/globe/globeScene';
 
 test('a fresh Welcome plays its intro automatically unless it is returning or reduced motion is enabled', () => {
@@ -79,7 +79,8 @@ test('the Canvas fallback reveals the live points in place and preserves their a
 test('Welcome intro scans the globe, circles it once, and forms the logo before enlarging the globe', () => {
   const opening = genesisFrame(.12);
   assert.equal(opening.phase, 'empty');
-  for (const value of [opening.silhouette, opening.atmosphere, opening.scanGlow, opening.satelliteTurns, opening.returning, opening.logoOrbit, opening.logo]) assert.equal(value, 0);
+  for (const value of [opening.silhouette, opening.atmosphere, opening.scanGlow, opening.satelliteTurns, opening.returning, opening.logo]) assert.equal(value, 0);
+  assert.deepEqual(opening.logoSegments, [0, 0, 0, 0, 0, 0]);
   const globe = genesisFrame(.54);
   assert.equal(globe.phase, 'globe');
   assert.ok(globe.silhouette > 0 && globe.silhouette < 1);
@@ -108,17 +109,19 @@ test('Welcome intro scans the globe, circles it once, and forms the logo before 
   const returning = genesisFrame((genesisSatelliteEnd + genesisReturnEnd) / 2);
   assert.equal(returning.phase, 'return');
   assert.ok(returning.returning > 0 && returning.returning < 1);
-  assert.equal(returning.logoOrbit, 0);
+  assert.deepEqual(returning.logoSegments, opening.logoSegments);
   assert.equal(returning.logo, 0);
-  const tracing = genesisFrame((genesisReturnEnd + genesisLogoOrbitEnd) / 2);
-  assert.equal(tracing.phase, 'logo');
-  assert.equal(tracing.returning, 1);
-  assert.ok(tracing.logoOrbit > 0 && tracing.logoOrbit < 1);
-  assert.equal(tracing.logo, 0);
-  const forming = genesisFrame((genesisLogoOrbitEnd + genesisGrowthStart) / 2);
-  assert.equal(forming.logoOrbit, 1);
-  assert.ok(forming.logo > 0 && forming.logo < 1);
-  assert.equal(forming.growth, 0);
+  const unfolding = genesisFrame(genesisReturnEnd + .20);
+  assert.equal(unfolding.phase, 'logo');
+  assert.equal(unfolding.returning, 1);
+  assert.ok(unfolding.logoSegments[0] > unfolding.logoSegments[1]);
+  assert.ok(unfolding.logoSegments[1] > unfolding.logoSegments[2]);
+  assert.equal(unfolding.logoSegments[5], 0);
+  assert.equal(unfolding.logo, 0);
+  const handoff = genesisFrame(genesisLogoFormationEnd);
+  assert.deepEqual(handoff.logoSegments, [1, 1, 1, 1, 1, 1]);
+  assert.ok(handoff.logo > 0 && handoff.logo < 1);
+  assert.equal(handoff.growth, 0);
   const growthStart = genesisFrame(genesisGrowthStart);
   assert.equal(growthStart.phase, 'grow');
   assert.equal(growthStart.logo, 1);
@@ -129,7 +132,7 @@ test('Welcome intro scans the globe, circles it once, and forms the logo before 
   assert.equal(genesisFrame(genesisDuration - .01).complete, false);
   const completed = genesisFrame(genesisDuration + 1);
   assert.equal(completed.phase, 'complete');
-  for (const value of [completed.grid, completed.borders, completed.returning, completed.logoOrbit, completed.logo, completed.growth]) assert.equal(value, 1);
+  for (const value of [completed.grid, completed.borders, completed.returning, completed.logo, completed.growth]) assert.equal(value, 1);
   assert.equal(completed.scanGlow, 0);
 });
 
@@ -183,8 +186,7 @@ test('the stream crosses the globe and hands off to the satellite at the end of 
     assert.ok((launch.x - approaching.x) * (leaving.x - launch.x) + (launch.y - approaching.y) * (leaving.y - launch.y) > 0);
     assert.ok(launch.y < bottom.y && bottom.y < height);
     assert.ok(launch.x > bottom.x && launch.x > arrival.x);
-    assert.ok(arrival.x >= logo.left - host.left && arrival.x <= logo.left - host.left + logo.width);
-    assert.ok(arrival.y >= logo.top - host.top && arrival.y <= logo.top - host.top + logo.height);
+    assert.deepEqual(arrival, { x: logo.left - host.left + logo.width / 2, y: logo.top - host.top + logo.height / 2 });
   }
 });
 
@@ -448,7 +450,7 @@ test('portal separates content pages and legacy workspace routes, with a safe ov
   assert.equal(portalSections.length, 5);
   assert.equal(new Set(portalSections.map(section => section.href)).size, 5);
   assert.deepEqual(portalSections.map(section => isModelRoute(portalRoute(section.href))), [false, true, false, false, false]);
-  for (const route of ['explore', 'datasets', 'methods', 'experiments']) assert.equal(isModelRoute(portalRoute('#/' + route)), true);
+  for (const route of ['explore', 'datasets', 'methods', 'experiments', 'dashboard']) assert.equal(isModelRoute(portalRoute('#/' + route)), true);
   for (const hash of ['', '#/', '#/missing', '#portal-main', '#/overview/extra']) assert.equal(portalRoute(hash), 'overview');
   assert.equal(portalRoute('#/library?example=1'), 'library');
 });
@@ -487,7 +489,10 @@ test('malformed and unknown profiles stay in About while other sign-in destinati
 });
 
 test('prepared data stories reproduce PCA and seeded GMM from the exact bundled source files', () => {
-  assert.deepEqual(caseStudies.map(story => story.rowCount), [569, 440]);
+  assert.deepEqual(caseStudies.map(story => [story.id, story.rowCount]), [
+    ['cancer_wdbc', 569], ['wholesale_customers', 440], ['palmer_penguins', 344],
+    ['wheat_seeds', 210], ['banknote_authentication', 900], ['smartphone_activity', 600], ['handwritten_digits', 900],
+  ]);
   for (const story of caseStudies) {
     const csv = readFileSync(new URL('../../public/' + story.file, import.meta.url), 'utf8');
     assert.equal(createHash('sha256').update(csv).digest('hex'), story.sourceHash);
