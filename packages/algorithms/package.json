@@ -7,6 +7,6 @@
   },
   "dependencies": {
     "@dimension-lab/contracts": "*",
-    "papaparse": "^5.4.1"
+    "papaparse": "^5.7.1"
   }
 }
