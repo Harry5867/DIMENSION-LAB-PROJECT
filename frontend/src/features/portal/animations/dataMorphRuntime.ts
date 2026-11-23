@@ -29,10 +29,17 @@ function writePose(buffer: Float32Array, sources: readonly Float32Array[], pose:
 }
 
 function colorBuffers(shapes: MorphShape[], theme: 'light' | 'dark') {
-  const color = new THREE.Color();
+  const palette = new Map<string, THREE.Color>();
   return shapes.map(shape => {
     const buffer = new Float32Array(shape.positions.length);
-    shape.colors.forEach((hex, index) => color.set(morphDisplayColor(hex, theme)).toArray(buffer, index * 3));
+    shape.colors.forEach((hex, index) => {
+      let color = palette.get(hex);
+      if (!color) {
+        color = new THREE.Color(morphDisplayColor(hex, theme));
+        palette.set(hex, color);
+      }
+      color.toArray(buffer, index * 3);
+    });
     return buffer;
   });
 }
@@ -45,20 +52,38 @@ function associationOpacity({ from, to, blend }: MorphBlend) {
 // Fit all scene points across the full gentle rotation range, rather than
 // zooming a fixed camera until wide PCA or GMM previews get cropped.
 export function morphCameraDistance(shapes: MorphShape[], aspect: number) {
-  const matrix = new THREE.Matrix4(), point = new THREE.Vector3(), rotation = new THREE.Euler();
+  const matrix = new THREE.Matrix4(), rotation = new THREE.Euler();
   const tan = Math.tan(Math.PI / 10), ratio = Math.max(.1, aspect);
   const pitch = morphSettings.idlePitch + particleStyle.pointerPitch;
   const yaw = morphSettings.idleYaw + particleStyle.pointerYaw;
+  const breath = 1 + morphSettings.breathe;
+  const widthFactor = 1.075 / (tan * ratio), heightFactor = 1.1 / tan;
   let distance = 3.8;
   for (const x of [-.1 - pitch, -.1 + pitch]) for (const y of [-yaw, 0, yaw]) for (const z of [-.04, 0, .04]) {
-    matrix.makeRotationFromEuler(rotation.set(x, y, z));
-    for (const shape of shapes) for (let i = 0; i < shape.positions.length; i += 3) {
-      point.fromArray(shape.positions, i).applyMatrix4(matrix).multiplyScalar(1 + morphSettings.breathe);
-      const dx = Math.abs(point.x) + .035, dy = Math.abs(point.y + .1) + .035 + morphSettings.bob;
-      distance = Math.max(distance, point.z + Math.max(dx * 1.075 / (tan * ratio), dy * 1.1 / tan));
+    const m = matrix.makeRotationFromEuler(rotation.set(x, y, z)).elements;
+    // This matrix only rotates. Apply its affine terms directly to each point.
+    for (const { positions } of shapes) for (let i = 0; i < positions.length; i += 3) {
+      const a = positions[i]!, b = positions[i + 1]!, c = positions[i + 2]!;
+      const px = (m[0]! * a + m[4]! * b + m[8]! * c) * breath;
+      const py = (m[1]! * a + m[5]! * b + m[9]! * c) * breath;
+      const pz = (m[2]! * a + m[6]! * b + m[10]! * c) * breath;
+      const dx = Math.abs(px) + .035, dy = Math.abs(py + .1) + .035 + morphSettings.bob;
+      distance = Math.max(distance, pz + Math.max(dx * widthFactor, dy * heightFactor));
     }
   }
   return distance;
+}
+
+// The renderer uses a small set of fixed point budgets. Keep the prepared
+// shapes across visits without retaining a WebGL context while off screen.
+const preparedShapes = new Map<number, ReturnType<typeof prepareMorphShapes>>();
+function shapesForBudget(count: number) {
+  let prepared = preparedShapes.get(count);
+  if (!prepared) {
+    prepared = prepareMorphShapes(count);
+    preparedShapes.set(count, prepared);
+  }
+  return prepared;
 }
 
 const vertexShader = `
@@ -152,7 +177,7 @@ function createWebGLSurface(host: HTMLElement): Surface {
         // Release the previous buffers before a responsive particle-count change.
         geometry.dispose();
         count = budget.count;
-        const prepared = prepareMorphShapes(count); shapes = prepared.shapes;
+        const prepared = shapesForBudget(count); shapes = prepared.shapes;
         positionArrays = shapes.map(shape => shape.positions);
         const associationScale = prepared.scales.at(-1) ?? 1;
         associationEdges.forEach(([from, to], i) => {
@@ -197,7 +222,7 @@ function createWebGLSurface(host: HTMLElement): Surface {
 function createCanvasSurface(host: HTMLElement): Surface {
   const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { alpha: true });
   host.appendChild(canvas);
-  const prepared = prepareMorphShapes(morphSettings.fallbackPoints);
+  const prepared = shapesForBudget(morphSettings.fallbackPoints);
   const shapes = prepared.shapes;
   const positions = shapes.map(shape => shape.positions);
   let width = 0, height = 0, lineColor = '#719087', yaw = 0, pitch = 0;

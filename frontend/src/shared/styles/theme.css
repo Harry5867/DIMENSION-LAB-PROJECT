@@ -64,9 +64,6 @@ html[data-theme=dark] :is(.theory-caution,.theory-example-result) { background:#
 html[data-theme=dark] .theory-practice-link:hover { background:#284032; }
 html[data-theme=dark] .theory-reader h3 > span, html[data-theme=dark] .theory-knowledge li::marker { color:#a6c1aa; }
 html[data-theme=dark] .entry-loading { background:#101815; color:#b9c9bd; }
-html[data-theme=dark] .entry-curtain { color:#c6e0cb; }
-html[data-theme=dark] .entry-gateway-nodes { fill:#9ec1a7; }
-html[data-theme=dark] .entry-gateway-slash { color:#9fc3a4; }
 html[data-theme=dark] :is(.analysis-dirty,.workspace-notice[data-type=info]) { background:#302d20; color:#e1ce9d; border-color:#786a43; }
 html[data-theme=dark] .workspace-layout { --plot-bg:#101815; }
 html[data-theme=dark] .explorer-app { --glass-hover:#294638; --glass-lens:linear-gradient(145deg,#92b7a028,transparent 56%,#08100b26); --glass-rim:inset 1px 1px 1px #86ac922e,inset -1px -1px 2px #0005,0 2px 5px #0003; }

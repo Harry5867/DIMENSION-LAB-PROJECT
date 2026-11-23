@@ -10,36 +10,37 @@ import { Portal } from '../features/portal/Portal';
 import { isModelRoute, isWelcomeRoute, portalRoute, signInDestination, type PortalRoute, type PortalSection } from '../shared/navigation/portalNavigation';
 import { captureSectionSource, shouldAnimateLink, type SectionNavigation } from '../features/portal/navigation/sectionTransition';
 import { WorkspaceEntrance } from '../features/portal/animations/WorkspaceEntrance';
+import { workspaceFlightTiming, type WorkspaceEntrancePhase, type WorkspaceFlightDirection } from '../features/portal/animations/WorkspaceFlight';
 import { SectionTransition } from '../features/portal/animations/SectionTransition';
 import '../features/portal/styles/workspace-entrance.css';
 const Workspace = lazy(() => import('./App'));
-type EntrancePhase = 'idle' | 'covering' | 'revealing';
-type EntranceDirection = 'in' | 'out';
+type EntrancePhase = 'idle' | WorkspaceEntrancePhase;
 
 const glassControlSelector = '.control-glass, .liquid-glass, button:not(.workspace-scrim, .globe-capital-marker, .portal-return-home, .theme-toggle, .welcome-primary, .login-page button, .globe-mode-option), summary:not(.portal-flat-summary), a.lab-action, .workspace-header nav > a, .workspace-directory-icon';
 
 export function Entry() {
   const { tr, t } = useAppLanguage();
-  const { signedIn, setSignedIn, authOptions } = useAuthSession();
+  const { signedIn, setSignedIn, authOptions, sessionChecked } = useAuthSession();
   const [signOutError, setSignOutError] = useState(false);
   const signingOut = useRef(false);
   const [logoutPending, setLogoutPending] = useState(false);
   const [hash, setHash] = useState(() => window.location.hash);
+  const [googleArrival, setGoogleArrival] = useState(() =>
+    window.location.hash === '#/overview' && new URLSearchParams(window.location.search).get('auth') === 'google-success');
   const atWelcome = isWelcomeRoute(hash);
   const route = portalRoute(hash);
   const [entrancePhase, setEntrancePhase] = useState<EntrancePhase>('idle');
   const entrancePhaseRef = useRef<EntrancePhase>('idle');
-  const [entranceDirection, setEntranceDirection] = useState<EntranceDirection>('in');
-  const entranceDirectionRef = useRef<EntranceDirection>('in');
-  const [exitReducedMotion, setExitReducedMotion] = useState(false);
-  const [exitCenter, setExitCenter] = useState({ x: .72, y: .52 });
+  const [entranceDirection, setEntranceDirection] = useState<WorkspaceFlightDirection>('in');
+  const entranceDirectionRef = useRef<WorkspaceFlightDirection>('in');
+  const [transitionReducedMotion, setTransitionReducedMotion] = useState(false);
   const [homeArrival, setHomeArrival] = useState<'full' | 'gentle' | null>(null);
   const [workspaceEntering, setWorkspaceEntering] = useState(false);
   const [sectionNavigation, setSectionNavigation] = useState<SectionNavigation | null>(null);
   const navigationRef = useRef<SectionNavigation | null>(null), navigationSerial = useRef(0);
   const [arrivingRoute, setArrivingRoute] = useState<PortalRoute | null>(null);
   const transitioning = entrancePhase !== 'idle' || sectionNavigation !== null;
-  const showPortal = signedIn && !atWelcome;
+  const showPortal = signedIn && !atWelcome && !googleArrival;
   const openingId = sectionNavigation?.phase === 'covering' ? sectionNavigation.section?.id : undefined;
   const modelActive = showPortal && isModelRoute(route);
   const libraryActive = showPortal && route === 'library';
@@ -62,7 +63,7 @@ export function Entry() {
     const expire = () => {
       entrancePhaseRef.current = 'idle'; setEntrancePhase('idle');
       navigationRef.current = null; setSectionNavigation(null); setArrivingRoute(null);
-      setSignedIn(false); setModelVisited(false);
+      setSignedIn(false); setModelVisited(false); setGoogleArrival(false);
       if (signInDestination(window.location.hash) === '#/overview') window.location.hash = '';
       setHash(window.location.hash);
     };
@@ -119,38 +120,60 @@ export function Entry() {
   }, [modelActive, transitioning]);
   const advanceEntrance = useCallback(() => {
     if (entrancePhaseRef.current === 'covering') {
-      // Switch screens only after the gateway is opaque in either direction.
-      entrancePhaseRef.current = 'revealing';
+      // Switch screens only after the transition overlay is opaque.
+      let next: WorkspaceEntrancePhase = 'revealing';
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (entranceDirectionRef.current === 'in') {
         const destination = signInDestination(window.location.hash);
         window.location.hash = destination;
-        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        setHash(destination); setWorkspaceEntering(destination === '#/overview' && !reducedMotion); setSignedIn(true); setHomeArrival(null);
+        if (destination === '#/overview' && !reducedMotion) next = 'preparing';
+        setHash(destination); setSignedIn(true); setHomeArrival(null);
+        setGoogleArrival(false);
       } else {
         // Leaving the workspace returns to the welcome page without ending the session.
         window.location.hash = ''; setHash('');
+        if (!reducedMotion) next = 'preparing';
       }
+      entrancePhaseRef.current = next;
+      setEntrancePhase(next);
+    } else if (entrancePhaseRef.current === 'preparing') {
+      // Let the destination paint its first frame behind the opaque transition.
+      entrancePhaseRef.current = 'revealing';
       setEntrancePhase('revealing');
+      if (entranceDirectionRef.current === 'in') {
+        setWorkspaceEntering(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      }
     } else if (entrancePhaseRef.current === 'revealing') {
       entrancePhaseRef.current = 'idle'; setEntrancePhase('idle');
     }
   }, [setSignedIn]);
-  const signIn = (token?: string | null) => {
+  const signIn = useCallback((token?: string | null) => {
     if (entrancePhaseRef.current !== 'idle') return;
     if (token !== undefined) saveDemoSession(token);
+    if (signInDestination(window.location.hash) === '#/overview') {
+      void import('../features/portal/animations/dataMorphRuntime').catch(() => undefined);
+    }
+    setTransitionReducedMotion(window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     entranceDirectionRef.current = 'in'; setEntranceDirection('in');
     entrancePhaseRef.current = 'covering'; setEntrancePhase('covering');
-  };
+  }, []);
+  useEffect(() => {
+    if (!googleArrival) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('auth') === 'google-success') {
+      url.searchParams.delete('auth');
+      window.history.replaceState(window.history.state, '', url);
+    }
+    // This query flag controls only the animation. Wait for the server session.
+    if (sessionChecked) {
+      if (signedIn && authOptions?.mode === 'atlas') signIn();
+      else setGoogleArrival(false);
+    }
+  }, [googleArrival, sessionChecked, signedIn, authOptions?.mode, signIn]);
   const returnToWelcome = () => {
     if (!signedIn || atWelcome || entrancePhaseRef.current !== 'idle') return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const bounds = document.querySelector('.workspace-directory')?.getBoundingClientRect();
-    if (bounds?.width && bounds.height) setExitCenter({
-      x: Math.min(.9, Math.max(.1, (bounds.left + bounds.width * .5) / window.innerWidth)),
-      y: Math.min(.9, Math.max(.1, (bounds.top + bounds.height * .46) / window.innerHeight)),
-    });
-    else setExitCenter({ x: .72, y: .52 });
-    setExitReducedMotion(reduced); setHomeArrival(reduced ? 'gentle' : 'full');
+    setTransitionReducedMotion(reduced); setHomeArrival(reduced ? 'gentle' : 'full');
     entranceDirectionRef.current = 'out'; setEntranceDirection('out');
     entrancePhaseRef.current = 'covering'; setEntrancePhase('covering'); setWorkspaceEntering(false);
     navigationRef.current = null; setSectionNavigation(null); setArrivingRoute(null);
@@ -184,13 +207,14 @@ export function Entry() {
     // Animation events normally drive the handoff. Never leave the UI blocked
     // if an animation is cancelled, disabled by a stylesheet, or a tab is hidden.
     const expectedPhase = entrancePhase;
+    const { cover, prepare, reveal } = workspaceFlightTiming[entranceDirection];
+    const duration = entrancePhase === 'covering' ? cover : entrancePhase === 'preparing' ? prepare : reveal;
+    const fallback = transitionReducedMotion ? 220 : duration + 220;
     const timer = window.setTimeout(() => {
       if (entrancePhaseRef.current === expectedPhase) advanceEntrance();
-    }, entranceDirection === 'out'
-      ? exitReducedMotion ? 200 : entrancePhase === 'covering' ? 900 : 500
-      : entrancePhase === 'covering' ? 620 : 1500);
+    }, fallback);
     return () => window.clearTimeout(timer);
-  }, [entrancePhase, entranceDirection, exitReducedMotion, advanceEntrance]);
+  }, [entrancePhase, entranceDirection, transitionReducedMotion, advanceEntrance]);
   useEffect(() => {
     if (!workspaceEntering) return;
     if (route !== 'overview') { setWorkspaceEntering(false); return; }
@@ -219,13 +243,14 @@ export function Entry() {
     <div className="entry-screen" inert={transitioning || logoutPending} onClickCapture={captureReturn}
       data-transition={entrancePhase !== 'idle' ? entranceDirection : undefined}
       data-transition-phase={entrancePhase !== 'idle' ? entrancePhase : undefined}
-      data-transition-motion={exitReducedMotion ? 'gentle' : 'full'}>
-      {showPortal ? <>
+      data-transition-motion={transitionReducedMotion ? 'gentle' : 'full'}>
+      {googleArrival ? <div className="entry-loading" role="status">{tr("Opening your workspace…")}</div> : showPortal ? <>
         {!modelActive && <Portal key={route} route={route} hash={hash} onReturnToWelcome={returnToWelcome} entering={workspaceEntering} interactive={!transitioning}
           onOpenSection={openSection} {...(openingId !== undefined && { openingId })}
           sectionEntering={arrivingRoute === route && route !== 'overview'} returning={arrivingRoute === 'overview'}
           titleInTransit={Boolean(sectionNavigation?.source?.title && sectionNavigation.phase === 'revealing')} onImportsHost={setImportsHost} />}
-      </> : <Welcome onSignIn={signIn} onSignOut={() => void signOut()} signedIn={signedIn} arrival={homeArrival} authOptions={authOptions} />}
+      </> : <Welcome onSignIn={signIn} onSignOut={() => void signOut()} signedIn={signedIn} arrival={homeArrival} authOptions={authOptions}
+        enteringWorkspace={entranceDirection === 'in' && entrancePhase === 'covering'} />}
       {signedIn && (modelVisited || modelActive || libraryActive) && <div className={'model-session' + (modelActive && arrivingRoute === route ? ' model-session--arriving' : '')} hidden={!modelActive}>
         <Suspense fallback={<div className="entry-loading" role="status">{tr("Opening your workspace…")}</div>}><Workspace active={modelActive} persistent={authOptions?.mode === 'atlas'} importsHost={libraryActive ? importsHost : null} /></Suspense>
       </div>}
@@ -237,7 +262,7 @@ export function Entry() {
     {signOutError && <div className="workspace-notice fixed bottom-4 right-4 z-[70] rounded border bg-[var(--bg-panel)] p-3" role="alert">{t('Could not sign out. Please try again.', 'Chưa thể đăng xuất. Hãy thử lại.')}</div>}
     {entrancePhase !== 'idle' && <>
       <WorkspaceEntrance phase={entrancePhase} onComplete={advanceEntrance} direction={entranceDirection}
-        {...(entranceDirection === 'out' && { center: exitCenter })} reducedMotion={entranceDirection === 'out' && exitReducedMotion} />
+        reducedMotion={transitionReducedMotion} />
       <p className="entry-transition-status" role="status">{entranceDirection === 'out' ? tr("Returning to the welcome page…") : tr("Entering Workspace…")}</p>
     </>}
     {sectionNavigation && <>

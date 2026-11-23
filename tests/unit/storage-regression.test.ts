@@ -314,6 +314,7 @@ test('Atlas storage isolates owners, retains original bytes, and never acknowled
   }, redirect(_status: number, url: string) { completedRedirect = url; } };
   await auth.finishGoogleSignIn(callback as any, reply as any);
   assert.match(completedRedirect, /#\/overview/);
+  assert.equal(new URL(completedRedirect).searchParams.get('auth'), 'google-success');
   assert.equal((await auth.atlasSessionUser({ headers: { cookie: 'lab_session=' + sessionKey } } as any))?.id, String(user!._id));
   assert.equal(documents('users').length, 2);
   await auth.finishGoogleSignIn(callback as any, reply as any);

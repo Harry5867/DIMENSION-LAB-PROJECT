@@ -18,6 +18,7 @@ export function WorkspaceDataMorph({ active }: { active: boolean }) {
     const element = host.current;
     if (!element) return;
     let disposed = false, visible = false, pageActive = true;
+    let lastWidth = 0, lastHeight = 0, lastDpr = 0;
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const sync = () => {
       engine.current?.setMotion({
@@ -27,8 +28,12 @@ export function WorkspaceDataMorph({ active }: { active: boolean }) {
     };
     synchronize.current = sync;
     const resize = () => {
+      if (!engine.current) return;
       const bounds = element.getBoundingClientRect();
-      engine.current?.resize(bounds.width, bounds.height, window.devicePixelRatio || 1, navigator.hardwareConcurrency <= 4);
+      const dpr = window.devicePixelRatio || 1;
+      if (bounds.width === lastWidth && bounds.height === lastHeight && dpr === lastDpr) return;
+      lastWidth = bounds.width; lastHeight = bounds.height; lastDpr = dpr;
+      engine.current.resize(lastWidth, lastHeight, lastDpr, navigator.hardwareConcurrency <= 4);
     };
     const pointer = (event: PointerEvent) => {
       if (event.pointerType === 'touch' || preference.matches) return;
