@@ -49,7 +49,7 @@ jobs:
 
       - name: Store browser traces on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: browser-test-results
           path: test-results/
@@ -87,7 +87,7 @@ jobs:
           LAB_DATASET_MAX_FILES: '2'
       - name: Store MongoDB browser traces on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mongo-browser-test-results
           path: test-results/
