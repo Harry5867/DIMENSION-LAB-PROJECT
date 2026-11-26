@@ -6,6 +6,7 @@ import { getAuthOptions, getSession } from './authApi';
 export function useAuthSession() {
   const [signedIn, setSignedIn] = useState(false);
   const [authOptions, setAuthOptions] = useState<AuthOptions | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -29,9 +30,11 @@ export function useAuthSession() {
         setAuthOptions(options => options ?? { mode: 'demo', google: false, registration: false });
         setSignedIn(hasDemoSession());
       }
+    }).finally(() => {
+      if (!signal.aborted) setSessionChecked(true);
     });
     return () => controller.abort();
   }, []);
 
-  return { signedIn, setSignedIn, authOptions };
+  return { signedIn, setSignedIn, authOptions, sessionChecked };
 }

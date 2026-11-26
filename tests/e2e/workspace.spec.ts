@@ -68,7 +68,86 @@ test('manual enrollment verifies a code after the password step and keeps Google
 
 test('signs in to the workspace with the demo account', async ({ page }) => {
   await signIn(page);
+  await expect(page.locator('.entry-flight')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Model', exact: true })).toBeVisible();
+});
+
+test('matches the destination background on both flights and keeps the session', async ({ page }) => {
+  await page.goto('/');
+  const welcomeBackground = await page.locator('.welcome-page').evaluate(element => getComputedStyle(element).backgroundColor);
+  await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
+  const flight = page.locator('.entry-flight');
+  const email = page.getByLabel('Email address', { exact: true });
+  await expect(email).toBeVisible();
+  await expect(flight).toHaveCount(0);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const phases = await page.evaluateHandle(() => {
+    const observed: string[] = [];
+    document.addEventListener('animationstart', (event: AnimationEvent) => {
+      if (event.pseudoElement || !(event.target instanceof HTMLElement) || !event.target.matches('.entry-curtain')) return;
+      const inbound = event.target.matches('.entry-curtain--in');
+      const direction = inbound ? 'in' : 'out';
+      const destination = inbound ? '.portal-page--workspace' : '.welcome-page--returning';
+      if (event.target.matches('.entry-curtain--preparing') && document.querySelector(destination)) {
+        observed.push(`${direction}:prepared`);
+      }
+      if (event.target.matches('.entry-curtain--revealing') && event.target.querySelector('.entry-flight')) {
+        observed.push(`${direction}:revealing`);
+      }
+    });
+    return observed;
+  });
+  await email.fill(DEMO_EMAIL);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByLabel('Password', { exact: true }).fill(DEMO_PASSWORD);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(flight).toBeVisible();
+  const entryBackground = await page.locator('.entry-curtain--in').evaluate(element => getComputedStyle(element).background);
+  await expect(page).toHaveURL(/#\/overview$/);
+  await expect(flight).toHaveCount(0);
+  expect(await phases.jsonValue()).toEqual(['in:prepared', 'in:revealing']);
+  const workspaceBackground = await page.locator('.portal-page--workspace').evaluate(element => getComputedStyle(element).background);
+  expect(entryBackground).toBe(workspaceBackground);
+
+  await page.getByRole('button', { name: 'Back to welcome', exact: true }).click();
+  const returnFlight = page.locator('.entry-curtain--out');
+  await expect(returnFlight.locator('.entry-flight')).toBeVisible();
+  await expect(returnFlight).toHaveCSS('background-color', welcomeBackground);
+  await expect(returnFlight).toHaveCount(0);
+  expect(await phases.jsonValue()).toEqual(['in:prepared', 'in:revealing', 'out:prepared', 'out:revealing']);
+  await phases.dispose();
+  await page.getByRole('button', { name: 'ENTER THE LAB', exact: true }).click();
+  await expect(flight).toBeVisible();
+  await expect(email).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/overview$/);
+  await expect(page.getByRole('navigation', { name: 'Workspace sections' })).toBeVisible();
+});
+
+test('plays the flight once after a verified Google callback', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.route('**/api/auth/options', route => route.fulfill({
+    json: { success: true, data: { mode: 'atlas', google: true, registration: false } },
+  }));
+  let authenticated = false;
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { success: true, data: { authenticated } } }));
+  const flight = page.locator('.entry-flight');
+  const workspace = page.getByRole('navigation', { name: 'Workspace sections' });
+  const callback = '/?auth=google-success#/overview';
+  await page.goto(callback);
+  await expect(page).toHaveURL(/\/#\/overview$/);
+  await expect(page.locator('.welcome-page')).toBeVisible();
+  await expect(workspace).toHaveCount(0);
+  await expect(flight).toHaveCount(0);
+
+  authenticated = true;
+  await page.goto(callback);
+  await expect(flight).toBeVisible();
+  await expect(page).toHaveURL(/\/#\/overview$/);
+  await expect(flight).toHaveCount(0);
+  await expect(workspace).toBeVisible();
+  await page.reload();
+  await expect(workspace).toBeVisible();
+  await expect(flight).toHaveCount(0);
 });
 
 test('rejects incorrect credentials, restores a valid session, and signs out', async ({ page }) => {

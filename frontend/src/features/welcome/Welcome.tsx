@@ -26,8 +26,8 @@ class GlobeBoundary extends Component<{ fallback: ReactNode; onFailure: () => vo
   override componentDidCatch() { this.props.onFailure(); }
   override render() { return this.state.failed ? this.props.fallback : this.props.children; }
 }
-type WelcomeProps = { onSignIn: (token?: string | null) => void; onSignOut?: () => void; signedIn?: boolean; arrival?: 'full' | 'gentle' | null; authOptions?: AuthOptions | null };
-export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOptions = null }: WelcomeProps) {
+type WelcomeProps = { onSignIn: (token?: string | null) => void; onSignOut?: () => void; signedIn?: boolean; arrival?: 'full' | 'gentle' | null; authOptions?: AuthOptions | null; enteringWorkspace?: boolean };
+export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOptions = null, enteringWorkspace = false }: WelcomeProps) {
   const { theme } = useAppTheme();
   const { language, t } = useWelcomeLanguage();
   const [systemReduced, setSystemReduced] = useState(() => window.matchMedia(reducedMotionQuery).matches);
@@ -149,7 +149,7 @@ export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOpt
       <canvas className="welcome-genesis" ref={genesisHost} aria-hidden="true" />
       <div className="genesis-pointer-guard" aria-hidden="true" />
     </>}
-    <DataAtmosphere variant="welcome" active={loginPhase !== 'open' && genesisId === null} />
+    <DataAtmosphere variant="welcome" theme={theme} active={loginPhase !== 'open' && genesisId === null && !enteringWorkspace} />
     <div className="welcome-surface" inert={login || genesisId !== null || signOutConfirmOpen}>
     <header className="welcome-header">
       <a href="#/" className="welcome-brand" aria-label={t('Dimension Lab welcome', 'Trang chủ Dimension Lab')}>
@@ -180,7 +180,7 @@ export function Welcome({ onSignIn, onSignOut, signedIn, arrival = null, authOpt
         fallback={<div className="data-globe globe-loading" role="status">{t('The globe is unavailable.', 'Hiện không tải được quả cầu.')}</div>}
       >
         <Suspense fallback={<div className="data-globe globe-loading" role="status" aria-hidden={genesisId !== null}>{t('Loading the data globe…', 'Đang tải quả cầu dữ liệu…')}</div>}>
-          <DataGlobe suspended={loginPhase === 'open'} motionEnabled={motionEnabled} theme={theme}
+          <DataGlobe suspended={loginPhase === 'open' || enteringWorkspace} motionEnabled={motionEnabled} theme={theme}
             {...(genesisId !== null && { genesis: { id: genesisId, host: genesisHost, logo: genesisLogo, onStarted: setStartedId, onComplete: finishGenesis } })}
           />
         </Suspense>

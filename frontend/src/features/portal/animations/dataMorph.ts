@@ -192,7 +192,11 @@ export function createMorphShapes(count: number): MorphShape[] {
         x = node[0] + s.a * .13; y = node[1] + s.b * .13; z = node[2] + s.c * .14;
         color = s.node % 3 ? '#b78546' : '#38867d';
       }
-      positions.set([x, y, z], i * 3); colors.push(color);
+      const offset = i * 3;
+      positions[offset] = x;
+      positions[offset + 1] = y;
+      positions[offset + 2] = z;
+      colors.push(color);
     });
     return { positions, colors };
   });

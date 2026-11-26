@@ -112,7 +112,7 @@ export async function finishGoogleSignIn(req: Request, res: Response) {
     displayName: typeof claims.name === 'string' ? claims.name : claims.email });
   if (!user) throw new AppError('Could not save the user profile.', 503, 'STORAGE_UNAVAILABLE');
   await issueAtlasSession(req, res, user);
-  res.redirect(303, new URL('/#/overview', uri).href);
+  res.redirect(303, new URL('/?auth=google-success#/overview', uri).href);
 }
 
 export async function issueAtlasSession(req: Request, res: Response, user: AtlasProfile, provider?: 'password') {
